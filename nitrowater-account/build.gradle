@@ -19,15 +19,53 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server'
-    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
+    implementation project(':nitrowater-core')
+    // --- web ---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-    testImplementation 'org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server-test'
-    testImplementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client-test'
+    // 不引入 spring-security web；仅保留 core 依赖的 crypto(BCrypt) 与 jose(JWT)
+    implementation 'org.springframework.security:spring-security-crypto'
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
+    implementation 'io.swagger.core.v3:swagger-annotations:2.2.41'
+    // --- persistence / cache（core 运行期所需，implementation 不传递，故在此重声明）---
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-cache'
+    implementation 'org.springframework:spring-aop'
+    implementation 'org.aspectj:aspectjweaver:1.9.25.1'
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
+
+    // --- auth core 运行期库 ---
+    implementation 'cn.hutool:hutool-captcha:5.8.26'
+    implementation 'org.mindrot:jbcrypt:0.4'
+    implementation 'org.jetbrains:annotations:26.0.2'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+    // --- 迁移 / JSON(Jackson2 兼容) / 驱动 ---
+    implementation 'org.flywaydb:flyway-core'
+    runtimeOnly 'org.flywaydb:flyway-mysql'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// Phase 1 本地运行：
+//  - workingDir = 仓库根，使 application.yml 的 file:./deploy/keys/* 能解析
+//  - 注入 WATERFUN_KEK（EncryptionHelper 读取的 32 字节 AES KEK，Base64）
+tasks.named('bootRun') {
+    workingDir = rootProject.projectDir
+    environment 'WATERFUN_KEK', System.getenv('WATERFUN_KEK') ?: 'kElE+g/NUUkCAG0azg9ZcYYXbevGg9mYuUtJvICut98='
 }

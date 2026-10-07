@@ -74,3 +74,13 @@ go.work.sum
 .opencode/
 .omo/
 .codegraph/
+
+# secrets / keys
+**/src/main/resources/keys/*.key
+**/keys/*.key
+deploy/config/common-dev-secrets.yml
+
+# deploy/bin scripts are tracked: local MySQL/Redis passwords are initial/default (safe to expose).
+# The generic `bin/` rule above would ignore them, so re-include explicitly.
+!deploy/bin/
+!deploy/bin/**

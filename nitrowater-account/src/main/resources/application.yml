@@ -1,0 +1,121 @@
+# ============================================================
+# nitrowater-account（SSO 认证中心）— 本地扁平配置
+# Phase 1：不引入 shared config，所有项平铺于此。
+# 配置项来源：复用 waterfun deploy/config/common.yml 的值（见注释）。
+# ============================================================
+
+server:
+  port: 8090
+
+spring:
+  application:
+    name: nitrowater-account
+
+  # -------- 数据源（SSO 库：nitrowater；首次连接自动建库）--------
+  datasource:
+    url: jdbc:mysql://localhost:3306/nitrowater?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    username: root
+    password: "123456"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # -------- Redis --------
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      username: default
+      password: ""
+      repositories:
+        enabled: false
+
+  # -------- JPA --------
+  # 建表改由 Flyway 管理（见下）；Hibernate 不自动改结构
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 20
+
+  # -------- Flyway（SSO 库基线）--------
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 1
+
+  # -------- i18n（core 内置 messages.properties / messages_zh.properties）--------
+  messages:
+    basename: messages
+    encoding: UTF-8
+    cache-duration: 3600s
+
+  web:
+    locale: zh_CN
+    locale-resolver: accept_header
+
+  jackson:
+    mapper:
+      accept-case-insensitive-enums: true
+
+# -------- JWT（私钥仅 SSO 持有；公钥供网关）--------
+# 密钥放 deploy/keys/（与 waterfun 一致；bootRun workingDir 已设为仓库根）
+jwt:
+  issuer: waterfun
+  private-key: file:./deploy/keys/private.key
+  public-key: file:./deploy/keys/public.key
+
+# -------- 设备指纹（did 计算依赖；复用 waterfun 开发盐值）--------
+device:
+  salt: 8c4uWcFWgRFFJHoE/MVnE8XpX4m3JQd5XtUj/tW13VA=
+  temp:
+    ttl: 3600
+  short:
+    ttl: 604800
+  long:
+    ttl: 7776000
+
+# -------- 设备清理（DeviceServiceImpl 读取，复用 waterfun 值）--------
+clean-up:
+  device:
+    max-days: 90
+
+# -------- Token（复用 waterfun 值）--------
+token:
+  access:
+    expiration: 7200      # 2h
+  refresh:
+    rotate: 604800        # 7d
+    family: 2592000       # 30d
+
+# -------- 验证码/邮件有效期（分钟/小时，复用 waterfun）--------
+expire:
+  email:
+    verify: 5
+    unverified-expire-hours: 24
+  sms-code: 2
+  captcha: 2
+
+# RegisterServiceImpl 读取的字面量键（大小写敏感，勿改）
+expiresIn:
+  email:
+    unverified-expiresIn-hours: 24
+
+# -------- uid 生成器（复用 waterfun 值）--------
+generator:
+  uid:
+    epoch: 1735689600000
+    prefix: 1
+    length: 10
+
+logging:
+  level:
+    root: INFO
+    org.springframework.security: WARN
+    org.springframework.orm.jpa: WARN
+    org.springframework.transaction: WARN
+    org.hibernate: WARN
+    com.zaxxer.hikari: WARN

@@ -1,14 +1,19 @@
 # NitroWater 项目需求设计文档（PRD）
 
-> - **文档版本**：v1.1
+> - **文档版本**：v1.3
 > - **产出日期**：2026-10-07
-> - **修订日期**：2026-10-07（v1.1：同步实施进展——SSO 认证核心库迁入 core、构建全绿；执行顺序拍板「SSO 先行」；新增 N4–N6 决策点）
+> - **修订日期**：
+>   - 2026-10-07 v1.1：同步实施进展——SSO 认证核心库迁入 core、构建全绿；执行顺序拍板「SSO 先行」；新增 N1–N3 决策点。
+>   - 2026-10-07 v1.2：**纳入 VeloChatX/velochatx-docs 整合诉求**（复合展示站：导航 + 工具箱 + 演练场 + 文档）；确认 `nitrowater-web`（Vue3+Vite，2026-10-07 新建）为前端融合落点；补充 `nitrowater-account` 落地缺口清单与 SSO 下一步分步方案（§9.1）；新增 N4–N6 决策点。
+>   - 2026-10-07 v1.3：**Phase 1 落地完成**（account 编译绿、IDEA 启动通过；SSO 库 `nitrowater` 建成 6 表）；新增 **§9.2 Phase 2（OIDC）融合方案**（token 映射、waterfun 无感登录对接、依赖清单、CORS 白名单）；新增 N7–N8 决策点。
 > - **文档性质**：实训第二周 —— 项目设计需求文档
 > - **状态**：待评审
 > - **关联文档**：
 >   - `D:\Project\waterfun\docs\auth-sso-migration-plan.md`（WaterFun 认证抽离 & SSO 迁移方案，本文 SSO 章节的上游依据）
 >   - `D:\Project\waterfun\docs\reference\auth-login-flow.md`（现有登录链路参考）
 >   - `D:\Project\webs\wtools\README.md`（待合并工具集说明）
+>   - `D:\Project\webs\velochatx-docs`（VeloChatX 文档站，VitePress，待融合；暂时独立）
+>   - `D:\Project\nitrowater\.ai\context\current.md`（本项目状态快照）
 
 ---
 
@@ -33,11 +38,12 @@
 
 ### 1.1 背景
 
-本项目（nitrowater）为新建工程，定位为**多项目共用的服务端平台**，承载三项诉求：
+本项目（nitrowater）为新建工程，定位为**多项目共用的服务端平台**，承载四项诉求：
 
 1. **工具集整合**：现有纯前端工具站 wtools（7 个工具）需要并入本项目，统一工程与入口；
 2. **代码演练场独立化**：wtools 内的「编程演练场 / Code Runner」目前依赖浏览器内 WASM 运行时（Pyodide / CheerpJ），能力受限（无法真实判题、无法受控执行用户代码），计划**拆分为独立的后端驱动编译-执行-测试服务**；
-3. **全站单点登录**：WaterFun 项目的登录注册模块计划抽离为独立 SSO 服务，nitrowater 作为其落地工程之一，实现 WaterFun 生态多项目的全站单点登录（SSO）。
+3. **全站单点登录**：WaterFun 项目的登录注册模块计划抽离为独立 SSO 服务，nitrowater 作为其落地工程之一，实现 WaterFun 生态多项目的全站单点登录（SSO）；
+4. **复合展示站整合**（v1.2 新增）：将 VeloChatX 项目的文档站 `velochatx-docs`（VitePress）整合进本项目的展示门户，与「导航 + 工具箱 + 编程演练场」共同构成**功能复合型展示网站**；该站同时承载**独立且完整的 SSO 单点登录**，作为对接并迁移 WaterFun 认证的运行载体。
 
 ### 1.2 目标与验收口径
 
@@ -48,6 +54,7 @@
 | G3  | 演练场后端化          | 用户提交 Python/Java 代码 → 后端编译 → 沙箱执行 → 自动比对测试用例 → 返回判题结果 |
 | G4  | 全站单点登录          | 在任一接入项目登录后，访问其它接入项目免登；接入新项目仅需注册 client + 本地资料表        |
 | G5  | 认证能力从 WaterFun 迁出 | 登录/注册/凭证/验证码/token 签发全部由 SSO 服务承担（对接既有迁移方案 Phase 节奏）    |
+| G6  | 复合展示站整合      | VeloChatX 文档站（`velochatx-docs`）产物以子路由形式并入 `nitrowater-web`，与工具箱/演练场并列展示；站点入口为统一导航门户，SSO 登录态贯穿全部频道 |
 
 ### 1.3 非目标（本期不做）
 
@@ -69,9 +76,10 @@
 
 | 模块                  | 现有依赖                                                                     | 当前状态（2026-10-07）   | 目标职责                                        |
 | ------------------- | ------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------- |
-| `nitrowater-account` | `spring-boot-starter-security-oauth2-authorization-server`、`oauth2-client`、`webmvc` | 空骨架（下一步：平移 `/api/auth/**` 控制器，`scanBasePackages=cn.nitrowater`） | **SSO 认证中心**（OIDC Provider，含登录注册 UI 与 token 签发） |
+| `nitrowater-account` | `webmvc`、`spring-security-crypto`、`spring-security-oauth2-jose`、`nitrowater-core`（Phase 1 未引 security web；Phase 2 恢复 AS） | **Phase 1 已落地**：控制器/DTO/配置/安全就绪，编译绿、IDEA 启动通过；SSO 库 6 表已建（§9.2.1） | **SSO 认证中心**（Phase 1 自研认证 API；Phase 2 OIDC Provider） |
 | `nitrowater-core`    | `data-jpa`、`data-redis`、`jdbc`、MySQL 驱动、`spring-security`(core/oauth2-jose/web)、`spring-web`、`jakarta.servlet-api`、jackson2、`hutool-captcha`、`jbcrypt`、`jjwt`、validation、cache、flyway、Lombok（**纯库，bootJar 已禁用**） | **认证核心库已迁入**：waterfun `common-lib` 全量 51 文件 + 认证切片 100 文件 + exception 整树 60 文件 → `cn.nitrowater.core.lib`；业务耦合已砍（`TODO(SSO)` 标记）；`compileJava` 0 错 | **共享核心库**：实体、仓储、认证/判题共用服务（不独立部署）             |
 | `nitrowater-server`  | `webmvc`                                                                 | 空骨架    | **业务 API**：wtools 后端接口、题目/提交管理、静态资源托管          |
+| `nitrowater-web`  ★新增 | Vue 3 + TypeScript + Vite 8（`package.json name=nitrowater-web`，2026-10-07 14:17 新建，仅 Vue 依赖） | 空脚手架（默认 HelloWorld）    | **复合前端**：导航门户 + 工具箱（wtools）+ 演练场 + **文档频道（velochatx-docs 产物）** + SSO 登录/回调页 |
 
 - **已完成项**（本期实操：工程初始化 + SSO 核心库迁移）：
   1. 修复 Gradle wrapper 下载超时（预置 Gradle 9.7.1 发行版至 `GRADLE_USER_HOME` 缓存）；
@@ -80,7 +88,8 @@
   4. `nitrowater-core` 补测试专用数据源配置（内存 H2 + `testRuntimeOnly h2`），使 `contextLoads` 不依赖外部 MySQL；
   5. **SSO 认证核心库收束迁移**（全拷收束方案）：waterfun `common-lib` 全量 + `service-core` 认证切片 + exception 整树（210+ Java 文件）迁入 `cn.nitrowater.core.lib`，包名 `org.waterfun.* → cn.nitrowater.core.lib`；业务实体、云 SDK 通道、业务 Controller 一律不拷；
   6. **core 纯库化**：删除 Spring Boot 启动类与上下文测试、禁用 `bootJar`（恢复 plain jar）；`Login/Register/Account` 三服务砍除 stats/audit/online/role 业务耦合，恢复点以 `TODO(SSO)` 标记；
-  7. **验证结果：`:nitrowater-core:compileJava` 101 错误 → 0；`gradlew build` BUILD SUCCESSFUL（3 模块，20 task，全绿）**。
+  7. **验证结果：`:nitrowater-core:compileJava` 101 错误 → 0；`gradlew build` BUILD SUCCESSFUL（3 模块，20 task，全绿）**；
+  8. **v1.2 评审补充**：完成与 WaterFun 认证三件套（登录/注册/验证码）逐接口对照，确认 `nitrowater-core` 已具备认证服务层（Login/Register/Account/AccessToken/Device/Captcha/Verification/SingleUseToken），并盘点出 account 落地的 **9 项缺口**（§9.1）；纳入 velochatx-docs 整合诉求。
 
 ### 2.2 wtools（待合并工具集）
 
@@ -117,7 +126,15 @@
   - 抽离为 `waterfun-auth`（OIDC Provider，Spring Authorization Server），**nitrowater-account 的现有依赖与该定位完全吻合**；
   - 库拆分方案 A：凭证拆出 `sso_account`，资料留业务库，17 个 FK 零改动；
   - `sub` claim = uid（16 位数字，SSO 唯一签发）；事件驱动（`user.registered` 等）做跨库注册外关联；
-  - 分阶段 Phase 0（契约）→ 1（服务独立，前端零改动）→ 2（OIDC 真 SSO）→ 3（收尾开放接入）。
+   - 分阶段 Phase 0（契约）→ 1（服务独立，前端零改动）→ 2（OIDC 真 SSO）→ 3（收尾开放接入）。
+
+### 2.4 velochatx-docs（文档站整合来源）与 nitrowater-web（前端落点）
+
+- **位置**：`D:\Project\webs\velochatx-docs`（**独立 git 仓库**，暂不并入，本期只做整合规划）；
+- **技术栈**：VitePress 1.6（`docs:dev / docs:build / docs:preview`），内容为 Vue 3 驱动的静态文档站；含 zh/en 双语（`docs/guide/**`、`docs/en/guide/**`、`docs/reference/**`）、自定义主题（`docs/.vitepress/theme/`）、`index.md` 首页；`docs/.vitepress/dist/` 已有构建产物；
+- **定位**：VeloChatX 项目文档，整合后作为本复合展示站的「文档频道」；
+- **前端落点 `nitrowater-web`**：2026-10-07 新建的 Vue 3 + TS + Vite 8 空脚手架（见 §2.1 模块表），为工具箱/演练场/文档/SSO 的统一承载工程；
+- **整合约束（待拍板 N5）**：`velochatx-docs` **保持独立仓库**，以「构建产物挂子路径」为首选融合方式（详见 FR-4）。
 
 ---
 
@@ -177,7 +194,7 @@ nitrowater（Gradle monorepo）
 ├── nitrowater-account     # SSO 认证中心（Spring Authorization Server + 登录注册 API + 托管登录页）
 ├── nitrowater-server      # 业务 API 网关侧服务（题目/提交/工具后端接口 + 静态资源托管）
 ├── nitrowater-judge  ★新增  # 代码演练场判题服务（编译 → 沙箱执行 → 判题），独立部署、独立限流
-└── nitrowater-web    ★新增  # 前端（由 wtools 演进）：工具集 + 演练场 + 登录/SSO 回调页
+└── nitrowater-web    ★新增  # 复合前端：导航门户 + 工具箱 + 演练场 + 文档频道（velochatx-docs 产物）+ 登录/SSO 回调页
 ```
 
 ### 4.2 运行时拓扑
@@ -255,6 +272,26 @@ nitrowater（Gradle monorepo）
 | FR-3.8 | WaterFun 网关改造配合：新增 `/api/auth/** → sso` 路由（置顶）、验签公钥改 JWKS、白名单路径校对                                 | P0   |
 | FR-3.9 | 存量数据切换：行数/BCrypt 抽样/孤儿校验全通过后，停机窗口（<30min）切换，具备回滚脚本                                            | P0   |
 | FR-3.10 | 接入新项目 SOP 文档化：注册 client → 建本地资料表 → 订阅 `user.registered` → 接 callback                                  | P2   |
+
+### FR-4 velochatx-docs 文档站整合（复合展示站之「文档频道」）
+
+> 规划依据：`D:\Project\webs\velochatx-docs`（VitePress）。**本期仅规划，暂不改动该仓库。**
+
+| 编号     | 需求                                                                                       | 优先级 |
+| ------ | ---------------------------------------------------------------------------------------- | --- |
+| FR-4.1 | `velochatx-docs` 保持**独立仓库、独立构建**；产物以子路径方式并入 `nitrowater-web`（推荐方案 A：`docs:build` → `dist/` 拷贝至 `public/docs/` 或由 `nitrowater-server` 静态托管，路由挂 `/docs/**`） | P1   |
+| FR-4.2 | 融合前先对齐 VitePress `base`（`/docs/`）与站内链接，保证子路径部署后资源/路由不破 | P1   |
+| FR-4.3 | 备选融合方式：B「monorepo 子包（pnpm workspace，统一构建）」/ C「iframe 嵌入」——按决策点 N5 拍板 | P2   |
+| FR-4.4 | 文档频道默认公开浏览；登录态仅用于用户区与演练场，不阻断文档访问 | P2   |
+
+### FR-5 复合展示站（导航门户）
+
+| 编号     | 需求                                                                                       | 优先级 |
+| ------ | ---------------------------------------------------------------------------------------- | --- |
+| FR-5.1 | 统一导航门户首页：入口卡片 = 工具箱（wtools）/ 编程演练场 / 文档（VeloChatX）/ 用户区（登录态） | P1   |
+| FR-5.2 | 频道划分：`/tools/**`（工具）、`/playground`（演练场）、`/docs/**`（文档）、`/auth/**`（SSO） | P1   |
+| FR-5.3 | **独立且完整的 SSO 单点登录**：登录/注册/回调/登出全链路（复用 FR-3），作为对接并迁移 WaterFun 认证的落地载体 | P0   |
+| FR-5.4 | 路由与子路径部署兼容（hash 路由或 history + 基路径配置，见 R5） | P2   |
 
 ---
 
@@ -352,9 +389,99 @@ nitrowater（Gradle monorepo）
 | M0 工程基线       | ✅ 初始化修复、构建全绿、模块职责梳理（本 PRD §2.1）                                                        | `gradlew build` 通过          | W2  |
 | M1 wtools 合并  | 源码迁入 `nitrowater-web`，路由/构建/导航整合，登录页骨架                                                  | 7 个工具全部可用                  | W2  |
 | M2 演练场 MVP    | `nitrowater-judge`：提交 API + 子进程沙箱 + Python/Java 判题 + 限流；前端拆分调用                                                        | 样例题 AC/WA/TLE/RE/CE 用例通过 | W3  |
-| M3 SSO Phase 1 | account 落认证 API + SSO 库建表 + 存量凭证搬迁 + WaterFun 网关路由切换（接口形态不变，前端零改动）                  | 全链路登录/注册/刷新/登出冒烟通过         | W3  |
+| M3 SSO Phase 1 | account 落认证 API + SSO 库建表 + 存量凭证搬迁 + WaterFun 网关路由切换（接口形态不变，前端零改动）；**首步见 §9.1**                  | 全链路登录/注册/刷新/登出冒烟通过         | W3  |
 | M4 SSO Phase 2 | OIDC Provider + JWKS + nitrowater-web / WaterFun 双端接入 + 互认免登                  | 跨项目免登 e2e 通过                | W4  |
 | M5 收尾         | 题库导入、提交历史、文档（接入 SOP）、安全复盘                                                              | 验收单全绿（§11）                 | W4  |
+
+### 9.1 下一步方案（本会话敲定）：`nitrowater-account` 落地 —— SSO Phase 1 第一步
+
+> 依据：本会话将 WaterFun 认证三件套（`AuthController`/`AuthAccountController` + `service-core` 服务层）与本项目 `nitrowater-core` 已迁内容**逐接口比对**后得出。**目标**：`nitrowater-account` 单模块端到端跑通 `/api/auth/**`（captcha → login-by-password → refresh → account → logout），**接口契约与路径不变，前端/网关零改动**。
+
+**已就绪**：`nitrowater-core` 203 文件编译绿；认证服务层齐全（`Login`/`Register`/`AuthCore`/`AccessToken`/`Device`/`Captcha`/`Verification`/`SingleUseToken`/`Account`/`UserDatum`）；基础设施 `CookieUtil`/`ResponseUtil`/`UserCtxHolder`/`AuthContextHelper`/`HashedTimeNumericUidGenerator`/`JwtKeyConfig`/`messages*.properties` 已迁。
+
+**落地缺口（9 项）**：
+
+| # | 缺口 | 说明 |
+| --- | --- | --- |
+| 1 | account 依赖 | `build.gradle` 未依赖 `:nitrowater-core`，且缺 jpa/redis/jdbc/validation/cache/flyway/mysql/jjwt/hutool/jbcrypt/lombok（Gradle `implementation` 不传递 → 需在 account 重声明，或把 core 改 `java-library`+`api`，见 N6） |
+| 2 | 启动扫描 | `@SpringBootApplication` 仅扫 `cn.nitrowater.account` → 需 `scanBasePackages="cn.nitrowater"` + `@EntityScan`/`@EnableJpaRepositories` 指向 `core.lib` |
+| 3 | `@RateLimit` / `RateLimitAspect` | 控制器方法级限流注解与切面未迁（依赖 Redis） |
+| 4 | `CodeSender` 实现 | 短信/邮箱发码实现（`AliyunSmsService` / `Resend`/`SpringEmail`）未迁 → `CodeSenderFactory` 空绑定触发 `CHANNEL_NOT_SUPPORT`。决策 N4：先落 `ConsoleCodeSender` 打通链路 |
+| 5 | 控制器 | `AuthController`、`AuthAccountController` 未迁（waterfun-service web 层） |
+| 6 | web 层 DTO | `ForgotPassword{ReAuth,Reset,Verify}Req`、`ReAuthReq`/`ReAuthVerifyReq`/`ReAuthRequest`、`PasswordChangeReq`、`ChangeEmailReq`/`ChangePhoneReq`、`EmailChangeVerifyReq`/`PhoneChangeVerifyReq`、`EmailReAuthReq`/`PhoneReAuthReq`、`EmailChangeVo`/`PhoneChangeVo`/`ReAuthInfoResp`/`ReAuthKeyVo`/`ReAuthTokenVo` 未迁（core 已有 `AccountResp`/`CodeResult`/`LoginClientData`/`LoginResult`/`VerifyChannel`/`VerifyScene`/`PwdLoginReq`/`RegisterRequest`/`SendCodeReq`/`VerifyCodeDto`） |
+| 7 | account 配置 | 仅 `spring.application.name`；缺 datasource(SSO 库)/redis/jwt 公私钥路径/device.salt/flyway/messages/server.port |
+| 8 | SSO 库 Flyway 基线 | `sso_account`/`user_data`/`user_data_archive`/`encryption_data_key`/`account_audit_log` DDL 未建 |
+| 9 | 本地身份注入 | 无网关直连开发时，需 filter 验 AT 并填充 `UserCtxHolder`（`AuthContextHelper` 已在 core） |
+
+**分步（Step 独立可验证）**：
+
+| Step | 内容 | 验证 |
+| --- | --- | --- |
+| S1 | 依赖与启动骨架：account 依赖 core + starters；`scanBasePackages`；空上下文启动 | 连 MySQL/Redis 启动成功 |
+| S2 | 基础设施补齐：迁 `RateLimit`+`RateLimitAspect`；加 `ConsoleCodeSender`（临时） | 启动 bean 齐 |
+| S3 | DTO + 控制器平移（路径不变 `/api/auth/**`、`/api/auth/account/**`） | `:nitrowater-account:compileJava` 0 错 |
+| S4 | SSO 库基线 + 配置：`V1__sso_baseline.sql`；`application.yml`（datasource/redis/jwt/device.salt）；本地过滤链 | Flyway 迁移通过 |
+| S5 | 冒烟：captcha → 造 `sso_account` 测试数据 → login-by-password(200+Cookie) → refresh → `/account` → logout | 5 端点 curl 通过；无 token 访问 `/account` = 401 |
+
+**阻塞/待拍板**：N4（发码通道：先 Console 还是直接上云）、N6（core 依赖暴露方式）、上游 D1–D9（含 D5 加密基准、D3 ban、D6 仓库形态）——数据迁移/Schema 未定前不动库表。
+
+> **注**：用户口述「新建了一个 waterfun-web 前端」，经核对，实际新建落点为 `D:\Project\nitrowater\nitrowater-web`（`package.json name=nitrowater-web`）。本 PRD 统一以 `nitrowater-web` 为准；若确需更名为 `waterfun-web` 请评审时确认。
+
+### 9.2 Phase 1 落地结果 + Phase 2（OIDC）融合方案（评估稿）
+
+#### 9.2.1 Phase 1 落地结果（2026-10-07）
+- **S1–S4 完成**：`core/account/server` 编译绿；**IDEA 手动启动 account 成功（:8090）**；
+- **SSO 库 `nitrowater` 建成 6 表**：`user`、`user_data`、`user_data_archive`、`account_audit_log`、`encryption_data_key`、`sso_identity`（第三方预留）；
+- **采用 waterfun 命名、core 零改动**；`/api/auth/**` 契约与路径不变（前端/网关零改动）；
+- **Phase 1 不引入 Spring Security**：自研双 token（RS256 JWT + RT Cookie）+ `LocalAuthContextFilter`（AT→UserCtxHolder）+ 无身份 401 守卫。
+
+#### 9.2.2 Phase 2 融合原则：OIDC Provider 复用现有认证，不自研第二套 token
+```
+前端 ──► nitrowater-account(SSO)
+          ├─ Spring Authorization Server (OIDC Provider, JWKS)   ← Phase 2 新门面
+          │    认证委托 ▼ AuthenticationProvider
+          ├─ 现有 LoginService/RegisterService（密码/短信/验证码/锁定/DEK） ← Phase 1 复用
+          └─ /api/auth/** 兼容层（迁移期保留，迁完下线）
+```
+- account 加回 `spring-boot-starter-security` + `spring-boot-starter-oauth2-authorization-server`；
+- **认证委托**：把现有 `LoginService` 包成 `AuthenticationProvider`，验证码/失败锁定/DEK 全复用；
+- **签发交给 AS**：用**同一对 RSA 密钥**签发并暴露 JWKS → Phase 1 旧 token 与新 token **同公钥可验**，平滑过渡；
+- `/api/auth/**` 保留为兼容层。
+
+#### 9.2.3 Token 模型映射
+| Phase 1（自研） | Phase 2（OIDC） |
+| --- | --- |
+| AT：RS256 JWT（`sub=uid/jti/did`） | `access_token` + `id_token`（JWKS 验签） |
+| RT：UUID Cookie + Redis family | `refresh_token`（轮换）+ **SSO 会话 Cookie** |
+| 401 单飞 refresh（前端 axios） | **silent renew**（oidc-client-ts）/ refresh_token |
+| 设备指纹 `deviceFp→did` | 自定义 claim / authorize 参数（可选） |
+| Redis `jti` 吊销 | **保留**：token revocation + back-channel logout |
+| 多账号池 | 决策点 D8（登出换号 / 多会话） |
+
+#### 9.2.4 waterfun 无感登录 + Token 轮换对接
+- **无感登录**：SSO 域会话 Cookie → 应用重定向 `/oauth2/authorize` 时静默带 code 跳回（免登）；
+- **各应用刷新**：SPA（nitrowater-web / waterfun-admin）用 `oidc-client-ts` automaticSilentRenew（iframe + `prompt=none`）或 refresh_token 轮换；SSR（waterfun-web-client）服务端用 refresh_token；
+- **轮换/注销**：waterfun 的 RT family 轮换 → 由 AS refresh_token rotation + `OAuth2Authorization` 存储承接；注销用 `/oauth2/logout` + back-channel logout；
+- **网关联公钥改 JWKS**；waterfun 最终也作为 OIDC client。
+
+#### 9.2.5 依赖清单（新增极少）
+| 模块 | 新增 |
+| --- | --- |
+| `nitrowater-account` | `spring-boot-starter-security` + `spring-boot-starter-oauth2-authorization-server`（恢复） |
+| `nitrowater-server` | `spring-boot-starter-oauth2-resource-server` |
+| `nitrowater-web` | npm `oidc-client-ts` |
+| waterfun 网关 | 公钥源改 JWKS（已有 resource-server） |
+| 数据 | `oidc_client` + AS 授权状态存储（复用 JDBC/Redis，**无需新库**） |
+
+#### 9.2.6 CORS / 跨域（必做白名单）
+- account 新增 `WebConfig implements WebMvcConfigurer`，读 `app.cors.allowed-origins` **白名单**；`allowCredentials=true`（**不可 `*`**）；覆盖 `/api/auth/**`、`/oauth2/**`、`/.well-known/**`；
+- **Cookie SameSite**：dev 同站点（localhost 不同端口）`Strict` 可用；**生产跨主域必须 `SameSite=None; Secure`（HTTPS）**，或 **SSO 与应用同主域（推荐）**；
+- 前端 `fetch(..., { credentials:'include' })`。
+
+#### 9.2.7 下一步
+1. account 补 CORS 白名单（Phase 1 前端接入即需）；
+2. Phase 1 冒烟（已可启动）；
+3. Phase 2：恢复 AS 依赖 + `AuthorizationServerConfig` + `AuthenticationProvider`（委托 LoginService）。
 
 ---
 
@@ -403,7 +530,12 @@ nitrowater（Gradle monorepo）
 | **N1**  | 演练场沙箱：子进程 MVP 是否可作为本期交付（Docker 为 P2）                                 | 是（实训环境约束下）                | FR-2   |
 | **N2**  | `nitrowater-judge` 独立部署 vs 并入 server（端口/限流隔离粒度）                       | 独立模块独立部署                   | 架构     |
 | **N3**  | wtools 是否保留独立仓库同步（双向维护）vs 单向归档                                     | 单向迁入 + 原仓归档                | FR-1   |
+| **N4**  | SSO 发码通道：先落 `ConsoleCodeSender`（日志打印验证码，打通链路）vs 直接迁 AliyunSms/Resend 真实实现 | 先 Console 打通冒烟，云通道后补       | §9.1 S2 |
+| **N5**  | `velochatx-docs` 融合方式：A 产物挂子路径（独立仓）/ B monorepo 子包（pnpm workspace）/ C iframe 嵌入 | A（松耦合、保留独立仓）             | FR-4   |
+| **N6**  | core 依赖暴露：account 重复声明依赖 vs core 改 `java-library` + `api` 暴露            | **已定：Option B**（account/server 各自声明，与 waterfun 一致） | §9.1 S1 |
+| **N7**  | 跨域 CORS：account 白名单来源（yml `app.cors.allowed-origins`）+ 是否允许 credentials | 白名单 + `allowCredentials=true`；不放 `*` | §9.2.6 |
+| **N8**  | SSO 与应用部署：同主域（`SameSite=Lax`，推荐）vs 跨主域（`SameSite=None;Secure`，强制 HTTPS） | 同主域 | 无感登录 |
 
 ---
 
-*评审意见请直接批注本文档；拍板后更新状态为「已评审」并进入 M1 实施。*
+*评审意见请直接批注本文档；拍板后更新状态为「已评审」并进入 M1 实施（SSO 先行，首步 §9.1）。*
