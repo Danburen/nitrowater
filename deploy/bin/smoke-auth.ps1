@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # smoke-auth.ps1 — SSO Phase 1 端到端冒烟（交互式）
 # 覆盖：captcha -> send-code -> register -> /account -> refresh -> logout
 #
@@ -112,3 +112,5 @@ try {
 Ok 'logout 成功'
 
 Write-Host "`n=== SMOKE PASSED ===" -ForegroundColor Green
+
+pause
