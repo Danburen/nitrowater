@@ -1,0 +1,24 @@
+
+plugins {
+    id 'base'
+}
+
+allprojects {
+    group = 'org.waterfun.lib.waterfun'
+    version = '1.0.0'
+
+    if (tasks.findByName('wrapper') == null) {
+        tasks.register('wrapper')
+    }
+    if (tasks.findByName('prepareKotlinBuildScriptModel') == null) {
+        tasks.register('prepareKotlinBuildScriptModel')
+    }
+}
+
+repositories {
+    maven { url = uri("https://maven.aliyun.com/repository/public") }
+    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+    mavenCentral()
+}
+tasks.register('classes')
+tasks.register('testClasses')

@@ -1,0 +1,4 @@
+rootProject.name = 'nitrowater'
+include ':nitrowater-account'
+include ':nitrowater-core'
+include ':nitrowater-server'
