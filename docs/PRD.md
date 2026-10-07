@@ -1,7 +1,8 @@
 # NitroWater 项目需求设计文档（PRD）
 
-> - **文档版本**：v1.0
+> - **文档版本**：v1.1
 > - **产出日期**：2026-10-07
+> - **修订日期**：2026-10-07（v1.1：同步实施进展——SSO 认证核心库迁入 core、构建全绿；执行顺序拍板「SSO 先行」；新增 N4–N6 决策点）
 > - **文档性质**：实训第二周 —— 项目设计需求文档
 > - **状态**：待评审
 > - **关联文档**：
@@ -66,18 +67,20 @@
   - Java 25（toolchain）、Gradle 9.7.1（wrapper）、Spring Boot **4.1.1**、`io.spring.dependency-management` 1.1.7
 - **模块清单**：
 
-| 模块                  | 现有依赖                                                                     | 当前状态   | 目标职责                                        |
-| ------------------- | ------------------------------------------------------------------------ | ------ | ------------------------------------------- |
-| `nitrowater-account` | `spring-boot-starter-security-oauth2-authorization-server`、`oauth2-client`、`webmvc` | 空骨架    | **SSO 认证中心**（OIDC Provider，含登录注册 UI 与 token 签发） |
-| `nitrowater-core`    | `data-jpa`、`data-redis`、`jdbc`、MySQL 驱动、Lombok                      | 空骨架    | **共享核心库**：实体、仓储、认证/判题共用服务（不独立部署）             |
+| 模块                  | 现有依赖                                                                     | 当前状态（2026-10-07）   | 目标职责                                        |
+| ------------------- | ------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------- |
+| `nitrowater-account` | `spring-boot-starter-security-oauth2-authorization-server`、`oauth2-client`、`webmvc` | 空骨架（下一步：平移 `/api/auth/**` 控制器，`scanBasePackages=cn.nitrowater`） | **SSO 认证中心**（OIDC Provider，含登录注册 UI 与 token 签发） |
+| `nitrowater-core`    | `data-jpa`、`data-redis`、`jdbc`、MySQL 驱动、`spring-security`(core/oauth2-jose/web)、`spring-web`、`jakarta.servlet-api`、jackson2、`hutool-captcha`、`jbcrypt`、`jjwt`、validation、cache、flyway、Lombok（**纯库，bootJar 已禁用**） | **认证核心库已迁入**：waterfun `common-lib` 全量 51 文件 + 认证切片 100 文件 + exception 整树 60 文件 → `cn.nitrowater.core.lib`；业务耦合已砍（`TODO(SSO)` 标记）；`compileJava` 0 错 | **共享核心库**：实体、仓储、认证/判题共用服务（不独立部署）             |
 | `nitrowater-server`  | `webmvc`                                                                 | 空骨架    | **业务 API**：wtools 后端接口、题目/提交管理、静态资源托管          |
 
-- **初始化已完成项**（本期实操）：
+- **已完成项**（本期实操：工程初始化 + SSO 核心库迁移）：
   1. 修复 Gradle wrapper 下载超时（预置 Gradle 9.7.1 发行版至 `GRADLE_USER_HOME` 缓存）；
   2. 删除两处悬空依赖 `implementation ':waterfun-core'`（骨架拷贝自 WaterFun 时遗留，模块不存在）；
   3. 根工程 `group` 由 `org.waterfun.lib.waterfun` 统一为 `cn.nitrowater`；
   4. `nitrowater-core` 补测试专用数据源配置（内存 H2 + `testRuntimeOnly h2`），使 `contextLoads` 不依赖外部 MySQL；
-  5. **验证结果：`gradlew build` BUILD SUCCESSFUL（3 模块，22 个 task，测试全绿）**。
+  5. **SSO 认证核心库收束迁移**（全拷收束方案）：waterfun `common-lib` 全量 + `service-core` 认证切片 + exception 整树（210+ Java 文件）迁入 `cn.nitrowater.core.lib`，包名 `org.waterfun.* → cn.nitrowater.core.lib`；业务实体、云 SDK 通道、业务 Controller 一律不拷；
+  6. **core 纯库化**：删除 Spring Boot 启动类与上下文测试、禁用 `bootJar`（恢复 plain jar）；`Login/Register/Account` 三服务砍除 stats/audit/online/role 业务耦合，恢复点以 `TODO(SSO)` 标记；
+  7. **验证结果：`:nitrowater-core:compileJava` 101 错误 → 0；`gradlew build` BUILD SUCCESSFUL（3 模块，20 task，全绿）**。
 
 ### 2.2 wtools（待合并工具集）
 
@@ -156,7 +159,7 @@
 
 ### 3.4 总体结论
 
-> **方案整体可行**，三子项互相支撑（SSO 为演练场提供身份，wtools 为演练场提供前端壳），建议按 `工程基线 → wtools 合并 → 演练场 MVP → SSO Phase 1 → SSO Phase 2` 顺序推进。约束条件：
+> **方案整体可行**，三子项互相支撑（SSO 为演练场提供身份，wtools 为演练场提供前端壳），建议按 `工程基线 → SSO Phase 1 →（wtools 合并 ∥ 演练场 MVP）→ SSO Phase 2` 顺序推进 —— **执行顺序已于 2026-10-07 拍板：SSO 先行**。约束条件：
 >
 > 1. 演练场沙箱须在开放任何提交入口前完成（安全前置）；
 > 2. SSO 涉及 WaterFun 跨仓库协作与停机窗口，排期需与 WaterFun 侧对齐；
