@@ -10,8 +10,17 @@ import cn.nitrowater.core.lib.api.TokenPair;
 import java.util.Arrays;
 
 public final class CookieUtil {
-    private static final String COOKIE_SAME_SITE_CONFIG = "Strict";
-    private static final boolean COOKIE_SECURE = false;
+    // 可配置：默认 Strict/false（同站）；跨主域部署设 same-site=None + secure=true
+    private static volatile String sameSite = "Strict";
+    private static volatile boolean secure = false;
+
+    /** 由 CookieConfig 从 app.cookie.* 注入 */
+    public static void configure(String sameSiteValue, boolean secureFlag) {
+        if (sameSiteValue != null && !sameSiteValue.isBlank()) {
+            sameSite = sameSiteValue;
+        }
+        secure = secureFlag;
+    }
     public static void setTokenCookie(HttpServletResponse response, TokenPair tokenPair) {
         //setAccessTokenCookie(response, tokenPair.value(), tokenPair.accessExp()); // Cookie AccessToken
         setRefreshTokenCookie(response, tokenPair.refreshToken(), (long) (7 * 24 * 60 * 60));
@@ -20,8 +29,8 @@ public final class CookieUtil {
     public static void setAccessTokenCookie(HttpServletResponse response, String accessToken, Long expireIn) {
         ResponseCookie accessCookie = ResponseCookie.from("ACCESS_TOKEN",accessToken)
                 .httpOnly(true)
-                .secure(COOKIE_SECURE) // only https
-                .sameSite(COOKIE_SAME_SITE_CONFIG)
+                .secure(secure) // only https
+                .sameSite(sameSite)
                 .maxAge(expireIn)
                 .path("/")
                 .build();
@@ -31,8 +40,8 @@ public final class CookieUtil {
     public static void setRefreshTokenCookie(HttpServletResponse response, String refreshToken, Long expireIn) {
         ResponseCookie refreshCookie = ResponseCookie.from("REFRESH_TOKEN",refreshToken)
                 .httpOnly(true)
-                .secure(COOKIE_SECURE)
-                .sameSite(COOKIE_SAME_SITE_CONFIG)
+                .secure(secure)
+                .sameSite(sameSite)
                 .maxAge(expireIn)  // same segment jwt refresh value
                 .path("/")
                 .build();
@@ -40,8 +49,8 @@ public final class CookieUtil {
         // Expire old cookie with path=/api/auth (migration from old path)
         ResponseCookie oldPathExpire = ResponseCookie.from("REFRESH_TOKEN", "")
                 .httpOnly(true)
-                .secure(COOKIE_SECURE)
-                .sameSite(COOKIE_SAME_SITE_CONFIG)
+                .secure(secure)
+                .sameSite(sameSite)
                 .maxAge(0)
                 .path("/api/auth")
                 .build();
@@ -51,8 +60,8 @@ public final class CookieUtil {
     public static void cleanTokenCookie(HttpServletResponse response) {
         ResponseCookie refreshCookie = ResponseCookie.from("REFRESH_TOKEN", "")
                 .httpOnly(true)
-                .secure(COOKIE_SECURE)
-                .sameSite(COOKIE_SAME_SITE_CONFIG)
+                .secure(secure)
+                .sameSite(sameSite)
                 .maxAge(0)  // Instance expired
                 .path("/")
                 .build();
@@ -60,8 +69,8 @@ public final class CookieUtil {
 
         ResponseCookie oldPathExpire = ResponseCookie.from("REFRESH_TOKEN", "")
                 .httpOnly(true)
-                .secure(COOKIE_SECURE)
-                .sameSite(COOKIE_SAME_SITE_CONFIG)
+                .secure(secure)
+                .sameSite(sameSite)
                 .maxAge(0)
                 .path("/api/auth")
                 .build();

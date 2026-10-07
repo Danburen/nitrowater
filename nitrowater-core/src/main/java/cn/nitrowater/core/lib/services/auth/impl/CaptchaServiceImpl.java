@@ -22,7 +22,6 @@ public class CaptchaServiceImpl implements CaptchaService {
     private final RedisHelperHolder redisHelper;
 
     // -- Redis key builders --
-
     private static String captchaKey(String uuid) {
         return RedisKeyBuilder.build(VERIFY, "captcha", uuid);
     }

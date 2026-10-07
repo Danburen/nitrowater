@@ -111,6 +111,19 @@ generator:
     prefix: 1
     length: 10
 
+# -------- SSO / OIDC --------
+sso:
+  issuer: http://localhost:8090        # AS issuer（生产改 https://auth.nitrowater.cn）
+# -------- CORS 白名单（同主域子域 + 跨主域）+ Cookie（跨站同上）--------
+# 同主域：https://*.nitrowater.cn；跨主域：https://*.waterfun.top、https://waterfun.top
+# Cookie：同站用 Strict/false；跨主域（waterfun.top↔nitrowater.cn）改 same-site=None + secure=true
+app:
+  cors:
+    allowed-origin-patterns: "http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn,https://waterfun.top,https://*.waterfun.top"
+  cookie:
+    same-site: Strict
+    secure: false
+
 logging:
   level:
     root: INFO

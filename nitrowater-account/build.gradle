@@ -22,7 +22,10 @@ dependencies {
     implementation project(':nitrowater-core')
     // --- web ---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-    // 不引入 spring-security web；仅保留 core 依赖的 crypto(BCrypt) 与 jose(JWT)
+    // Phase 2：OIDC Provider（SSO 门面）
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server'
+    // core 依赖的 crypto(BCrypt) 与 jose(JWT)
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.springframework.security:spring-security-oauth2-jose'
     implementation 'io.swagger.core.v3:swagger-annotations:2.2.41'
