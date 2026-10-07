@@ -45,7 +45,7 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
     // --- 迁移 / JSON(Jackson2 兼容) / 驱动 ---
-    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
     runtimeOnly 'org.flywaydb:flyway-mysql'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
