@@ -22,12 +22,31 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-cache'
+    implementation 'org.springframework.security:spring-security-crypto'
+    implementation 'org.springframework.security:spring-security-core'
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
+    implementation 'org.springframework.security:spring-security-web'
+    implementation 'org.springframework:spring-web'
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.0.0'
+    implementation 'cn.hutool:hutool-captcha:5.8.26'
+    implementation 'org.mindrot:jbcrypt:0.4'
+    implementation 'org.jetbrains:annotations:26.0.2'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    runtimeOnly 'org.flywaydb:flyway-mysql'
     compileOnly 'org.projectlombok:lombok'
     runtimeOnly 'com.mysql:mysql-connector-j'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-data-redis-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-jdbc-test'
+    testRuntimeOnly 'com.h2database:h2'
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
@@ -35,4 +54,12 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// Pure library module: no main class — disable bootJar, publish plain jar
+tasks.named('bootJar') {
+    enabled = false
+}
+tasks.named('jar') {
+    enabled = true
 }

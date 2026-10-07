@@ -67,3 +67,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# agent
+.ai/
+.trellis/
+.opencode/
+.omo/
+.codegraph/

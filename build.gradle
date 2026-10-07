@@ -4,7 +4,7 @@ plugins {
 }
 
 allprojects {
-    group = 'org.waterfun.lib.waterfun'
+    group = 'cn.nitrowater'
     version = '1.0.0'
 
     if (tasks.findByName('wrapper') == null) {
