@@ -25,7 +25,11 @@ $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 $captchaFile = Join-Path $env:TEMP 'nitrowater_captcha.png'
 
 function Step($n, $msg) { Write-Host "`n=== [$n] $msg ===" -ForegroundColor Cyan }
-function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
+function Fail($msg) {
+    Write-Host "[FAIL] $msg" -ForegroundColor Red
+    Remove-Item $captchaFile -Force -ErrorAction SilentlyContinue
+    exit 1
+}
 function Ok($msg)   { Write-Host "[OK] $msg" -ForegroundColor Green }
 
 # ---------- 1. captcha ----------
@@ -111,6 +115,8 @@ try {
 } catch { Fail "logout error: $_" }
 Ok 'logout 成功'
 
+Remove-Item $captchaFile -Force -ErrorAction SilentlyContinue
 Write-Host "`n=== SMOKE PASSED ===" -ForegroundColor Green
+Write-Host "（临时验证码图片已清理）" -ForegroundColor DarkGray
 
 pause
