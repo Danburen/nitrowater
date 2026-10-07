@@ -13,11 +13,11 @@ public final class RedisKeyPrefix {
     /**
      * Global ROOT namespace for all business Redis keys, prepended by
      * {@link RedisKeyBuilder#build(Object...)}.
-     * <p>Distinguishes business keys ({@code waterfun:biz:*}) from cache keys
-     * ({@code waterfun:cache:*}) produced by Spring {@code @Cacheable}.</p>
+     * <p>Distinguishes business keys ({@code nitrowater:biz:*}) from cache keys
+     * ({@code nitrowater:cache:*}) produced by Spring {@code @Cacheable}.</p>
      */
-    public static final String ROOT_BIZ = "waterfun:biz:";
-    public static final String ROOT_CACHE =  "waterfun:cache:";
+    public static final String ROOT_BIZ = "nitrowater:biz:";
+    public static final String ROOT_CACHE =  "nitrowater:cache:";
 
     public static final String ONLINE = "online";
     public static final String THRESHOLD = "threshold";

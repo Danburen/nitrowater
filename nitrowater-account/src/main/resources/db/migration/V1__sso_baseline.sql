@@ -83,8 +83,8 @@ CREATE TABLE IF NOT EXISTS encryption_data_key (
     UNIQUE KEY uk_key_id (key_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='字段加密 DEK（KEK 加密存储）';
 -- ============================================================
--- V2__sso_identity.sql
--- 登录身份绑定（预留第三方 OAuth2：QQ / 微信 / GitHub / Google …）
+-- sso_identity —— 登录身份绑定（预留第三方 OAuth2：QQ / 微信 / GitHub / Google …）
+-- （原独立迁移 V2__sso_identity.sql，已并入本基线）
 --
 -- 设计：账号主体(user) 与 登录身份(sso_identity) 分离，
 --       同一账号可绑定多种登录方式；未来接第三方只需往本表插行，

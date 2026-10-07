@@ -16,13 +16,23 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
+import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.web.SecurityFilterChain;
@@ -30,6 +40,9 @@ import org.springframework.security.web.authentication.LoginUrlAuthenticationEnt
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import cn.nitrowater.account.security.SsoUserPrincipal;
+
+import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.interfaces.RSAPrivateKey;
@@ -83,10 +96,39 @@ public class AuthorizationServerConfig {
         return http.build();
     }
 
-    /** 接入的 OIDC 客户端（Phase 2.5 会迁到 oidc_client 表）。 */
+    /**
+     * Phase 2.5（方案 A）：OIDC 客户端 / 授权 / 同意 全部改为 JDBC 持久化，
+     * 使用 Spring Authorization Server 标准表（见 V1_1__oauth2_oidc_role.sql），重启不丢。
+     */
     @Bean
-    public RegisteredClientRepository registeredClientRepository() {
-        RegisteredClient web = RegisteredClient.withId(UUID.randomUUID().toString())
+    public RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
+        return new JdbcRegisteredClientRepository(jdbcTemplate);
+    }
+
+    @Bean
+    public OAuth2AuthorizationService authorizationService(JdbcTemplate jdbcTemplate,
+            RegisteredClientRepository registeredClientRepository) {
+        return new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository);
+    }
+
+    @Bean
+    public OAuth2AuthorizationConsentService authorizationConsentService(JdbcTemplate jdbcTemplate,
+            RegisteredClientRepository registeredClientRepository) {
+        return new JdbcOAuth2AuthorizationConsentService(jdbcTemplate, registeredClientRepository);
+    }
+
+    /** 幂等播种首方客户端 nitrowater-web（已存在则跳过）。 */
+    @Bean
+    public ApplicationRunner registeredClientSeeder(RegisteredClientRepository registeredClientRepository) {
+        return args -> {
+            if (registeredClientRepository.findByClientId("nitrowater-web") == null) {
+                registeredClientRepository.save(nitrowaterWebClient());
+            }
+        };
+    }
+
+    private static RegisteredClient nitrowaterWebClient() {
+        return RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("nitrowater-web")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE) // 公共客户端 + PKCE
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
@@ -105,7 +147,6 @@ public class AuthorizationServerConfig {
                         .reuseRefreshTokens(false)
                         .build())
                 .build();
-        return new InMemoryRegisteredClientRepository(web);
     }
 
     /** JWKS：复用 core RSA 密钥对。 */
@@ -128,5 +169,63 @@ public class AuthorizationServerConfig {
     public AuthorizationServerSettings authorizationServerSettings(
             @Value("${sso.issuer:http://localhost:8090}") String issuer) {
         return AuthorizationServerSettings.builder().issuer(issuer).build();
+    }
+
+    /**
+     * Phase 2.4：令牌定制。
+     * <p>把 {@link SsoUserPrincipal} 的身份上下文映射进 access_token / id_token：
+     * {@code sub=uid}、{@code uid}、{@code preferred_username}、{@code name}、{@code roles}、{@code did}。
+     * 这些 claim 亦经默认 {@code /userinfo}（由 id_token claims 映射）对外暴露。</p>
+     */
+    @Bean
+    public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
+        return context -> {
+            SsoUserPrincipal principal = resolvePrincipal(context);
+            String uid = principal != null
+                    ? String.valueOf(principal.getUid())
+                    : resolveUid(context);
+            if (uid == null) {
+                return;
+            }
+            var claims = context.getClaims();
+            claims.subject(uid);
+            claims.claim("uid", uid);
+            if (principal != null) {
+                if (principal.getLoginName() != null) {
+                    claims.claim("preferred_username", principal.getLoginName());
+                }
+                claims.claim("name", principal.getDisplayName());
+                claims.claim("roles", principal.getRoles());
+                if (principal.getDid() != null) {
+                    claims.claim("did", principal.getDid());
+                }
+            }
+        };
+    }
+
+    /** 从令牌上下文取回登录主体；AS 在授权码与刷新链路都会注入该 Authentication。 */
+    private static SsoUserPrincipal resolvePrincipal(JwtEncodingContext context) {
+        Authentication authentication = context.getPrincipal();
+        if (authentication != null && authentication.getPrincipal() instanceof SsoUserPrincipal p) {
+            return p;
+        }
+        OAuth2Authorization authorization = context.getAuthorization();
+        if (authorization != null) {
+            Object stored = authorization.getAttribute(Principal.class.getName());
+            if (stored instanceof Authentication a && a.getPrincipal() instanceof SsoUserPrincipal p) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    /** 回退：取授权记录的 principalName（uid）。 */
+    private static String resolveUid(JwtEncodingContext context) {
+        OAuth2Authorization authorization = context.getAuthorization();
+        if (authorization != null && authorization.getPrincipalName() != null) {
+            return authorization.getPrincipalName();
+        }
+        Authentication principal = context.getPrincipal();
+        return principal != null ? principal.getName() : null;
     }
 }

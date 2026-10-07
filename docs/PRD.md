@@ -1,11 +1,12 @@
 # NitroWater 项目需求设计文档（PRD）
 
-> - **文档版本**：v1.3
+> - **文档版本**：v1.4
 > - **产出日期**：2026-10-07
 > - **修订日期**：
 >   - 2026-10-07 v1.1：同步实施进展——SSO 认证核心库迁入 core、构建全绿；执行顺序拍板「SSO 先行」；新增 N1–N3 决策点。
 >   - 2026-10-07 v1.2：**纳入 VeloChatX/velochatx-docs 整合诉求**（复合展示站：导航 + 工具箱 + 演练场 + 文档）；确认 `nitrowater-web`（Vue3+Vite，2026-10-07 新建）为前端融合落点；补充 `nitrowater-account` 落地缺口清单与 SSO 下一步分步方案（§9.1）；新增 N4–N6 决策点。
 >   - 2026-10-07 v1.3：**Phase 1 落地完成**（account 编译绿、IDEA 启动通过；SSO 库 `nitrowater` 建成 6 表）；新增 **§9.2 Phase 2（OIDC）融合方案**（token 映射、waterfun 无感登录对接、依赖清单、CORS 白名单）；新增 N7–N8 决策点。
+>   - 2026-10-07 v1.4：**Phase 2.4/2.5 落地**——① 登录主体升级为 `SsoUserPrincipal`（承载 uid/登录名/昵称/userType/状态/设备），`SsoAuthenticationProvider` 不再用裸 `User`、角色由 userType 派生；`OAuth2TokenCustomizer` 保证 `sub=uid` 并输出 `preferred_username/name/roles/did`。② OIDC 客户端与授权/同意改为 **JDBC 持久化（方案 A：Spring AS 标准表）**，新增 `V1_1__oauth2_oidc_role.sql`，客户端启动幂等播种；数据源 URL 按官方建议补 `preserveInstants/connectionTimeZone`。新增 §9.2.8、§9.2.9 与 N9。
 > - **文档性质**：实训第二周 —— 项目设计需求文档
 > - **状态**：待评审
 > - **关联文档**：
@@ -347,19 +348,27 @@ nitrowater（Gradle monorepo）
 
 ## 8. 数据设计
 
-### 8.1 SSO 库（`nitrowater_account`）
+### 8.1 SSO 库（`nitrowater`）
+
+实际落地：单一基线 `V1__sso_baseline.sql`（6 表）+ `V1_1__oauth2_oidc_role.sql`（5 表：3 OIDC + 2 RBAC）。
 
 | 表                     | 来源         | 说明                                     |
 | --------------------- | ---------- | -------------------------------------- |
-| `sso_account`         | 新建（拆自 user） | uid PK / username 唯一 / password_hash / account_status |
-| `user_data`           | 原样搬迁       | 手机/邮箱哈希、加密字段（FK 改指 sso_account）          |
+| `user`                | 拆自 waterfun.user | uid PK / username 唯一 / password_hash / account_status / user_type（沿用 waterfun 命名） |
+| `user_data`           | 原样搬迁       | 手机/邮箱 加密+哈希、加密字段                       |
 | `user_data_archive`   | 原样搬迁       | 归档                                     |
-| `encryption_data_key` | 原样搬迁       | 字段加密密钥                                 |
+| `encryption_data_key` | 原样搬迁       | 字段加密 DEK（KEK 加密存储）                     |
 | `account_audit_log`   | 原样搬迁       | 账号审计                                   |
-| `oidc_client`         | 新建         | 接入项目注册                                 |
-| `oidc_session`        | 新建         | SSO 会话（若非纯 Cookie 实现）                  |
+| `sso_identity`        | 新建         | 第三方登录身份绑定（QQ/微信/GitHub…，本期仅预留）          |
+| `oauth2_registered_client`     | 新建（Spring AS 标准表） | OIDC 接入客户端（Phase 2.5）                  |
+| `oauth2_authorization`         | 新建（Spring AS 标准表） | OIDC 授权状态：token/授权码/会话（Phase 2.5）       |
+| `oauth2_authorization_consent` | 新建（Spring AS 标准表） | OIDC 授权同意（Phase 2.5）                    |
+| `role`                         | 新建（RBAC）             | 角色词汇表：code/name/builtin；内置 USER/ADMIN 播种（V1_1）|
+| `user_role`                    | 新建（RBAC）             | 用户-角色映射：uid+role_id 复合 PK，FK→user/role 级联（V1_1）|
 
+> 命名调整（决策 N9）：账号表沿用 waterfun `user`；客户端/授权/同意改用 **Spring AS 标准表**，退役原计划的 `sso_account`/`oidc_client`/`oidc_session`。
 > DDL 细节与校验标准见上游方案 §4.2、§8。
+> RBAC（V1_1）：采用角色制 `role`/`user_role`；`role`/`user_role` 为**角色权威源**，`user.userType` 退为账号类别/展示；细粒度权限（`permission`/`role_permission`）**暂不建**，待出现"角色→权限"消费方时再加子版本迁移。
 
 ### 8.2 业务库（`nitrowater`）
 
@@ -479,9 +488,27 @@ nitrowater（Gradle monorepo）
 - 前端 `fetch(..., { credentials:'include' })`。
 
 #### 9.2.7 下一步
-1. account 补 CORS 白名单（Phase 1 前端接入即需）；
-2. Phase 1 冒烟（已可启动）；
-3. Phase 2：恢复 AS 依赖 + `AuthorizationServerConfig` + `AuthenticationProvider`（委托 LoginService）。
+1. ~~account 补 CORS 白名单~~（已完成）；
+2. ~~Phase 1 冒烟~~（已完成）；
+3. ~~Phase 2 骨架：恢复 AS 依赖 + `AuthorizationServerConfig` + `AuthenticationProvider`~~（已完成，见 §9.2.8）；
+4. **Phase 2.6**：`nitrowater-web` 接入 `oidc-client-ts`（`/auth/callback`、silent renew）；
+5. **Phase 2.8**：WaterFun 网关验签改 JWKS + 路由 `/api/auth/** → SSO`（跨仓库，待窗口）；
+6. 端到端：起 MySQL/Redis 后跑一次完整授权码流（decode token 校验 `sub/uid/preferred_username/roles/did`）。
+
+#### 9.2.8 Phase 2.4 落地结果（令牌定制 / 登录主体）
+
+- **登录主体**：新增 `cn.nitrowater.account.security.SsoUserPrincipal`（`UserDetails`），承载 uid / 登录名 / 昵称 / userType / accountStatus / deviceFp / did；`getUsername()` 返回 uid（保证 `sub=uid`）；`getAuthorities()` 由 userType 派生（不再写死 `ROLE_USER`）。
+- **认证委托**：`SsoAuthenticationProvider` 由 `LoginResult.user()` 构造该主体，`did` 经 `DeviceService.calculaateDid(uid, dfp)` 计算（纯 HMAC，不依赖 Redis）。
+- **令牌定制**：`OAuth2TokenCustomizer<JwtEncodingContext>` 输出 `sub=uid`、`uid`、`preferred_username`、`name`、`roles`、`did`；经默认 `/userinfo`（由 id_token claims 映射）自动暴露。
+- **核实纠正**：AS 刷新链路会把授权记录中的 `java.security.Principal`（资源所有者）重新注入 token 上下文，故默认 `sub` 本就是 uid；customizer 的价值是**显式保证 + 扩展 claim**，并非修 bug。
+
+#### 9.2.9 Phase 2.5 落地结果（JDBC 持久化，方案 A）
+
+- **存储**：`JdbcRegisteredClientRepository` + `JdbcOAuth2AuthorizationService` + `JdbcOAuth2AuthorizationConsentService`，替换原内存实现，重启不丢。
+- **表**：`V1_1__oauth2_oidc_role.sql` 建 `oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`（官方 7.1.1 DDL）。
+- **客户端**：启动幂等播种 `nitrowater-web`（公共客户端 + PKCE，auth-code + refresh，redirect `http://localhost:5173/auth/callback`）。
+- **连接串**：按官方建议补 `preserveInstants=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true` 以保证令牌时间精度。
+- **校验**：临时库应用 V1_1 DDL 通过（MySQL 8）；`nitrowater` 库当前为 Flyway baseline v1（版本 1），下次启动自动应用 V1_1（版本 1.1）。
 
 ---
 
@@ -535,6 +562,7 @@ nitrowater（Gradle monorepo）
 | **N6**  | core 依赖暴露：account 重复声明依赖 vs core 改 `java-library` + `api` 暴露            | **已定：Option B**（account/server 各自声明，与 waterfun 一致） | §9.1 S1 |
 | **N7**  | 跨域 CORS：account 白名单来源（yml `app.cors.allowed-origins`）+ 是否允许 credentials | 白名单 + `allowCredentials=true`；不放 `*` | §9.2.6 |
 | **N8**  | SSO 与应用部署：同主域（`SameSite=Lax`，推荐）vs 跨主域（`SameSite=None;Secure`，强制 HTTPS） | 同主域 | 无感登录 |
+| **N9**  | OIDC 客户端/授权/同意存储：A Spring AS 标准表 vs B 自建 `oidc_client`/`oidc_session` | **已定：A**（官方 3 表 + `Jdbc*` 实现，零自研） | Phase 2.5 |
 
 ---
 

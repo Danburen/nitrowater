@@ -40,7 +40,7 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
 | 模块 | 职责 | 状态 |
 |---|---|---|
 | `nitrowater-core` | 共享库（实体、仓储、认证服务、安全工具），不独立部署 | ✅ 认证核心已迁移 |
-| `nitrowater-account` | **SSO / OIDC 认证中心** —— 登录注册 API + OIDC Provider + 托管登录页 | ✅ Phase 1 完成 · 🚧 Phase 2 OIDC 骨架 |
+| `nitrowater-account` | **SSO / OIDC 认证中心** —— 登录注册 API + OIDC Provider + 托管登录页 | ✅ Phase 1 完成 · 🚧 Phase 2（授权码 + JDBC 持久化；前端/网关待续） |
 | `nitrowater-server` | 业务 API —— 工具箱后端、题目/提交管理、静态托管、Resource Server | ⏳ 仅骨架 |
 | `nitrowater-web` | 前端（Vue 3 + TypeScript + Vite）—— 导航门户、工具箱、演练场、文档频道、SSO 登录 | ⏳ 脚手架（未接入 Gradle） |
 | `nitrowater-judge` | 演练场判题服务（编译 → 沙箱 → 判题） | ⏳ 规划中（模块未创建） |
@@ -59,19 +59,19 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
 - **运维脚本**（`deploy/`）—— 启动 Redis/account、环境自检、密钥生成、SSO 清库重建、MySQL 备份、交互式认证冒烟。
 - **Phase 2（OIDC）骨架** —— Spring Security 7.1 + Spring Authorization Server 7.1 已接线：
   - 授权服务器链（Order 1）+ 默认链（Order 2），JWKS 复用 core 的 RSA 密钥对；
-  - `SsoAuthenticationProvider` 把认证委托给现有 `LoginService`（验证码 / 失败锁定 / DEK 全复用），`principal.name = uid`；
+  - `SsoAuthenticationProvider` 把认证委托给现有 `LoginService`（验证码 / 失败锁定 / DEK 全复用），主体为 `SsoUserPrincipal`（`getUsername()=uid`）；
   - 托管 SSO 登录页 `/login`；
-  - 为 `nitrowater-web` 注册的内存 `RegisteredClient`（公共客户端、PKCE、授权码 + 刷新令牌）；
+  - 为 `nitrowater-web` 注册的客户端（公共客户端、PKCE、授权码 + 刷新令牌），Phase 2.5 起改 JDBC 持久化；
   - 已验证端点：`/.well-known/openid-configuration` → 200、`/login` → 200、`/api/auth/captcha` → 200。
+- **Phase 2.4 —— 令牌定制与登录主体** —— `SsoUserPrincipal` 承载完整身份（uid / 登录名 / 昵称 / userType / 状态 / 设备）；角色由 `userType` 派生（不再写死 `ROLE_USER`）；`OAuth2TokenCustomizer` 输出 `sub=uid`、`uid`、`preferred_username`、`name`、`roles`、`did`（并经 `/userinfo` 暴露）。
+- **Phase 2.5 —— AS JDBC 持久化（方案 A）** —— OIDC 客户端/授权/同意改用 Spring AS 标准表持久化（`oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`，迁移 `V1_1__oauth2_oidc_role.sql`）；`nitrowater-web` 客户端启动时幂等播种。
 
 ### 🚧 进行中 / 未完成
 
 **Phase 2 —— 完成真正的 OIDC 单点登录**（下一里程碑）：
 
-- [ ] **令牌定制** —— 固化 `sub = uid`，并为 access/id token 增加自定义 claim（`jti`、`did`）。
-- [ ] **`oidc_client` 表** —— 把内存 `RegisteredClientRepository` 换成 JDBC 实现；按接入项目注册 client（redirect-URI 白名单、强制 PKCE）。
-- [ ] **JDBC 授权/会话存储** —— 持久化 `OAuth2Authorization` / consent（当前为内存），使令牌可跨重启存活。
 - [ ] **`nitrowater-web` OIDC 客户端** —— 接入 `oidc-client-ts`（`/auth/callback`、silent renew、登出）。
+- [ ] **端到端取证** —— 跑完整授权码流，解码令牌校验 `sub/uid/preferred_username/roles/did`。
 - [ ] **WaterFun 网关切换** —— 验签公钥改 JWKS；置顶新增 `/api/auth/** → SSO` 路由；校对白名单路径。
 
 **其它模块（尚未开始）：**

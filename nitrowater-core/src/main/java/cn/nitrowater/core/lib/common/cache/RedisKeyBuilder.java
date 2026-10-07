@@ -9,9 +9,9 @@ public final class RedisKeyBuilder {
 
     /**
      * Builds a Redis key by joining {@code segments} with {@code ':'} and
-     * prepending the global ROOT namespace ({@code waterfun:biz:}).
+     * prepending the global ROOT namespace ({@code nitrowater:biz:}).
      * <p>All business Redis keys MUST go through this method so that the ROOT
-     * prefix is applied uniformly, separating business keys from {@code waterfun:cache:*}.</p>
+     * prefix is applied uniformly, separating business keys from {@code nitrowater:cache:*}.</p>
      */
     public static String build(Object... segments) {
         if (segments == null || segments.length == 0) return "";

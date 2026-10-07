@@ -40,7 +40,7 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
 | Module | Role | Status |
 |---|---|---|
 | `nitrowater-core` | Shared library (entities, repositories, auth services, security utils). No standalone deployment. | ✅ auth core migrated |
-| `nitrowater-account` | **SSO / OIDC identity center** — login/register API + OIDC Provider + hosted login page | ✅ Phase 1 done · 🚧 Phase 2 OIDC skeleton |
+| `nitrowater-account` | **SSO / OIDC identity center** — login/register API + OIDC Provider + hosted login page | ✅ Phase 1 done · 🚧 Phase 2 (auth-code + JDBC persistence; SPA + gateway pending) |
 | `nitrowater-server` | Business API — toolbox backend, problem/submission management, static hosting, Resource Server | ⏳ skeleton only |
 | `nitrowater-web` | Front-end (Vue 3 + TypeScript + Vite) — navigation portal, toolbox, playground, docs channel, SSO login | ⏳ scaffold (not wired to Gradle) |
 | `nitrowater-judge` | Coding playground judge service (compile → sandbox → judge) | ⏳ planned (module not created) |
@@ -63,15 +63,15 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
   - Hosted SSO login page at `/login`;
   - In-memory `RegisteredClient` for `nitrowater-web` (public client, PKCE, auth-code + refresh-token);
   - Verified endpoints: `/.well-known/openid-configuration` → 200, `/login` → 200, `/api/auth/captcha` → 200.
+- **Phase 2.4 — token customizer & login principal** — `SsoUserPrincipal` carries the full identity (uid / login name / nickname / userType / status / device); roles derive from `userType` (no hard-coded `ROLE_USER`); `OAuth2TokenCustomizer` emits `sub=uid`, `uid`, `preferred_username`, `name`, `roles`, `did` (also surfaced via `/userinfo`).
+- **Phase 2.5 — AS JDBC persistence (Scheme A)** — OIDC clients / authorizations / consents now persist through Spring Authorization Server's standard JDBC tables (`oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`, migration `V1_1__oauth2_oidc_role.sql`); the `nitrowater-web` client is seeded idempotently at startup.
 
 ### 🚧 In Progress / Unfinished
 
 **Phase 2 — complete real OIDC single sign-on** (next milestone):
 
-- [ ] **Token customizer** — formalize `sub = uid` and add custom claims (`jti`, `did`) to access/id tokens.
-- [ ] **`oidc_client` table** — replace the in-memory `RegisteredClientRepository` with a JDBC-backed one; register clients per integrating project (redirect-URI whitelist, PKCE enforced).
-- [ ] **JDBC authorization/session storage** — persist `OAuth2Authorization` / consent (currently in-memory) so tokens survive restarts.
 - [ ] **`nitrowater-web` OIDC client** — integrate `oidc-client-ts` (`/auth/callback`, silent renew, logout).
+- [ ] **End-to-end proof** — run the full authorization-code flow and decode a token to verify `sub/uid/preferred_username/roles/did`.
 - [ ] **WaterFun gateway switch** — point signature verification at JWKS; add route `/api/auth/** → SSO` at the top; align whitelist paths.
 
 **Other modules (not started):**

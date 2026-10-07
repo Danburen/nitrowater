@@ -17,7 +17,7 @@ import java.time.Duration;
  * <p>Used for sensitive operations (change phone/email, reset password, etc.)
  * to prove the user has completed a fresh SMS/email verification.</p>
  *
- * Redis key: {@code waterfun:biz:op:re-auth:{scene}:{uuid}}
+ * Redis key: {@code nitrowater:biz:op:re-auth:{scene}:{uuid}}
  * Value: userUid (String)
  * TTL: 5 minutes, consumed on first use ({@link SingleUseTokenService#consumeVerifyToken}).
  */
