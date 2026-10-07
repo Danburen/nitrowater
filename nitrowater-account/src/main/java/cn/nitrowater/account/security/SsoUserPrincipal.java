@@ -1,8 +1,12 @@
 package cn.nitrowater.account.security;
 
-import cn.nitrowater.core.lib.entity.user.AccountStatus;
-import cn.nitrowater.core.lib.entity.user.User;
-import cn.nitrowater.core.lib.entity.user.UserType;
+import cn.nitrowater.core.entity.user.AccountStatus;
+import cn.nitrowater.core.entity.user.User;
+import cn.nitrowater.core.entity.user.UserType;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -13,24 +17,27 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * SSO 登录主体（Spring Security principal）。
+ * Phase 2.4: SSO login principal.
  *
- * <p>承载完整身份上下文，供 OIDC 令牌 claim 映射：{@code preferred_username / name / roles / did}。</p>
+ * <p>Carries the identity context used by token customization
+ * ({@code preferred_username / name / roles / did}).</p>
  *
- * <p><b>为什么 {@link #getUsername()} 返回 uid</b>：Spring Authorization Server 默认以
- * {@code principal.getName()} 作为令牌的 {@code sub}。返回 uid 可保证 {@code sub = uid}，
- * 与 Phase 1 自研 JWT（{@code sub=uid}）及 WaterFun 网关注入的 {@code X-User-Uid} 对齐——这是
- * 迁移方案里 sub 语义的硬约束，不是随意选择。</p>
+ * <p>Stored by Spring Authorization Server's JDBC store (default typing), so it must be
+ * Jackson-constructible: the creator + JsonIgnore'd computed getters keep the persisted
+ * JSON to the 8 fields below.</p>
  *
- * <p>登录名（用户输入的用户名）另存于 {@link #loginName}，作为 {@code preferred_username} 输出。</p>
+ * <p>{@link #getUsername()} returns uid on purpose: Spring Authorization Server uses
+ * {@code principal.getName()} as the token {@code sub}, keeping {@code sub = uid}
+ * aligned with the Phase 1 JWT and the WaterFun gateway {@code X-User-Uid}.</p>
  */
 @Getter
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SsoUserPrincipal implements UserDetails {
 
-    /** 账号 uid（Sub 语义）。 */
+    /** Account uid (token sub). */
     private final long uid;
 
-    /** 登录名（username），映射为 preferred_username claim。 */
+    /** Login name, mapped to the preferred_username claim. */
     private final String loginName;
 
     private final String nickname;
@@ -39,15 +46,25 @@ public class SsoUserPrincipal implements UserDetails {
 
     private final AccountStatus accountStatus;
 
-    /** 本次登录的设备指纹（可选）。 */
+    /** Device fingerprint of this login (optional). */
     private final String deviceFp;
 
-    /** 设备标识 did = HMAC(salt, dfp + uid)（可选，映射为 did claim）。 */
+    /** Device id = HMAC(salt, dfp + uid) (optional, mapped to the did claim). */
     private final String did;
 
-    public SsoUserPrincipal(long uid, String loginName, String nickname,
-                            UserType userType, AccountStatus accountStatus,
-                            String deviceFp, String did) {
+    /** Role codes bound via user_role (Phase 2.5). */
+    private final List<String> roleCodes;
+
+    @JsonCreator
+    public SsoUserPrincipal(
+            @JsonProperty("uid") long uid,
+            @JsonProperty("loginName") String loginName,
+            @JsonProperty("nickname") String nickname,
+            @JsonProperty("userType") UserType userType,
+            @JsonProperty("accountStatus") AccountStatus accountStatus,
+            @JsonProperty("deviceFp") String deviceFp,
+            @JsonProperty("did") String did,
+            @JsonProperty("roleCodes") List<String> roleCodes) {
         this.uid = uid;
         this.loginName = loginName;
         this.nickname = nickname;
@@ -55,10 +72,11 @@ public class SsoUserPrincipal implements UserDetails {
         this.accountStatus = accountStatus;
         this.deviceFp = deviceFp;
         this.did = did;
+        this.roleCodes = roleCodes == null ? new ArrayList<>() : new ArrayList<>(roleCodes);
     }
 
-    /** 从登录返回的用户实体构建，补上设备信息。 */
-    public static SsoUserPrincipal of(User user, String deviceFp, String did) {
+    /** Builds the principal from the login user plus device and role context. */
+    public static SsoUserPrincipal of(User user, String deviceFp, String did, List<String> roleCodes) {
         return new SsoUserPrincipal(
                 user.getUid(),
                 user.getUsername(),
@@ -66,55 +84,66 @@ public class SsoUserPrincipal implements UserDetails {
                 user.getUserType(),
                 user.getAccountStatus(),
                 deviceFp,
-                did);
+                did,
+                roleCodes);
     }
 
-    /** 展示名：昵称优先，回落登录名。 */
+    /** Display name: nickname first, fallback to login name. */
+    @JsonIgnore
     public String getDisplayName() {
         return (nickname != null && !nickname.isBlank()) ? nickname : loginName;
     }
 
-    /** 角色集：始终含 {@code ROLE_USER}，管理/运营类按 userType 追加（不再写死单一角色）。 */
+    /** Authorities: ROLE_ prefixed role codes; defaults to ROLE_USER when none bound. */
+    @JsonIgnore
     public List<String> getRoles() {
-        List<String> roles = new ArrayList<>();
-        roles.add("ROLE_USER");
-        if (userType != null && userType != UserType.COMMON) {
-            roles.add("ROLE_" + userType.name());
+        if (roleCodes.isEmpty()) {
+            return List.of("ROLE_USER");
         }
-        return roles;
+        return roleCodes.stream()
+                .map(code -> code.startsWith("ROLE_") ? code : "ROLE_" + code)
+                .distinct()
+                .toList();
     }
 
+    @JsonIgnore
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return getRoles().stream().map(SimpleGrantedAuthority::new).toList();
     }
 
+    @JsonIgnore
     @Override
     public String getPassword() {
         return null;
     }
 
-    /** 刻意返回 uid —— 保证 OIDC {@code sub = uid}。 */
+    /** Returns uid so the OIDC sub equals uid. */
+    @JsonIgnore
     @Override
     public String getUsername() {
         return String.valueOf(uid);
     }
 
+    @JsonIgnore
     @Override
     public boolean isAccountNonExpired() {
         return true;
     }
 
+    @JsonIgnore
     @Override
     public boolean isAccountNonLocked() {
         return accountStatus != AccountStatus.SUSPENDED;
     }
 
+    @JsonIgnore
     @Override
     public boolean isCredentialsNonExpired() {
         return true;
     }
 
+    @JsonIgnore
     @Override
     public boolean isEnabled() {
         return accountStatus == AccountStatus.ACTIVE;

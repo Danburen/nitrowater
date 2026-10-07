@@ -50,7 +50,7 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
 ### ✅ 已完成
 
 - **工程基线（M0）** —— Gradle 多模块（`core` / `account` / `server`），Java 25 + Spring Boot 4.1.1，`gradlew build` 全绿；修复 Gradle wrapper 下载超时与悬空的 `waterfun-core` 依赖。
-- **认证核心迁移** —— WaterFun 的 `common-lib` + `service-core` 认证切片 + `exception` 整树（约 203 个文件）迁入 `nitrowater-core`（`cn.nitrowater.core.lib`），并砍除业务耦合（以 `TODO(SSO)` 标记）。`core` 为**纯库**（`bootJar` 已禁用）。
+- **认证核心迁移** —— WaterFun 的 `common-lib` + `service-core` 认证切片 + `exception` 整树（约 203 个文件）迁入 `nitrowater-core`（`cn.nitrowater.core`），并砍除业务耦合（以 `TODO(SSO)` 标记）。`core` 为**纯库**（`bootJar` 已禁用）。
 - **Phase 1 —— 独立 SSO 服务**（`nitrowater-account`）—— `/api/auth/**` 契约与 WaterFun 完全一致（前端/网关零改动）。端到端冒烟通过：
   `captcha → send-code → register → /account → 无 token 401 → refresh → logout`。
   Phase 1 **刻意不引入 Spring Security**：自研双 token（RS256 JWT + RT HttpOnly Cookie）+ `LocalAuthContextFilter`（AT → `UserCtxHolder`）+ 401 守卫。
@@ -63,7 +63,7 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
   - 托管 SSO 登录页 `/login`；
   - 为 `nitrowater-web` 注册的客户端（公共客户端、PKCE、授权码 + 刷新令牌），Phase 2.5 起改 JDBC 持久化；
   - 已验证端点：`/.well-known/openid-configuration` → 200、`/login` → 200、`/api/auth/captcha` → 200。
-- **Phase 2.4 —— 令牌定制与登录主体** —— `SsoUserPrincipal` 承载完整身份（uid / 登录名 / 昵称 / userType / 状态 / 设备）；角色由 `userType` 派生（不再写死 `ROLE_USER`）；`OAuth2TokenCustomizer` 输出 `sub=uid`、`uid`、`preferred_username`、`name`、`roles`、`did`（并经 `/userinfo` 暴露）。
+- **Phase 2.4 —— 令牌定制与登录主体** —— `SsoUserPrincipal` 承载完整身份（uid / 登录名 / 昵称 / userType / 状态 / 设备）；`OAuth2TokenCustomizer` 输出 `sub=uid`、`uid`、`preferred_username`、`name`、`roles`、`did`（并经 `/userinfo` 暴露）；角色自 Phase 2.5 起由 `user_role` 表派生，无绑定时回落 `ROLE_USER`。
 - **Phase 2.5 —— AS JDBC 持久化（方案 A）** —— OIDC 客户端/授权/同意改用 Spring AS 标准表持久化（`oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`，迁移 `V1_1__oauth2_oidc_role.sql`）；`nitrowater-web` 客户端启动时幂等播种。
 
 ### 🚧 进行中 / 未完成

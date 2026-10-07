@@ -50,7 +50,7 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
 ### ✅ Completed
 
 - **Project baseline (M0)** — Gradle multi-module (`core` / `account` / `server`), Java 25 + Spring Boot 4.1.1, `gradlew build` green; Gradle wrapper timeout and dangling `waterfun-core` dependencies fixed.
-- **Auth core migration** — WaterFun's `common-lib` + `service-core` auth slice + `exception` tree (~203 files) migrated into `nitrowater-core` (`cn.nitrowater.core.lib`), with business coupling removed (`TODO(SSO)` markers). `core` is a **pure library** (`bootJar` disabled).
+- **Auth core migration** — WaterFun's `common-lib` + `service-core` auth slice + `exception` tree (~203 files) migrated into `nitrowater-core` (`cn.nitrowater.core`), with business coupling removed (`TODO(SSO)` markers). `core` is a **pure library** (`bootJar` disabled).
 - **Phase 1 — independent SSO service** (`nitrowater-account`) — the `/api/auth/**` contract is unchanged from WaterFun (zero front-end / gateway change). End-to-end smoke passed:
   `captcha → send-code → register → /account → 401 guard → refresh → logout`.
   Phase 1 deliberately does **not** use Spring Security: it ships a self-built dual-token flow (RS256 JWT + RT HttpOnly cookie) plus a `LocalAuthContextFilter` (AT → `UserCtxHolder`) and a 401 guard.
@@ -63,7 +63,7 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
   - Hosted SSO login page at `/login`;
   - In-memory `RegisteredClient` for `nitrowater-web` (public client, PKCE, auth-code + refresh-token);
   - Verified endpoints: `/.well-known/openid-configuration` → 200, `/login` → 200, `/api/auth/captcha` → 200.
-- **Phase 2.4 — token customizer & login principal** — `SsoUserPrincipal` carries the full identity (uid / login name / nickname / userType / status / device); roles derive from `userType` (no hard-coded `ROLE_USER`); `OAuth2TokenCustomizer` emits `sub=uid`, `uid`, `preferred_username`, `name`, `roles`, `did` (also surfaced via `/userinfo`).
+- **Phase 2.4 — token customizer & login principal** — `SsoUserPrincipal` carries the full identity (uid / login name / nickname / userType / status / device); `OAuth2TokenCustomizer` emits `sub=uid`, `uid`, `preferred_username`, `name`, `roles`, `did` (also surfaced via `/userinfo`). Roles come from the `user_role` table (Phase 2.5), falling back to `ROLE_USER` when none bound.
 - **Phase 2.5 — AS JDBC persistence (Scheme A)** — OIDC clients / authorizations / consents now persist through Spring Authorization Server's standard JDBC tables (`oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`, migration `V1_1__oauth2_oidc_role.sql`); the `nitrowater-web` client is seeded idempotently at startup.
 
 ### 🚧 In Progress / Unfinished

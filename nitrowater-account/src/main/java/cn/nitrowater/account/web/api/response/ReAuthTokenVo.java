@@ -3,7 +3,7 @@ package cn.nitrowater.account.web.api.response;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import cn.nitrowater.core.lib.common.TokenResult;
+import cn.nitrowater.core.common.TokenResult;
 
 @Data
 @AllArgsConstructor

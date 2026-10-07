@@ -1,0 +1,40 @@
+package cn.nitrowater.core.infrastructure.security;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.core.exception.BizException;
+import cn.nitrowater.core.exception.ServiceException;
+import cn.nitrowater.core.infrastructure.utils.context.UserContext;
+
+@Deprecated
+public final class AuthContextHelper {
+    public static Jwt getCurrentJwt() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getDetails() instanceof Jwt) {
+            return (Jwt) authentication.getDetails();
+        }
+        return null;
+    }
+
+    public static String getCurrentClaim(String claimName) {
+        Jwt jwt = getCurrentJwt();
+        if(jwt == null){
+            throw new BizException(BaseResponseCode.HTTP_UNAUTHORIZED);
+        }
+        if(jwt.getClaim(claimName) == null){
+            throw new ServiceException("Claim not found");
+        }
+        return  jwt.getClaim(claimName);
+    }
+
+    public static Long getCurrentUserUid() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if(authentication != null && authentication.getPrincipal() instanceof UserContext ctx){
+            return ctx.getUserUid();
+        }else{
+            throw new BizException(BaseResponseCode.HTTP_UNAUTHORIZED);
+        }
+    }
+}

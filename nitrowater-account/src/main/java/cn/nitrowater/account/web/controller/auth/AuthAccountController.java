@@ -12,21 +12,21 @@ import cn.nitrowater.account.web.api.response.EmailChangeVo;
 import cn.nitrowater.account.web.api.response.PhoneChangeVo;
 import cn.nitrowater.account.web.api.response.ReAuthInfoResp;
 import cn.nitrowater.account.web.api.response.ReAuthTokenVo;
-import cn.nitrowater.core.lib.api.ApiResponse;
-import cn.nitrowater.core.lib.common.TokenResult;
-import cn.nitrowater.core.lib.utils.MaskUtil;
-import cn.nitrowater.core.lib.api.auth.VerifyChannel;
-import cn.nitrowater.core.lib.api.auth.VerifyScene;
-import cn.nitrowater.core.lib.api.resp.AccountResp;
-import cn.nitrowater.core.lib.api.resp.auth.CodeResult;
-import cn.nitrowater.core.lib.infrastructure.aspect.RateLimit;
-import cn.nitrowater.core.lib.infrastructure.utils.CookieUtil;
-import cn.nitrowater.core.lib.infrastructure.utils.ResponseUtil;
-import cn.nitrowater.core.lib.infrastructure.utils.context.UserCtxHolder;
-import cn.nitrowater.core.lib.services.account.AccountCoreService;
-import cn.nitrowater.core.lib.services.auth.SingleUseTokenService;
-import cn.nitrowater.core.lib.services.auth.code.VerificationService;
-import cn.nitrowater.core.lib.services.user.UserDatumCoreService;
+import cn.nitrowater.core.api.ApiResponse;
+import cn.nitrowater.core.common.TokenResult;
+import cn.nitrowater.core.utils.MaskUtil;
+import cn.nitrowater.core.api.auth.VerifyChannel;
+import cn.nitrowater.core.api.auth.VerifyScene;
+import cn.nitrowater.core.api.resp.AccountResp;
+import cn.nitrowater.core.api.resp.auth.CodeResult;
+import cn.nitrowater.core.infrastructure.aspect.RateLimit;
+import cn.nitrowater.core.infrastructure.utils.CookieUtil;
+import cn.nitrowater.core.infrastructure.utils.ResponseUtil;
+import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;
+import cn.nitrowater.core.services.account.AccountCoreService;
+import cn.nitrowater.core.services.auth.SingleUseTokenService;
+import cn.nitrowater.core.services.auth.code.VerificationService;
+import cn.nitrowater.core.services.user.UserDatumCoreService;
 
 @Slf4j
 @RestController

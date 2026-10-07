@@ -78,7 +78,7 @@
 | 模块                  | 现有依赖                                                                     | 当前状态（2026-10-07）   | 目标职责                                        |
 | ------------------- | ------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------- |
 | `nitrowater-account` | `webmvc`、`spring-security-crypto`、`spring-security-oauth2-jose`、`nitrowater-core`（Phase 1 未引 security web；Phase 2 恢复 AS） | **Phase 1 已落地**：控制器/DTO/配置/安全就绪，编译绿、IDEA 启动通过；SSO 库 6 表已建（§9.2.1） | **SSO 认证中心**（Phase 1 自研认证 API；Phase 2 OIDC Provider） |
-| `nitrowater-core`    | `data-jpa`、`data-redis`、`jdbc`、MySQL 驱动、`spring-security`(core/oauth2-jose/web)、`spring-web`、`jakarta.servlet-api`、jackson2、`hutool-captcha`、`jbcrypt`、`jjwt`、validation、cache、flyway、Lombok（**纯库，bootJar 已禁用**） | **认证核心库已迁入**：waterfun `common-lib` 全量 51 文件 + 认证切片 100 文件 + exception 整树 60 文件 → `cn.nitrowater.core.lib`；业务耦合已砍（`TODO(SSO)` 标记）；`compileJava` 0 错 | **共享核心库**：实体、仓储、认证/判题共用服务（不独立部署）             |
+| `nitrowater-core`    | `data-jpa`、`data-redis`、`jdbc`、MySQL 驱动、`spring-security`(core/oauth2-jose/web)、`spring-web`、`jakarta.servlet-api`、jackson2、`hutool-captcha`、`jbcrypt`、`jjwt`、validation、cache、flyway、Lombok（**纯库，bootJar 已禁用**） | **认证核心库已迁入**：waterfun `common-lib` 全量 51 文件 + 认证切片 100 文件 + exception 整树 60 文件 → `cn.nitrowater.core`；业务耦合已砍（`TODO(SSO)` 标记）；`compileJava` 0 错 | **共享核心库**：实体、仓储、认证/判题共用服务（不独立部署）             |
 | `nitrowater-server`  | `webmvc`                                                                 | 空骨架    | **业务 API**：wtools 后端接口、题目/提交管理、静态资源托管          |
 | `nitrowater-web`  ★新增 | Vue 3 + TypeScript + Vite 8（`package.json name=nitrowater-web`，2026-10-07 14:17 新建，仅 Vue 依赖） | 空脚手架（默认 HelloWorld）    | **复合前端**：导航门户 + 工具箱（wtools）+ 演练场 + **文档频道（velochatx-docs 产物）** + SSO 登录/回调页 |
 
@@ -87,7 +87,7 @@
   2. 删除两处悬空依赖 `implementation ':waterfun-core'`（骨架拷贝自 WaterFun 时遗留，模块不存在）；
   3. 根工程 `group` 由 `org.waterfun.lib.waterfun` 统一为 `cn.nitrowater`；
   4. `nitrowater-core` 补测试专用数据源配置（内存 H2 + `testRuntimeOnly h2`），使 `contextLoads` 不依赖外部 MySQL；
-  5. **SSO 认证核心库收束迁移**（全拷收束方案）：waterfun `common-lib` 全量 + `service-core` 认证切片 + exception 整树（210+ Java 文件）迁入 `cn.nitrowater.core.lib`，包名 `org.waterfun.* → cn.nitrowater.core.lib`；业务实体、云 SDK 通道、业务 Controller 一律不拷；
+  5. **SSO 认证核心库收束迁移**（全拷收束方案）：waterfun `common-lib` 全量 + `service-core` 认证切片 + exception 整树（210+ Java 文件）迁入 `cn.nitrowater.core`，包名 `org.waterfun.* → cn.nitrowater.core`；业务实体、云 SDK 通道、业务 Controller 一律不拷；
   6. **core 纯库化**：删除 Spring Boot 启动类与上下文测试、禁用 `bootJar`（恢复 plain jar）；`Login/Register/Account` 三服务砍除 stats/audit/online/role 业务耦合，恢复点以 `TODO(SSO)` 标记；
   7. **验证结果：`:nitrowater-core:compileJava` 101 错误 → 0；`gradlew build` BUILD SUCCESSFUL（3 模块，20 task，全绿）**；
   8. **v1.2 评审补充**：完成与 WaterFun 认证三件套（登录/注册/验证码）逐接口对照，确认 `nitrowater-core` 已具备认证服务层（Login/Register/Account/AccessToken/Device/Captcha/Verification/SingleUseToken），并盘点出 account 落地的 **9 项缺口**（§9.1）；纳入 velochatx-docs 整合诉求。
@@ -222,7 +222,7 @@ nitrowater（Gradle monorepo）
 | 层    | 选型                                                                 |
 | ---- | ------------------------------------------------------------------ |
 | 后端   | Spring Boot 4.1.1 / Java 25 / Spring Security + OAuth2 Authorization Server |
-| 认证   | OIDC（PKCE）、RS256 JWT、JWKS `/.well-known/jwks.json`                |
+| 认证   | OIDC（PKCE）、RS256 JWT、JWKS `/oauth2/jwks`                |
 | 存储   | MySQL 8（SSO 库 + 业务库分库）、Redis（AT jti / RT family / 验证码 / 判题会话）  |
 | 判题   | MVP：受限子进程；目标态：Docker API（每任务容器、资源限额、网络 drop）                        |
 | 前端   | Vue 3 + TypeScript + Vite 8 + Element Plus + CodeMirror 6（沿用 wtools）  |
@@ -327,7 +327,7 @@ nitrowater（Gradle monorepo）
 | POST   | `/api/auth/forgot-password/**`                    | 找回密码链路          | 公开  |
 | GET    | `/api/auth/account`                               | 当前账号信息          | AT   |
 | GET    | `/.well-known/openid-configuration`               | OIDC 元数据         | 公开  |
-| GET    | `/.well-known/jwks.json`                          | 公钥集             | 公开  |
+| GET    | `/oauth2/jwks`                          | 公钥集             | 公开  |
 | POST   | `/oauth2/token`、`/oauth2/revoke`                 | 授权码换 token / 撤销 | client |
 
 ### 7.2 演练场判题（`/api/judge/**`，归属 nitrowater-judge）
@@ -413,7 +413,7 @@ nitrowater（Gradle monorepo）
 | # | 缺口 | 说明 |
 | --- | --- | --- |
 | 1 | account 依赖 | `build.gradle` 未依赖 `:nitrowater-core`，且缺 jpa/redis/jdbc/validation/cache/flyway/mysql/jjwt/hutool/jbcrypt/lombok（Gradle `implementation` 不传递 → 需在 account 重声明，或把 core 改 `java-library`+`api`，见 N6） |
-| 2 | 启动扫描 | `@SpringBootApplication` 仅扫 `cn.nitrowater.account` → 需 `scanBasePackages="cn.nitrowater"` + `@EntityScan`/`@EnableJpaRepositories` 指向 `core.lib` |
+| 2 | 启动扫描 | `@SpringBootApplication` 仅扫 `cn.nitrowater.account` → 需 `scanBasePackages="cn.nitrowater"` + `@EntityScan`/`@EnableJpaRepositories` 指向 `cn.nitrowater.core` |
 | 3 | `@RateLimit` / `RateLimitAspect` | 控制器方法级限流注解与切面未迁（依赖 Redis） |
 | 4 | `CodeSender` 实现 | 短信/邮箱发码实现（`AliyunSmsService` / `Resend`/`SpringEmail`）未迁 → `CodeSenderFactory` 空绑定触发 `CHANNEL_NOT_SUPPORT`。决策 N4：先落 `ConsoleCodeSender` 打通链路 |
 | 5 | 控制器 | `AuthController`、`AuthAccountController` 未迁（waterfun-service web 层） |
@@ -497,7 +497,7 @@ nitrowater（Gradle monorepo）
 
 #### 9.2.8 Phase 2.4 落地结果（令牌定制 / 登录主体）
 
-- **登录主体**：新增 `cn.nitrowater.account.security.SsoUserPrincipal`（`UserDetails`），承载 uid / 登录名 / 昵称 / userType / accountStatus / deviceFp / did；`getUsername()` 返回 uid（保证 `sub=uid`）；`getAuthorities()` 由 userType 派生（不再写死 `ROLE_USER`）。
+- **登录主体**：新增 `cn.nitrowater.account.security.SsoUserPrincipal`（`UserDetails`），承载 uid / 登录名 / 昵称 / userType / accountStatus / deviceFp / did；`getUsername()` 返回 uid（保证 `sub=uid`）；`getAuthorities()` 由 `user_role` 派生（Phase 2.5 起，原为 userType；无绑定回落 `ROLE_USER`）。
 - **认证委托**：`SsoAuthenticationProvider` 由 `LoginResult.user()` 构造该主体，`did` 经 `DeviceService.calculaateDid(uid, dfp)` 计算（纯 HMAC，不依赖 Redis）。
 - **令牌定制**：`OAuth2TokenCustomizer<JwtEncodingContext>` 输出 `sub=uid`、`uid`、`preferred_username`、`name`、`roles`、`did`；经默认 `/userinfo`（由 id_token claims 映射）自动暴露。
 - **核实纠正**：AS 刷新链路会把授权记录中的 `java.security.Principal`（资源所有者）重新注入 token 上下文，故默认 `sub` 本就是 uid；customizer 的价值是**显式保证 + 扩展 claim**，并非修 bug。

@@ -21,6 +21,11 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.lob.DefaultLobHandler;
+import org.springframework.security.jackson.SecurityJacksonModules;
+import tools.jackson.databind.JacksonModule;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
@@ -48,6 +53,7 @@ import java.security.PublicKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -105,10 +111,37 @@ public class AuthorizationServerConfig {
         return new JdbcRegisteredClientRepository(jdbcTemplate);
     }
 
+    /**
+     * Phase 2.5: JDBC authorization store. The default AS mapper denies the custom
+     * {@link SsoUserPrincipal} type, so a mapper allowing our package is supplied.
+     */
     @Bean
+    @SuppressWarnings("deprecation") // AS JDBC mapper requires the deprecated LobHandler API
     public OAuth2AuthorizationService authorizationService(JdbcTemplate jdbcTemplate,
             RegisteredClientRepository registeredClientRepository) {
-        return new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository);
+        JdbcOAuth2AuthorizationService service =
+                new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository);
+        JsonMapper jsonMapper = authorizationJsonMapper();
+
+        JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationRowMapper rowMapper =
+                new JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationRowMapper(
+                        registeredClientRepository, jsonMapper);
+        rowMapper.setLobHandler(new DefaultLobHandler());
+        service.setAuthorizationRowMapper(rowMapper);
+
+        JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationParametersMapper parametersMapper =
+                new JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationParametersMapper(jsonMapper);
+        service.setAuthorizationParametersMapper(parametersMapper);
+        return service;
+    }
+
+    /** Authorization JSON mapper that allows the SSO principal package. */
+    static JsonMapper authorizationJsonMapper() {
+        ClassLoader classLoader = JdbcOAuth2AuthorizationService.class.getClassLoader();
+        BasicPolymorphicTypeValidator.Builder validatorBuilder = BasicPolymorphicTypeValidator.builder();
+        List<JacksonModule> modules = SecurityJacksonModules.getModules(classLoader, validatorBuilder);
+        validatorBuilder.allowIfSubType("cn.nitrowater.account.");
+        return JsonMapper.builder().addModules(modules).build();
     }
 
     @Bean
