@@ -1,0 +1,45 @@
+# ============================================================
+# nitrowater-server（业务 API + OAuth2 Resource Server）
+# 业务库与 SSO 库【隔离】：两者仅通过 uid 做逻辑关联，不建跨库 FK。
+# ============================================================
+
+server:
+  port: 8081
+
+spring:
+  application:
+    name: nitrowater-server
+
+  # -------- 业务库（独立于 SSO 库 nitrowater；首次连接自动建库）--------
+  datasource:
+    url: jdbc:mysql://localhost:3306/nitrowater_biz?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    username: root
+    password: "123456"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # -------- JPA（业务表结构由迁移管理，不自动改结构）--------
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+  # -------- 业务表迁移（M2 设计业务表后启用；当前无业务迁移）--------
+  flyway:
+    enabled: false
+
+  # -------- OAuth2 Resource Server：校验 SSO(AS) 签发的 JWT（JWKS 验签）--------
+  # issuer 必须等于 AS 的 issuer（= nitrowater-account 的 jwt.issuer）。生产设 JWT_ISSUER=https://auth.nitrowater.cn。
+  # 显式给出 jwk-set-uri：避免启动时强制 OIDC discovery（AS 未起也能启动，首个请求时才拉 JWKS）。
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER:http://localhost:8090}
+          jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
+
+logging:
+  level:
+    root: INFO
+    org.springframework.security: WARN
+    org.springframework.orm.jpa: WARN
+    org.hibernate: WARN

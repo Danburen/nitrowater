@@ -11,9 +11,9 @@ spring:
   application:
     name: nitrowater-account
 
-  # -------- 数据源（SSO 库：nitrowater；首次连接自动建库）--------
+  # -------- 数据源（SSO 库：nitrowater_account，与业务库 nitrowater_biz 物理隔离；首次连接自动建库）--------
   datasource:
-    url: jdbc:mysql://localhost:3306/nitrowater?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/nitrowater_account?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true
     username: root
     password: "123456"
     driver-class-name: com.mysql.cj.jdbc.Driver
