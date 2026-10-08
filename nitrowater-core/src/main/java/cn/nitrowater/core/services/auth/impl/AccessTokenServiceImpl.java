@@ -24,6 +24,11 @@ import cn.nitrowater.core.services.auth.DeviceService;
 import java.time.Duration;
 import java.util.*;
 
+/**
+ * @deprecated Phase-1 AT/RT shim, superseded by the OIDC provider (Spring Authorization Server).
+ *             See {@link AccessTokenService}.
+ */
+@Deprecated
 @Service
 @Slf4j
 public class AccessTokenServiceImpl implements AccessTokenService {

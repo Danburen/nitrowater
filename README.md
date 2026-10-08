@@ -40,9 +40,9 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
 | Module | Role | Status |
 |---|---|---|
 | `nitrowater-core` | Shared library (entities, repositories, auth services, security utils). No standalone deployment. | ✅ auth core migrated |
-| `nitrowater-account` | **SSO / OIDC identity center** — login/register API + OIDC Provider + hosted login page | ✅ Phase 1 done · 🚧 Phase 2 (auth-code + JDBC persistence; SPA + gateway pending) |
+| `nitrowater-account` | **SSO / OIDC identity center** — login/register API + OIDC Provider + hosted login page | ✅ Phase 1 done · ✅ Phase 2.5 (JDBC + token customizer) · 🚧 gateway pending |
 | `nitrowater-server` | Business API — toolbox backend, problem/submission management, static hosting, Resource Server | ⏳ skeleton only |
-| `nitrowater-web` | Front-end (Vue 3 + TypeScript + Vite) — navigation portal, toolbox, playground, docs channel, SSO login | ⏳ scaffold (not wired to Gradle) |
+| `nitrowater-web` | Front-end (Vue 3 + TypeScript + Vite) — navigation portal, toolbox, playground, docs channel, SSO login | 🚧 Phase 2.6: OIDC client (`oidc-client-ts`) + portal shell done · toolbox/playground/docs pending |
 | `nitrowater-judge` | Coding playground judge service (compile → sandbox → judge) | ⏳ planned (module not created) |
 
 ## Status
@@ -65,13 +65,17 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
   - Verified endpoints: `/.well-known/openid-configuration` → 200, `/login` → 200, `/api/auth/captcha` → 200.
 - **Phase 2.4 — token customizer & login principal** — `SsoUserPrincipal` carries the full identity (uid / login name / nickname / userType / status / device); `OAuth2TokenCustomizer` emits `sub=uid`, `uid`, `preferred_username`, `name`, `roles`, `did` (also surfaced via `/userinfo`). Roles come from the `user_role` table (Phase 2.5), falling back to `ROLE_USER` when none bound.
 - **Phase 2.5 — AS JDBC persistence (Scheme A)** — OIDC clients / authorizations / consents now persist through Spring Authorization Server's standard JDBC tables (`oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`, migration `V1_1__oauth2_oidc_role.sql`); the `nitrowater-web` client is seeded idempotently at startup.
+- **Phase 2.6 — `nitrowater-web` OIDC client + SSO portal shell** — Vue 3 + `vue-router` + `oidc-client-ts` (authorization-code + PKCE, silent renew, logout); the portal home is built with **Element Plus** and displays the live token claims (`uid` / `roles` / `did` / `iss`). ESLint (flat config: TS + Vue) wired in (`npm run lint`).
+- **SSO hosted login / register UI** — branded pages served by the AS on the auth origin (WaterFun `AuthBox` style, no framework): `GET /login` (native form POST → Spring Security → resumes the OIDC request) and `GET /register` (calls `/api/auth/**`). Identity UI lives in the identity center; `nitrowater-web` stays a business client.
+- **Unified issuer** — a single `jwt.issuer` (env `JWT_ISSUER`, dev default `http://localhost:8090`) is shared by the Phase-1 AT and the AS, and equals the OIDC discovery `issuer`; it must equal the SPA's `VITE_OIDC_AUTHORITY`.
+- **AT/RT deprecated** — the Phase-1 self-built token services (`AccessTokenService`, `AuthCoreService`) are marked `@Deprecated` (superseded by OIDC); retained only for the `/api/auth/**` compatibility layer.
 
 ### 🚧 In Progress / Unfinished
 
 **Phase 2 — complete real OIDC single sign-on** (next milestone):
 
-- [ ] **`nitrowater-web` OIDC client** — integrate `oidc-client-ts` (`/auth/callback`, silent renew, logout).
-- [ ] **End-to-end proof** — run the full authorization-code flow and decode a token to verify `sub/uid/preferred_username/roles/did`.
+- [x] **`nitrowater-web` OIDC client** — `oidc-client-ts` (`/auth/callback`, silent renew, logout) — done.
+- [x] **End-to-end proof** — server-side auth-code flow verified (`deploy/bin/smoke-oidc.ps1`): `sub/uid/preferred_username/roles/did`.
 - [ ] **WaterFun gateway switch** — point signature verification at JWKS; add route `/api/auth/** → SSO` at the top; align whitelist paths.
 
 **Other modules (not started):**
@@ -113,7 +117,7 @@ Runtime (production): a gateway is the trust boundary; `/api/auth/**` routes to 
 ## Tech Stack
 
 - **Backend**: Java 25, Spring Boot 4.1.1, Spring Security 7 + Spring Authorization Server 7 (OIDC), JPA + MySQL 8, Redis, Flyway.
-- **Frontend**: Vue 3 + TypeScript + Vite, `oidc-client-ts`.
+- **Frontend**: Vue 3 + TypeScript + Vite, `vue-router`, `oidc-client-ts`; ESLint (flat config).
 - **Docs**: VitePress (`velochatx-docs`).
 
 ## Getting Started
@@ -139,6 +143,13 @@ Prerequisites: **JDK 25**, **MySQL 8**, **Redis** (Gradle wrapper is bundled).
 
 # 6) OIDC discovery check
 #    curl http://localhost:8090/.well-known/openid-configuration
+
+# 7) Front-end (SSO portal) -> http://localhost:5173
+cd nitrowater-web
+npm install
+npm run dev          # login flow: http://localhost:5173 -> SSO (:8090) -> back with code
+npm run lint         # ESLint (flat config, TypeScript + Vue)
+npm run build        # vue-tsc + vite build
 ```
 
 Key configuration: `nitrowater-account/src/main/resources/application.yml` (datasource, Redis, JWT key paths, device salt, CORS whitelist, cookie SameSite/Secure).

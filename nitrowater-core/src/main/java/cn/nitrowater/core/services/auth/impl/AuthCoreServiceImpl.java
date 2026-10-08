@@ -23,6 +23,11 @@ import cn.nitrowater.core.services.auth.code.CodeSenderFactory;
 
 import java.util.Optional;
 
+/**
+ * @deprecated Phase-1 login/token shim, superseded by the OIDC provider (Spring Authorization
+ *             Server). See {@link AuthCoreService}.
+ */
+@Deprecated
 @Service
 @Transactional(readOnly = true)
 @Slf4j

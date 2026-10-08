@@ -42,6 +42,9 @@ import static cn.nitrowater.core.common.RedisKeyPrefix.THRESHOLD;
 @Service
 @Transactional
 @RequiredArgsConstructor
+// This service is shared by the Phase-2 OIDC login and the Phase-1 /api/auth/** shim;
+// the latter still revokes the deprecated AT/RT on logout.
+@SuppressWarnings("deprecation")
 public class LoginServiceImpl implements LoginService {
     private final AccessTokenServiceImpl authTokenServiceImpl;
     private final UserDatumRepo userDatumRepo;

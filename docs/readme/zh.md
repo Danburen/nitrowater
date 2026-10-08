@@ -40,9 +40,9 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
 | 模块 | 职责 | 状态 |
 |---|---|---|
 | `nitrowater-core` | 共享库（实体、仓储、认证服务、安全工具），不独立部署 | ✅ 认证核心已迁移 |
-| `nitrowater-account` | **SSO / OIDC 认证中心** —— 登录注册 API + OIDC Provider + 托管登录页 | ✅ Phase 1 完成 · 🚧 Phase 2（授权码 + JDBC 持久化；前端/网关待续） |
+| `nitrowater-account` | **SSO / OIDC 认证中心** —— 登录注册 API + OIDC Provider + 托管登录页 | ✅ Phase 1 完成 · ✅ Phase 2.5（JDBC + 令牌定制） · 🚧 网关待续 |
 | `nitrowater-server` | 业务 API —— 工具箱后端、题目/提交管理、静态托管、Resource Server | ⏳ 仅骨架 |
-| `nitrowater-web` | 前端（Vue 3 + TypeScript + Vite）—— 导航门户、工具箱、演练场、文档频道、SSO 登录 | ⏳ 脚手架（未接入 Gradle） |
+| `nitrowater-web` | 前端（Vue 3 + TypeScript + Vite）—— 导航门户、工具箱、演练场、文档频道、SSO 登录 | 🚧 Phase 2.6：OIDC 客户端（`oidc-client-ts`）+ 门户壳完成 · 工具箱/演练场/文档待续 |
 | `nitrowater-judge` | 演练场判题服务（编译 → 沙箱 → 判题） | ⏳ 规划中（模块未创建） |
 
 ## 当前状态
@@ -65,13 +65,17 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
   - 已验证端点：`/.well-known/openid-configuration` → 200、`/login` → 200、`/api/auth/captcha` → 200。
 - **Phase 2.4 —— 令牌定制与登录主体** —— `SsoUserPrincipal` 承载完整身份（uid / 登录名 / 昵称 / userType / 状态 / 设备）；`OAuth2TokenCustomizer` 输出 `sub=uid`、`uid`、`preferred_username`、`name`、`roles`、`did`（并经 `/userinfo` 暴露）；角色自 Phase 2.5 起由 `user_role` 表派生，无绑定时回落 `ROLE_USER`。
 - **Phase 2.5 —— AS JDBC 持久化（方案 A）** —— OIDC 客户端/授权/同意改用 Spring AS 标准表持久化（`oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`，迁移 `V1_1__oauth2_oidc_role.sql`）；`nitrowater-web` 客户端启动时幂等播种。
+- **Phase 2.6 —— `nitrowater-web` OIDC 客户端 + SSO 门户壳** —— 接入 Vue 3 + `vue-router` + `oidc-client-ts`（授权码 + PKCE、silent renew、登出）；门户首页改用 **Element Plus** 重排，实时展示令牌声明（`uid` / `roles` / `did` / `iss`）。引入 ESLint（flat config：TS + Vue，`npm run lint`）。
+- **SSO 托管登录/注册页** —— 由 AS 在 auth 域直接托管（仿 WaterFun `AuthBox`，无框架）：`GET /login`（原生表单 POST → Spring Security → 续跑 OIDC）与 `GET /register`（调 `/api/auth/**`）。身份 UI 归属身份中心，`nitrowater-web` 保持业务客户端。
+- **issuer 统一** —— 单一 `jwt.issuer`（环境变量 `JWT_ISSUER`，开发默认 `http://localhost:8090`）由 Phase1 自研 AT 与 AS 共用，且等于 OIDC 发现文档的 `issuer`；须与前端 `VITE_OIDC_AUTHORITY` 一致。
+- **AT/RT 标记废弃** —— Phase1 自研令牌服务（`AccessTokenService`、`AuthCoreService`）标 `@Deprecated`（由 OIDC 取代），仅保留给 `/api/auth/**` 兼容层。
 
 ### 🚧 进行中 / 未完成
 
 **Phase 2 —— 完成真正的 OIDC 单点登录**（下一里程碑）：
 
-- [ ] **`nitrowater-web` OIDC 客户端** —— 接入 `oidc-client-ts`（`/auth/callback`、silent renew、登出）。
-- [ ] **端到端取证** —— 跑完整授权码流，解码令牌校验 `sub/uid/preferred_username/roles/did`。
+- [x] **`nitrowater-web` OIDC 客户端** —— 接入 `oidc-client-ts`（`/auth/callback`、silent renew、登出）—— 已完成。
+- [x] **端到端取证** —— 服务端授权码流已验证（`deploy/bin/smoke-oidc.ps1`）：`sub/uid/preferred_username/roles/did`。
 - [ ] **WaterFun 网关切换** —— 验签公钥改 JWKS；置顶新增 `/api/auth/** → SSO` 路由；校对白名单路径。
 
 **其它模块（尚未开始）：**
@@ -113,7 +117,7 @@ nitrowater（Gradle monorepo）
 ## 技术栈
 
 - **后端**：Java 25、Spring Boot 4.1.1、Spring Security 7 + Spring Authorization Server 7（OIDC）、JPA + MySQL 8、Redis、Flyway
-- **前端**：Vue 3 + TypeScript + Vite、`oidc-client-ts`
+- **前端**：Vue 3 + TypeScript + Vite、`vue-router`、`oidc-client-ts`；ESLint（flat config）
 - **文档**：VitePress（`velochatx-docs`）
 
 ## 快速开始
@@ -139,6 +143,13 @@ nitrowater（Gradle monorepo）
 
 # 6) OIDC 发现端点自检
 #    curl http://localhost:8090/.well-known/openid-configuration
+
+# 7) 前端（SSO 门户）-> http://localhost:5173
+cd nitrowater-web
+npm install
+npm run dev          # 登录流： http://localhost:5173 -> SSO(:8090) -> 回调带回 code
+npm run lint         # ESLint（flat config，TypeScript + Vue）
+npm run build        # vue-tsc + vite build
 ```
 
 主配置：`nitrowater-account/src/main/resources/application.yml`（数据源、Redis、JWT 密钥路径、设备盐值、CORS 白名单、Cookie SameSite/Secure）。

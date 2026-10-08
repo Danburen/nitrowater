@@ -1,7 +1,5 @@
 package cn.nitrowater.core.utils.codec;
 
-import java.util.concurrent.ThreadLocalRandom;
-
 public final class Snowflake {
     private static final long WORKER_ID_BITS   = 5L;   // 10 bit total of worker & datacenter => 0-1023
     private static final long DATACENTER_ID_BITS = 5L;
@@ -21,12 +19,6 @@ public final class Snowflake {
     private long sequence = 0L;
     private long lastTimestamp = -1L;
 
-    /* Instance Worker ID use random */
-    private static final Snowflake INSTANCE = new Snowflake(
-            ThreadLocalRandom.current().nextInt(0, (int) MAX_WORKER_ID + 1),
-            ThreadLocalRandom.current().nextInt(0, (int) MAX_DATACENTER_ID + 1));
-
-
     private Snowflake(long workerId, long datacenterId) {
         if (workerId > MAX_WORKER_ID || workerId < 0)
             throw new IllegalArgumentException("workerId out of range");
@@ -35,9 +27,6 @@ public final class Snowflake {
         this.workerId = workerId;
         this.datacenterId = datacenterId;
     }
-
-    @Deprecated
-    public static Snowflake of() { return INSTANCE; }
 
     public static Snowflake of(long workerId, long datacenterId) {
         return new Snowflake(workerId, datacenterId);

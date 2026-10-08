@@ -491,9 +491,9 @@ nitrowater（Gradle monorepo）
 1. ~~account 补 CORS 白名单~~（已完成）；
 2. ~~Phase 1 冒烟~~（已完成）；
 3. ~~Phase 2 骨架：恢复 AS 依赖 + `AuthorizationServerConfig` + `AuthenticationProvider`~~（已完成，见 §9.2.8）；
-4. **Phase 2.6**：`nitrowater-web` 接入 `oidc-client-ts`（`/auth/callback`、silent renew）；
-5. **Phase 2.8**：WaterFun 网关验签改 JWKS + 路由 `/api/auth/** → SSO`（跨仓库，待窗口）；
-6. 端到端：起 MySQL/Redis 后跑一次完整授权码流（decode token 校验 `sub/uid/preferred_username/roles/did`）。
+4. ~~**Phase 2.6**：`nitrowater-web` 接入 `oidc-client-ts`（`/auth/callback`、silent renew）~~（已完成，见 §9.2.10）；
+5. **Phase 2.8**：WaterFun 网关验签改 JWKS + 路由 `/api/auth/** → SSO`（跨仓库，待窗口；动手前先定 issuer）；
+6. ~~端到端：起 MySQL/Redis 后跑一次完整授权码流（decode token 校验 `sub/uid/preferred_username/roles/did`）~~（已完成：`smoke-oidc.ps1` 全绿）。
 
 #### 9.2.8 Phase 2.4 落地结果（令牌定制 / 登录主体）
 
@@ -509,6 +509,15 @@ nitrowater（Gradle monorepo）
 - **客户端**：启动幂等播种 `nitrowater-web`（公共客户端 + PKCE，auth-code + refresh，redirect `http://localhost:5173/auth/callback`）。
 - **连接串**：按官方建议补 `preserveInstants=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true` 以保证令牌时间精度。
 - **校验**：临时库应用 V1_1 DDL 通过（MySQL 8）；`nitrowater` 库当前为 Flyway baseline v1（版本 1），下次启动自动应用 V1_1（版本 1.1）。
+
+#### 9.2.10 Phase 2.6 落地结果（前端 OIDC 客户端 + issuer 统一）
+
+- **`nitrowater-web` OIDC 客户端**：Vue 3 + `vue-router` + `oidc-client-ts`，授权码 + PKCE（公共客户端）、`automaticSilentRenew`、登出；页面 `/`（门户壳 + 令牌声明展示）、`/auth/callback`、`/auth/silent-callback`。dev 端口固定 5173（`vite.config.ts` strictPort）以匹配 `redirect_uri`；可用 Vite env（`VITE_OIDC_*`，模板 `.env.example`）覆盖。
+- **issuer 统一（决策 A：AS 单一签发者）**：单一属性 `jwt.issuer`（环境变量 `JWT_ISSUER`，dev 默认 `http://localhost:8090`）同时供 Phase1 自研 AT 与 AS 使用，等于发现文档 `metadata.issuer`。**必须是 URL**（OIDC Discovery 要求），不能是裸词（如 `waterfun` / `nitrowater`）；生产设 `JWT_ISSUER=https://auth.nitrowater.cn`，且必须与前端 `VITE_OIDC_AUTHORITY` 一致。
+- **AT/RT 标记废弃**：`AccessTokenService`/`AccessTokenServiceImpl`、`AuthCoreService`/`AuthCoreServiceImpl` 标 `@Deprecated`，方法保留供 `/api/auth/**` 兼容层使用，待 WaterFun 切 OIDC 后随垫片退役。
+- **ESLint**：`nitrowater-web` 引入 ESLint flat config（`@eslint/js` + `typescript-eslint` + `eslint-plugin-vue`），脚本 `npm run lint` / `lint:fix`。
+- **验证**：`gradlew build` 全绿；`npm run lint` 0 问题；`npm run build` 通过；实机 discovery `issuer=http://localhost:8090`，CORS 放行 `http://localhost:5173`（allow-credentials=true）。
+- **SSO 托管登录/注册页**：身份 UI 归属身份中心——auth 域托管品牌登录页 `/login`（原生表单 POST → Spring Security → 续跑 OIDC）与注册页 `/register`（调 `/api/auth/**`），仿 WaterFun `AuthBox` 风格（无框架静态页，`static/auth/*`）。业务前端 `nitrowater-web` 仅做客户端；其首页改用 Element Plus 重排。
 
 ---
 

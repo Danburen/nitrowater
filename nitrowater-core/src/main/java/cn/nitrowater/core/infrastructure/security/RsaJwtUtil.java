@@ -22,7 +22,7 @@ public class RsaJwtUtil {
     public RsaJwtUtil(
             PublicKey publicKey,
             PrivateKey privateKey,
-            @Value("${jwt.issuer:waterfun}") String jwtIssuer) {
+            @Value("${jwt.issuer:http://localhost:8090}") String jwtIssuer) {
         this.publicKey = publicKey;
         this.privateKey = privateKey;
         this.jwtIssuer = jwtIssuer;

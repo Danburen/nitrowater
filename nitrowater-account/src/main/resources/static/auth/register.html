@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>注册 · NitroWater 统一身份中心</title>
+  <link rel="stylesheet" href="/auth/auth.css?v=2">
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <aside class="auth-brand">
+        <div class="brand-logo">NW</div>
+        <h1 class="brand-title">NitroWater</h1>
+        <p class="brand-desc">统一身份中心</p>
+        <div class="brand-deco">
+          <span class="deco deco1"></span>
+          <span class="deco deco2"></span>
+          <span class="deco deco3"></span>
+        </div>
+      </aside>
+
+      <main class="auth-main">
+        <div class="auth-inner">
+          <h2 class="auth-title">创建账号</h2>
+          <p class="auth-sub">注册一个 NitroWater 账号</p>
+
+          <div id="nw-error" class="error" hidden></div>
+
+          <form id="reg-form" onsubmit="return false;">
+            <div class="field">
+              <label for="username">用户名</label>
+              <input class="input" id="username" autocomplete="username" placeholder="4-20 位，字母/数字/下划线" required>
+            </div>
+            <div class="field">
+              <label for="phone">手机号</label>
+              <input class="input" id="phone" autocomplete="tel" placeholder="用于接收短信验证码" required>
+            </div>
+            <div class="field">
+              <label for="smsCode">短信验证码</label>
+              <div class="send-row">
+                <input class="input" id="smsCode" autocomplete="one-time-code" maxlength="6" required>
+                <button type="button" class="btn-send" id="send-btn" onclick="NWReg.openCaptcha()">发送验证码</button>
+              </div>
+            </div>
+
+            <div class="optional-toggle" onclick="NWReg.toggleOptional()">
+              <span id="opt-arrow">▸</span>
+              <span>补充信息（选填）</span>
+            </div>
+            <div class="optional-body" id="opt-body" hidden>
+              <div class="field">
+                <label for="password">密码</label>
+                <input class="input" id="password" type="password" autocomplete="new-password" placeholder="8-20 位，含大小写与数字">
+              </div>
+              <div class="field">
+                <label for="email">邮箱</label>
+                <input class="input" id="email" type="email" autocomplete="email">
+              </div>
+            </div>
+
+            <button class="btn" type="button" onclick="NWReg.register()">注册</button>
+          </form>
+
+          <div class="row-between">
+            <span></span>
+            <a class="btn-link" href="/login">已有账号？去登录</a>
+          </div>
+
+          <div class="auth-footer"><span>NitroWater SSO · OIDC</span></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="dialog-mask" id="cap-dialog" hidden>
+    <div class="dialog">
+      <h3>请输入图形验证码</h3>
+      <div class="captcha-row">
+        <input class="input" id="cap-input" maxlength="6" autocomplete="off">
+        <img id="reg-captcha" class="captcha-img" alt="点击刷新验证码" title="点击刷新">
+      </div>
+      <div class="dialog-actions">
+        <button class="btn-ghost" type="button" onclick="NWReg.cancelCaptcha()">取消</button>
+        <button class="btn" type="button" style="width:auto;padding:10px 18px" id="cap-confirm" onclick="NWReg.sendCode()">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/auth/auth.js?v=2"></script>
+  <script>
+    var NWReg = (function () {
+      var countdown = 0;
+      var timer = null;
+      var capImg = document.getElementById('reg-captcha');
+
+      function openCaptcha() {
+        document.getElementById('cap-dialog').hidden = false;
+        document.getElementById('cap-input').value = '';
+        NW.refreshCaptcha(capImg);
+        document.getElementById('cap-input').focus();
+      }
+
+      function cancelCaptcha() {
+        document.getElementById('cap-dialog').hidden = true;
+      }
+
+      function sendCode() {
+        var phone = document.getElementById('phone').value.trim();
+        var captcha = document.getElementById('cap-input').value.trim();
+        if (!phone) { NW.showError('请先填写手机号'); return; }
+        if (!captcha) { alert('请输入图形验证码'); return; }
+        NW.postJson('/api/auth/send-code', {
+          target: phone,
+          channel: 'sms',
+          scene: 'register',
+          captcha: captcha
+        }).then(function () {
+          cancelCaptcha();
+          startCountdown();
+          NW.showError('');
+          alert('验证码已发送（开发环境请查看 account 控制台日志）');
+        }).catch(function (e) {
+          alert(e.message || '发送失败');
+          NW.refreshCaptcha(capImg);
+        });
+      }
+
+      function startCountdown() {
+        countdown = 60;
+        update();
+        if (timer) clearInterval(timer);
+        timer = setInterval(function () {
+          countdown--;
+          update();
+          if (countdown <= 0) { clearInterval(timer); timer = null; }
+        }, 1000);
+      }
+
+      function update() {
+        var btn = document.getElementById('send-btn');
+        if (countdown > 0) {
+          btn.disabled = true;
+          btn.textContent = countdown + 's 后重发';
+        } else {
+          btn.disabled = false;
+          btn.textContent = '发送验证码';
+        }
+      }
+
+      function toggleOptional() {
+        var body = document.getElementById('opt-body');
+        body.hidden = !body.hidden;
+        document.getElementById('opt-arrow').textContent = body.hidden ? '▸' : '▾';
+      }
+
+      function register() {
+        var username = document.getElementById('username').value.trim();
+        var phone = document.getElementById('phone').value.trim();
+        var smsCode = document.getElementById('smsCode').value.trim();
+        var password = document.getElementById('password').value;
+        var email = document.getElementById('email').value.trim();
+        if (!username || !phone || !smsCode) {
+          NW.showError('请填写用户名、手机号与短信验证码');
+          return;
+        }
+        if (!/^[0-9a-zA-Z_]{4,20}$/.test(username)) {
+          NW.showError('用户名需为 4-20 位，仅含字母、数字、下划线');
+          return;
+        }
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          NW.showError('邮箱格式不正确');
+          return;
+        }
+        if (password && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,20}$/.test(password)) {
+          NW.showError('密码需为 8-20 位，且包含大小写字母和数字');
+          return;
+        }
+        NW.postJson('/api/auth/register', {
+          username: username,
+          phone: phone,
+          password: password || null,
+          email: email || null,
+          verify: {
+            channel: 'sms',
+            target: phone,
+            code: smsCode,
+            scene: 'register',
+            deviceInfo: { deviceFp: NW.deviceFp() }
+          }
+        }).then(function () {
+          location.href = '/login';
+        }).catch(function (e) {
+          NW.showError(e.message || '注册失败');
+        });
+      }
+
+      return {
+        openCaptcha: openCaptcha,
+        cancelCaptcha: cancelCaptcha,
+        sendCode: sendCode,
+        toggleOptional: toggleOptional,
+        register: register
+      };
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · NitroWater 统一身份中心</title>
+  <link rel="stylesheet" href="/auth/auth.css?v=2">
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <aside class="auth-brand">
+        <div class="brand-logo">NW</div>
+        <h1 class="brand-title">NitroWater</h1>
+        <p class="brand-desc">统一身份中心</p>
+        <div class="brand-deco">
+          <span class="deco deco1"></span>
+          <span class="deco deco2"></span>
+          <span class="deco deco3"></span>
+        </div>
+      </aside>
+
+      <main class="auth-main">
+        <div class="auth-inner">
+          <h2 class="auth-title">欢迎回来</h2>
+          <p class="auth-sub">登录以继续访问 NitroWater 及已接入的应用</p>
+
+          <div id="nw-error" class="error" hidden></div>
+
+          <form method="post" action="/login">
+            <div class="field">
+              <label for="username">用户名 / 邮箱 / 手机号</label>
+              <input class="input" id="username" name="username" autocomplete="username" required>
+            </div>
+            <div class="field">
+              <label for="password">密码</label>
+              <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="field">
+              <label for="captcha">图形验证码</label>
+              <div class="captcha-row">
+                <input class="input" id="captcha" name="captcha" maxlength="6" autocomplete="off" required>
+                <img id="captcha-img" class="captcha-img" alt="点击刷新验证码" src="/api/auth/captcha" title="点击刷新">
+              </div>
+            </div>
+            <input type="hidden" name="deviceFp" id="deviceFp">
+            <button class="btn" type="submit">登录</button>
+          </form>
+
+          <div class="row-between">
+            <span></span>
+            <a class="btn-link" href="/register">注册账号</a>
+          </div>
+
+          <div class="auth-footer"><span>NitroWater SSO · OIDC</span></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/auth/auth.js?v=2"></script>
+  <script>
+    (function () {
+      document.getElementById('deviceFp').value = NW.deviceFp();
+      var cap = document.getElementById('captcha-img');
+      cap.addEventListener('click', function () { NW.refreshCaptcha(cap); });
+
+      var params = new URLSearchParams(location.search);
+      if (params.has('error')) {
+        NW.showError('用户名或密码错误，或验证码不正确');
+        NW.refreshCaptcha(cap);
+      }
+    })();
+  </script>
+</body>
+</html>

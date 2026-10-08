@@ -6,6 +6,13 @@ import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.resp.auth.LoginClientData;
 import cn.nitrowater.core.entity.user.User;
 
+/**
+ * Builds login responses and mints Phase-1 access/refresh token (AT/RT) pairs.
+ *
+ * @deprecated Phase-1 login/token shim, superseded by the OIDC provider (Spring Authorization
+ *             Server) login flow. Retained only for the legacy {@code /api/auth/**} layer.
+ */
+@Deprecated
 public interface AuthCoreService {
     LoginClientData buildLoginResponse(HttpServletResponse response, User user, String dfp, Boolean isNewUser);
 

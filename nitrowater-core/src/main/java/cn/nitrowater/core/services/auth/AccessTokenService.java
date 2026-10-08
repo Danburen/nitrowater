@@ -8,7 +8,12 @@ import java.util.Set;
 
 /**
  * A service for managing AUTH tokens.
+ *
+ * @deprecated Phase-1 self-built access/refresh token (AT/RT) shim, superseded by
+ *             OAuth2/OIDC (Spring Authorization Server) in Phase 2. Retained only for the
+ *             legacy {@code /api/auth/**} compatibility layer; do not use for new code.
  */
+@Deprecated
 public interface AccessTokenService {
     /**
      * Generate and store access token(jti) to cache service.

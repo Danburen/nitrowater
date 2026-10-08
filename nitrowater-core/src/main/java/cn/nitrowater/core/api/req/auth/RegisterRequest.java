@@ -18,7 +18,7 @@ public class RegisterRequest {
     private String username;
     @StrongPassword
     private String password;
-    @Email(message = "{verification.email_address.invalid")
+    @Email(message = "{valid.email_address.invalid}")
     private String email;
     @NotNull
     private VerifyCodeDto verify;

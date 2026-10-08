@@ -50,6 +50,8 @@ import java.io.IOException;
 @Validated
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+// Phase-1 /api/auth/** compatibility layer intentionally drives the deprecated AT/RT shim.
+@SuppressWarnings("deprecation")
 public class AuthController {
     private final CaptchaServiceImpl captchaService;
     private final LoginServiceImpl loginService;
@@ -77,13 +79,6 @@ public class AuthController {
         response.setDateHeader("Expires", 0);
         // write img stream to response stream
         result.captcha().write(response.getOutputStream());
-    }
-
-    @Deprecated
-    @GetMapping("/csrf-token")
-    public ApiResponse<Void> getCsrfToken() {
-        // 上游迁移方案：csrf-token 端点已废弃删除；保留占位以免前端 404 突兀
-        return ApiResponse.success();
     }
 
     /***

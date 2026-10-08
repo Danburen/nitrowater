@@ -95,7 +95,8 @@ public class AuthorizationServerConfig {
                 .cors(c -> c.configurationSource(cors))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/login", "/api/auth/**", "/error", "/favicon.ico").permitAll()
+                        .requestMatchers("/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico")
+                        .permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form.loginPage("/login").permitAll())
                 .logout(l -> l.logoutSuccessUrl("/"));
@@ -200,7 +201,7 @@ public class AuthorizationServerConfig {
 
     @Bean
     public AuthorizationServerSettings authorizationServerSettings(
-            @Value("${sso.issuer:http://localhost:8090}") String issuer) {
+            @Value("${jwt.issuer:http://localhost:8090}") String issuer) {
         return AuthorizationServerSettings.builder().issuer(issuer).build();
     }
 

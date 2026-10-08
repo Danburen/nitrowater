@@ -37,6 +37,8 @@ import java.time.Instant;
 @Service
 @Transactional(readOnly = true)
 @RequiredArgsConstructor
+// Registration still issues the deprecated Phase-1 AT/RT via AuthCoreService on auto-login.
+@SuppressWarnings("deprecation")
 public class RegisterServiceImpl implements RegisterService {
     private final AuthCoreServiceImpl authService;
     private final UserRepository userRepo;

@@ -94,22 +94,31 @@ public class SsoUserPrincipal implements UserDetails {
         return (nickname != null && !nickname.isBlank()) ? nickname : loginName;
     }
 
-    /** Authorities: ROLE_ prefixed role codes; defaults to ROLE_USER when none bound. */
+    /**
+     * Role codes prefixed with {@code ROLE_}; defaults to {@code ROLE_USER} when none bound.
+     *
+     * <p>The returned value is emitted into the token claims and persisted inside the
+     * {@code OAuth2Authorization} metadata, so it MUST be a concrete mutable list:
+     * the Authorization Server's JDBC Jackson {@code PolymorphicTypeValidator} denies
+     * {@code java.util.ImmutableCollections$*} (what {@code List.of} / {@code Stream.toList}
+     * produce) on read-back.</p>
+     */
     @JsonIgnore
     public List<String> getRoles() {
-        if (roleCodes.isEmpty()) {
-            return List.of("ROLE_USER");
-        }
-        return roleCodes.stream()
-                .map(code -> code.startsWith("ROLE_") ? code : "ROLE_" + code)
-                .distinct()
-                .toList();
+        List<String> roles = roleCodes.isEmpty()
+                ? List.of("ROLE_USER")
+                : roleCodes.stream()
+                        .map(code -> code.startsWith("ROLE_") ? code : "ROLE_" + code)
+                        .distinct()
+                        .toList();
+        return new ArrayList<>(roles);
     }
 
     @JsonIgnore
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return getRoles().stream().map(SimpleGrantedAuthority::new).toList();
+        // Same constraint as getRoles(): keep the serialized authorities a concrete ArrayList.
+        return new ArrayList<>(getRoles().stream().map(SimpleGrantedAuthority::new).toList());
     }
 
     @JsonIgnore
