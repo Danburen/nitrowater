@@ -9,8 +9,19 @@
 """
 import argparse, datetime, pathlib, subprocess, sys
 
+# Windows 控制台默认 GBK，直接 print emoji(✅/❌)与中文会 UnicodeEncodeError；统一切到 UTF-8。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 def sh(cmd):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True).stdout
+    # git 输出是 UTF-8（含中文路径/提交信息），而 Windows 默认 locale 是 GBK：
+    # 不要复用系统编码，强制 UTF-8 且遇错替换，避免 reader 线程解码崩溃、stdout 变 None。
+    r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    return r.stdout or ""
 
 def main():
     ap = argparse.ArgumentParser()

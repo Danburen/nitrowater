@@ -8,7 +8,7 @@
 # ============================================================
 param(
     [string]$DbHost   = '127.0.0.1',
-    [string]$DbName   = 'nitrowater',
+    [string]$DbName   = 'nitrowater_account',
     [string]$DbUser   = 'root',
     [string]$DbPass   = '123456',
     [string]$MysqlExe = 'E:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe'
@@ -21,9 +21,11 @@ if (-not (Test-Path -LiteralPath $MysqlExe)) {
 }
 
 $env:MYSQL_PWD = $DbPass
-$sql = "SET FOREIGN_KEY_CHECKS=0; " +
-       "DROP TABLE IF EXISTS user_data, sso_identity, user_data_archive, account_audit_log, encryption_data_key, user, flyway_schema_history; " +
-       "SET FOREIGN_KEY_CHECKS=1;"
+$sql = @'
+SET FOREIGN_KEY_CHECKS=0;
+DROP TABLE IF EXISTS oauth2_authorization_consent, oauth2_authorization, oauth2_registered_client, user_role, `role`, sso_identity, user_data, user_data_archive, account_audit_log, encryption_data_key, user, flyway_schema_history;
+SET FOREIGN_KEY_CHECKS=1;
+'@
 
 & $MysqlExe -h $DbHost -u $DbUser $DbName -e $sql
 if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] drop failed"; exit 1 }
