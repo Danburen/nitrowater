@@ -10,7 +10,7 @@
 | 1 | JWT 密钥 | `deploy/keys/{private,public}.key` | 复制 waterfun 的，或 `gen-keys.ps1` 生成 |
 | 2 | `WATERFUN_KEK` | 环境变量 / `build.gradle` bootRun 默认 | 32 字节 Base64（见 `deploy/config/common-dev-secrets.yml`） |
 | 3 | `device.salt` | `application.yml` | 已复用 waterfun 开发值 |
-| 4 | MySQL | `application.yml` datasource | `localhost:3306/nitrowater`（自动建库） |
+| 4 | MySQL | `application.yml` datasource | SSO 库 `localhost:3306/nitrowater_account`（自动建库）；业务库 `nitrowater_biz`（server） |
 | 5 | Redis | `application.yml` data.redis | `localhost:6379` |
 | 6 | `JWT_ISSUER` | 环境变量（SSO/OIDC 唯一签发者，Phase1 AT + AS 共用） | dev 默认 `http://localhost:8090`；生产 `https://auth.nitrowater.cn`。必须为 URL，且与前端 `VITE_OIDC_AUTHORITY` 一致 |
 

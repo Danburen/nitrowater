@@ -137,6 +137,12 @@
 - **前端落点 `nitrowater-web`**：2026-10-07 新建的 Vue 3 + TS + Vite 8 空脚手架（见 §2.1 模块表），为工具箱/演练场/文档/SSO 的统一承载工程；
 - **整合约束（待拍板 N5）**：`velochatx-docs` **保持独立仓库**，以「构建产物挂子路径」为首选融合方式（详见 FR-4）。
 
+### 2.5 mc.nitrowater.cn（我的世界服务器展示页，规划）
+
+- **定位**：Minecraft 服务器的**宣传/展示页**——服务器介绍、玩法、截图、加入方式；后续可选加**实时在线状态**。
+- **融合方式**：与 `velochatx-docs` 同模式——**独立构建**，一期产物挂**子路径** `/mc/**`（推荐，与 FR-4 一致）；有独立部署诉求再拆**子域** `mc.nitrowater.cn`。详见 FR-5.5 / 决策 N10。
+- **一期范围**：**静态展示页**（最低风险），不含实时状态后端；需要时再由 `nitrowater-server` 提供只读接口。
+
 ---
 
 ## 3. 方案可行性评估
@@ -254,8 +260,13 @@ nitrowater（Gradle monorepo）
 | FR-2.5 | 题目管理：题目/测试用例入库（管理端 CRUD），替代前端静态 `problems/index.ts`（首期支持导入现有静态题目）                       | P1   |
 | FR-2.6 | 提交记录：保存每次提交（用户、题目、语言、代码、结果、耗时），支持历史回看                                            | P1   |
 | FR-2.7 | 队列与限流：单用户并发提交限制、全局并发上限（信号量/队列），防止单用户打满判题资源                                        | P0   |
-| FR-2.8 | 登录用户方可提交（复用 SSO token）；游客可浏览题目                                                        | P1   |
+| FR-2.8 | **登录用户方可提交/判题**（复用 SSO token，兼作配额/限流/追责的身份）；游客可浏览题目与描述                                                        | P1   |
 | FR-2.9 | 目标态：判题迁移到 Docker 容器执行（只读 rootfs、non-root、`--network none`、CPU/内存限额）                       | P2   |
+
+| FR-2.10 | **双判题模式**：**ACM**（整程序 stdin/stdout）与 **LeetCode**（方法级，运行时自动生成 Harness 包装 I/O 并序列化结果） | P0   |
+| FR-2.11 | 判定语义 `AC/WA/TLE/MLE/RE/CE/OLE`；比较策略可配（exact/token/lines/浮点 eps）；逐用例记 timeMs/内存 | P1   |
+
+> 判题沙箱详细设计（双模式、执行流水线、沙箱三件套、API/数据模型、里程碑）见 [`docs/design/judge-sandbox.md`](design/judge-sandbox.md)。
 
 ### FR-3 登录注册迁移与全站单点登录
 
@@ -293,6 +304,7 @@ nitrowater（Gradle monorepo）
 | FR-5.2 | 频道划分：`/tools/**`（工具）、`/playground`（演练场）、`/docs/**`（文档）、`/auth/**`（SSO） | P1   |
 | FR-5.3 | **独立且完整的 SSO 单点登录**：登录/注册/回调/登出全链路（复用 FR-3），作为对接并迁移 WaterFun 认证的落地载体 | P0   |
 | FR-5.4 | 路由与子路径部署兼容（hash 路由或 history + 基路径配置，见 R5） | P2   |
+| FR-5.5 | **Minecraft 展示频道（`mc.nitrowater.cn`）**：一期**静态展示页**（服务器介绍/玩法/截图/加入方式），以子路径 `/mc/**` 并入门户（同 FR-4 模式），公开浏览；后续可选加只读「服务器状态」接口 | P2   |
 
 ---
 
@@ -348,7 +360,7 @@ nitrowater（Gradle monorepo）
 
 ## 8. 数据设计
 
-### 8.1 SSO 库（`nitrowater`）
+### 8.1 SSO 库（`nitrowater_account`，与业务库 `nitrowater_biz` 物理隔离）
 
 实际落地：单一基线 `V1__sso_baseline.sql`（6 表）+ `V1_1__oauth2_oidc_role.sql`（5 表：3 OIDC + 2 RBAC）。
 
@@ -370,7 +382,7 @@ nitrowater（Gradle monorepo）
 > DDL 细节与校验标准见上游方案 §4.2、§8。
 > RBAC（V1_1）：采用角色制 `role`/`user_role`；`role`/`user_role` 为**角色权威源**，`user.userType` 退为账号类别/展示；细粒度权限（`permission`/`role_permission`）**暂不建**，待出现"角色→权限"消费方时再加子版本迁移。
 
-### 8.2 业务库（`nitrowater`）
+### 8.2 业务库（`nitrowater_biz`，与 SSO 库 `nitrowater` **物理隔离**）
 
 | 表                     | 说明                                        |
 | --------------------- | ----------------------------------------- |
@@ -379,6 +391,7 @@ nitrowater（Gradle monorepo）
 | `submission`           | 提交：id、uid、problem_id、language、code、status、passed/total、time_ms、created_at |
 | `web_tool_config`（可选） | 工具运营配置（后续）                               |
 
+- **库隔离**：身份中心与业务分库——SSO 库 `nitrowater`（凭证/资料/加密/OIDC）与业务库 `nitrowater_biz`（题目/提交等）独立迁移、独立账号、最小权限；跨库仅以 `uid` 逻辑关联。
 - 与 SSO 关联仅通过 `uid`（逻辑外键，不建跨库 FK）；
 - 用户资料本地表（`local_user`，uid + nickname + avatar）按上游方案「注册外关联」事件创建。
 
@@ -572,6 +585,8 @@ nitrowater（Gradle monorepo）
 | **N7**  | 跨域 CORS：account 白名单来源（yml `app.cors.allowed-origins`）+ 是否允许 credentials | 白名单 + `allowCredentials=true`；不放 `*` | §9.2.6 |
 | **N8**  | SSO 与应用部署：同主域（`SameSite=Lax`，推荐）vs 跨主域（`SameSite=None;Secure`，强制 HTTPS） | 同主域 | 无感登录 |
 | **N9**  | OIDC 客户端/授权/同意存储：A Spring AS 标准表 vs B 自建 `oidc_client`/`oidc_session` | **已定：A**（官方 3 表 + `Jdbc*` 实现，零自研） | Phase 2.5 |
+| **N10** | Minecraft 展示页融合：A 子路径 `/mc/**` vs B 独立子域 `mc.nitrowater.cn` | 首期 A（子路径，同 docs 模式）；有独立部署诉求再拆子域 | FR-5.5 |
+| **N11** | LeetCode 模式类型支持范围：仅基础类型/数组/字符串/List，还是含 TreeNode/ListNode | 一期基础类型；TreeNode/ListNode 二期（自定义编解码） | FR-2.10 |
 
 ---
 
