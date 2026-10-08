@@ -1,0 +1,57 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'cn.nitrowater'
+version = '0.0.1-SNAPSHOT'
+description = 'nitrowater-bff'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // --- Servlet / WebMVC（响应式迁移冻结：不要 WebFlux）---
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    // --- Security：BFF 是 Cookie 会话认证 → 必须开 CSRF ---
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    // --- OIDC Client（confidential：服务端持 AT/RT，可合法换 refresh_token）---
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
+    // --- Redis：Spring Session 会话存储（本模块无数据库）---
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.boot:spring-boot-starter-session-data-redis'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// 与 account 一致：workingDir = 仓库根，使 application.yml 里 file:./nitrowater-web/dist/ 能解析。
+tasks.named('bootRun') {
+    workingDir = rootProject.projectDir
+}
+
+// 把 SPA 构建产物打进 BFF：dist/* → classpath:/static/*，随 bootJar 一起打包成
+// 自包含可部署 jar（生产 A1 同源部署）。前端需先构建：`cd nitrowater-web && npm run build`。
+// dist 不存在时 Gradle 复制空目录、不报错，`gradlew build` 仍绿（仅缺前端静态资源）。
+tasks.named('processResources') {
+    from(rootProject.file('nitrowater-web/dist')) {
+        into 'static'
+    }
+}

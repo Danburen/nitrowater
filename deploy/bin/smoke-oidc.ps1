@@ -1,21 +1,25 @@
 <#
-smoke-oidc.ps1 - OIDC authorization-code flow end-to-end (interactive).
+smoke-oidc.ps1 - OIDC authorization-code flow end-to-end (interactive), BFF client.
 
-Flow: /oauth2/authorize -> /login (captcha, human) -> code -> /oauth2/token -> verify claims.
+Flow: /oauth2/authorize -> /login (captcha, human) -> code -> /oauth2/token (client_secret) -> verify claims.
+
+Unlike the retired public client, the confidential BFF client IS issued a refresh_token by the
+Authorization Server; this script asserts that, proving server-side silent refresh is available.
 
 Prereq:
-  - account running at http://localhost:8090 (rebuilt)
+  - account running at http://localhost:8090 (rebuilt, BFF client seeded)
   - MySQL / Redis up, deploy/keys present, WATERFUN_KEK set
   - a test account exists (default smokeuser1 / Passw0rd!)
 
 Usage (Windows PowerShell 5.1 or PowerShell 7):
   .\deploy\bin\smoke-oidc.ps1
-  .\deploy\bin\smoke-oidc.ps1 -Base http://localhost:8090 -Username smokeuser1 -Password 'Passw0rd!'
+  .\deploy\bin\smoke-oidc.ps1 -Username smokeuser1 -Password 'Passw0rd!'
 #>
 param(
     [string]$Base = 'http://localhost:8090',
-    [string]$ClientId = 'nitrowater-web',
-    [string]$Redirect = 'http://localhost:5173/auth/callback',
+    [string]$ClientId = 'nitrowater-bff',
+    [string]$ClientSecret = 'nitrowater-bff-secret',
+    [string]$Redirect = 'http://localhost:8080/login/oauth2/code/nitrowater',
     [string]$Username = 'smokeuser1',
     [string]$Password = 'Passw0rd!',
     [string]$DeviceFp = 'smoketestdevice0001'
@@ -69,11 +73,8 @@ function Decode-Jwt($jwt) {
     return ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload)) | ConvertFrom-Json)
 }
 
-# PKCE (S256)
-$verifier = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 64 | ForEach-Object { [char]$_ })
-$sha = [System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::ASCII.GetBytes($verifier))
-$challenge = [Convert]::ToBase64String($sha).TrimEnd('=').Replace('+', '-').Replace('/', '_')
-$authzUrl = "$Base/oauth2/authorize?response_type=code&client_id=$ClientId&redirect_uri=$([uri]::EscapeDataString($Redirect))&scope=openid%20profile&code_challenge=$challenge&code_challenge_method=S256"
+# Confidential client, no PKCE: the redirect_uri is the BFF's OIDC callback.
+$authzUrl = "$Base/oauth2/authorize?response_type=code&client_id=$ClientId&redirect_uri=$([uri]::EscapeDataString($Redirect))&scope=openid%20profile"
 
 # 1. Seed the saved request.
 Step 1 'GET /oauth2/authorize (expect 302 -> /login)'
@@ -106,15 +107,19 @@ if ($r4.Location -match '[?&]code=([^&]+)') { $code = $Matches[1] }
 if (-not $code) { Fail "no code in redirect: $($r4.Location)" }
 Ok "code=$($code.Substring(0, [Math]::Min(12, $code.Length)))..."
 
-# 5. Token exchange.
+# 5. Token exchange (client_secret_basic; confidential client).
 Step 5 'POST /oauth2/token'
-$tokenBody = "grant_type=authorization_code&code=$([uri]::EscapeDataString($code))&redirect_uri=$([uri]::EscapeDataString($Redirect))&client_id=$ClientId&code_verifier=$verifier"
-try { $tok = Invoke-RestMethod -Uri "$Base/oauth2/token" -Method Post -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody -WebSession $session }
+$basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$ClientId`:$ClientSecret"))
+$tokenBody = "grant_type=authorization_code&code=$([uri]::EscapeDataString($code))&redirect_uri=$([uri]::EscapeDataString($Redirect))"
+try {
+    $tok = Invoke-RestMethod -Uri "$Base/oauth2/token" -Method Post -Headers @{ Authorization = "Basic $basic" } `
+        -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody -WebSession $session
+}
 catch { Fail "token error: $_" }
-Ok "token_type=$($tok.token_type) expires_in=$($tok.expires_in) id_token=$([bool]$tok.id_token)"
+Ok "token_type=$($tok.token_type) expires_in=$($tok.expires_in) id_token=$([bool]$tok.id_token) refresh_token=$([bool]$tok.refresh_token)"
 
-# 6. Decode and verify claims.
-Step 6 'Verify claims'
+# 6. Decode and verify claims; the confidential client MUST get a refresh_token.
+Step 6 'Verify claims + refresh_token'
 $at = Decode-Jwt $tok.access_token
 $id = Decode-Jwt $tok.id_token
 Write-Host "access_token: $($at | ConvertTo-Json -Compress)"
@@ -124,7 +129,8 @@ $checks = @(
     @{ n = 'uid present'; ok = [bool]$at.uid },
     @{ n = 'preferred_username'; ok = [bool]$at.preferred_username },
     @{ n = 'roles'; ok = ($at.roles -and $at.roles.Count -ge 1) },
-    @{ n = 'did'; ok = [bool]$at.did }
+    @{ n = 'did'; ok = [bool]$at.did },
+    @{ n = 'refresh_token issued (confidential client)'; ok = [bool]$tok.refresh_token }
 )
 $allOk = $true
 foreach ($c in $checks) { if ($c.ok) { Ok $c.n } else { Write-Host "[MISS] $($c.n)" -ForegroundColor Yellow; $allOk = $false } }

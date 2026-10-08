@@ -11,8 +11,10 @@
 | `check-env.ps1`      | 自检：MySQL/Redis 端口、JWT 密钥、WATERFUN_KEK、DEVICE_SALT |
 | `start-redis.bat`    | 启动本地 Redis（127.0.0.1:6379） |
 | `start-account.bat`  | 启动 `nitrowater-account`（SSO，端口 8090） |
+| `start-bff.bat`      | 启动 `nitrowater-bff`（BFF / Token Handler，端口 8080） |
 | `gen-keys.ps1`       | 生成 RSA 2048 密钥对 → `deploy/keys/{private,public}.key` |
 | `backup_mysql.ps1`   | 备份 `nitrowater_account` 库（gzip + 保留 30 天） |
+| `smoke-oidc.ps1`     | OIDC 授权码流冒烟（confidential `nitrowater-bff` 客户端，断言下发 refresh_token） |
 
 ## 快速开始
 

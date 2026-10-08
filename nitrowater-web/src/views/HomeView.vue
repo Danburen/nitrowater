@@ -1,34 +1,28 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAuth } from '../auth/useAuth'
-import { decodeJwtPayload, oidcSettings } from '../auth/oidc'
 
-const { user, loading, login, logout, renew, refresh } = useAuth()
-
-const claims = computed(() => decodeJwtPayload(user.value?.access_token))
+const { session, loading, login, logout, refresh } = useAuth()
 
 function asText(value: unknown): string {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined || value === '') return '—'
   if (Array.isArray(value)) return value.map((item) => String(item)).join(' · ')
   return String(value)
 }
 
-const isLoggedIn = computed(() => !!user.value)
-const uid = computed(() => asText(claims.value?.['uid'] ?? user.value?.profile.sub))
-const roles = computed<string[]>(() => {
-  const value = claims.value?.['roles']
-  return Array.isArray(value) ? value.map((item) => String(item)) : []
-})
-const did = computed(() => asText(claims.value?.['did']))
-const issuer = computed(() => asText(claims.value?.['iss']))
+const isLoggedIn = computed(() => !!session.value?.authenticated)
+const uid = computed(() => asText(session.value?.uid))
+const username = computed(() => asText(session.value?.username))
+const nickname = computed(() => asText(session.value?.name))
+const roles = computed<string[]>(() => session.value?.roles ?? [])
+const did = computed(() => asText(session.value?.did))
+const issuer = computed(() => asText(session.value?.issuer))
 const expiresAt = computed(() => {
-  const exp = user.value?.expires_at
+  const exp = session.value?.expiresAt
   return exp ? new Date(exp * 1000).toLocaleString() : '—'
 })
-const profileJson = computed(() => JSON.stringify(user.value?.profile ?? {}, null, 2))
-const avatarLetter = computed(() =>
-  (asText(user.value?.profile['preferred_username']) || 'U').charAt(0).toUpperCase(),
-)
+const profileJson = computed(() => JSON.stringify(session.value ?? {}, null, 2))
+const avatarLetter = computed(() => (session.value?.username || 'U').charAt(0).toUpperCase())
 
 const features = [
   { title: '工具箱', desc: '7 个在线开发小工具（Java→TS、ZIP、树可视化…）', tag: 'M1 · 待迁移' },
@@ -83,14 +77,14 @@ const features = [
       </el-menu>
 
       <div class="auth">
-        <template v-if="isLoggedIn && user">
+        <template v-if="isLoggedIn">
           <el-avatar
             :size="30"
             class="avatar"
           >
             {{ avatarLetter }}
           </el-avatar>
-          <span class="who">{{ asText(user.profile['preferred_username'] ?? user.profile.sub) }}</span>
+          <span class="who">{{ username }}</span>
           <el-button @click="logout">
             登出
           </el-button>
@@ -110,8 +104,8 @@ const features = [
       <section class="hero">
         <h1>一次登录，通行全站</h1>
         <p class="muted">
-          NitroWater 是 WaterFun 生态的复合展示站，认证由独立的 OIDC 身份中心
-          <code>{{ oidcSettings.authority }}</code> 统一签发。
+          NitroWater 采用 <strong>BFF（Backend for Frontend）</strong> 模式：浏览器只持有 HttpOnly
+          会话 Cookie，令牌由后端持有并通过服务端 <code>refresh_token</code> 静默续期，无需 iframe。
         </p>
       </section>
 
@@ -156,12 +150,6 @@ const features = [
             >
               <el-button
                 size="small"
-                @click="renew"
-              >
-                静默续期
-              </el-button>
-              <el-button
-                size="small"
                 @click="refresh"
               >
                 刷新状态
@@ -197,10 +185,10 @@ const features = [
               {{ uid }}
             </el-descriptions-item>
             <el-descriptions-item label="登录名">
-              {{ asText(user?.profile['preferred_username']) }}
+              {{ username }}
             </el-descriptions-item>
             <el-descriptions-item label="昵称">
-              {{ asText(user?.profile['name']) }}
+              {{ nickname }}
             </el-descriptions-item>
             <el-descriptions-item label="角色">
               <el-tag
@@ -219,9 +207,6 @@ const features = [
             <el-descriptions-item label="issuer">
               {{ issuer }}
             </el-descriptions-item>
-            <el-descriptions-item label="scope">
-              {{ asText(user?.scope) }}
-            </el-descriptions-item>
             <el-descriptions-item label="过期时间">
               {{ expiresAt }}
             </el-descriptions-item>
@@ -229,7 +214,7 @@ const features = [
 
           <el-collapse class="raw">
             <el-collapse-item
-              title="原始 profile 声明（id_token / userinfo）"
+              title="BFF 会话（/bff/me）"
               name="raw"
             >
               <pre class="mono">{{ profileJson }}</pre>
@@ -243,8 +228,8 @@ const features = [
       class="footer"
       height="auto"
     >
-      <span>nitrowater-web · Vue 3 + Element Plus + oidc-client-ts</span>
-      <span class="mono">{{ oidcSettings.authority }}</span>
+      <span>nitrowater-web · Vue 3 + Element Plus + BFF</span>
+      <span class="mono">BFF :8080</span>
     </el-footer>
   </el-container>
 </template>

@@ -40,9 +40,10 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
 | Module | Role | Status |
 |---|---|---|
 | `nitrowater-core` | Shared library (entities, repositories, auth services, security utils). No standalone deployment. | ✅ auth core migrated |
-| `nitrowater-account` | **SSO / OIDC identity center** — login/register API + OIDC Provider + hosted login page | ✅ Phase 1 done · ✅ Phase 2.5 (JDBC + token customizer) · 🚧 gateway pending |
+| `nitrowater-account` | **SSO / OIDC identity center** — login/register API + OIDC Provider + hosted login page | ✅ Phase 1 done · ✅ Phase 2.5 (JDBC + token customizer) · ✅ confidential BFF client seeded |
+| `nitrowater-bff` | **BFF (Token Handler)** — confidential OIDC client; browser holds only an HttpOnly session cookie, tokens stay server-side, `/api/**` proxied to the resource server | ✅ Phase 3 (BFF) done |
 | `nitrowater-server` | Business API — toolbox backend, problem/submission management, static hosting, Resource Server | ⏳ skeleton only |
-| `nitrowater-web` | Front-end (Vue 3 + TypeScript + Vite) — navigation portal, toolbox, playground, docs channel, SSO login | 🚧 Phase 2.6: OIDC client (`oidc-client-ts`) + portal shell done · toolbox/playground/docs pending |
+| `nitrowater-web` | Front-end (Vue 3 + TypeScript + Vite) — navigation portal, toolbox, playground, docs channel, SSO login | 🚧 SSO portal shell (Element Plus) done · now same-origin BFF client · toolbox/playground/docs pending |
 | `nitrowater-judge` | Coding playground judge service (compile → sandbox → judge) | ⏳ planned (module not created) |
 
 ## Status
@@ -69,13 +70,14 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
 - **SSO hosted login / register UI** — branded pages served by the AS on the auth origin (WaterFun `AuthBox` style, no framework): `GET /login` (native form POST → Spring Security → resumes the OIDC request) and `GET /register` (calls `/api/auth/**`). Identity UI lives in the identity center; `nitrowater-web` stays a business client.
 - **Unified issuer** — a single `jwt.issuer` (env `JWT_ISSUER`, dev default `http://localhost:8090`) is shared by the Phase-1 AT and the AS, and equals the OIDC discovery `issuer`; it must equal the SPA's `VITE_OIDC_AUTHORITY`.
 - **AT/RT deprecated** — the Phase-1 self-built token services (`AccessTokenService`, `AuthCoreService`) are marked `@Deprecated` (superseded by OIDC); retained only for the `/api/auth/**` compatibility layer.
+- **Phase 3 — BFF (Token Handler)** — new `nitrowater-bff` module (Servlet/WebMVC): confidential OIDC client (`spring-boot-starter-security-oauth2-client`), Redis-backed session (`spring-session-data-redis`), CSRF, `/bff/me` session introspection, and an `/api/**` proxy that attaches a **server-held** Bearer access token (auto-refreshed via `refresh_token`). The browser holds **no token**. Because the client is confidential, the Authorization Server issues a refresh token (it deliberately withholds one from public clients) — superseding the iframe `prompt=none` path. The retired public client's machinery (`X-Frame-Options`/`frame-ancestors`, `/auth/silent-callback`) is removed; `nitrowater-web` dropped `oidc-client-ts` and calls the BFF same-origin (`/bff/me`, `/oauth2/authorization/nitrowater`, `/logout`).
 
 ### 🚧 In Progress / Unfinished
 
 **Phase 2 — complete real OIDC single sign-on** (next milestone):
 
-- [x] **`nitrowater-web` OIDC client** — `oidc-client-ts` (`/auth/callback`, silent renew, logout) — done.
-- [x] **End-to-end proof** — server-side auth-code flow verified (`deploy/bin/smoke-oidc.ps1`): `sub/uid/preferred_username/roles/did`.
+- [x] **OIDC client** — superseded: the SPA no longer holds tokens; the **`nitrowater-bff`** confidential client (Phase 3) handles login/renewal/logout server-side.
+- [x] **End-to-end proof** — auth-code flow verified (`deploy/bin/smoke-oidc.ps1`): `sub/uid/preferred_username/roles/did` + `refresh_token` issued to the confidential BFF client.
 - [ ] **WaterFun gateway switch** — point signature verification at JWKS; add route `/api/auth/** → SSO` at the top; align whitelist paths.
 
 **Other modules (not started):**
@@ -107,17 +109,18 @@ The SSO / OIDC identity center (`nitrowater-account`) is the current focus and t
 nitrowater (Gradle monorepo)
 ├── nitrowater-core        # shared library (entities / repositories / auth services) — not deployed
 ├── nitrowater-account     # SSO identity center (Authorization Server + auth API + hosted login page)
-├── nitrowater-server      # business API (toolbox backend, problem/submission, static hosting)
+├── nitrowater-bff         # BFF / Token Handler (confidential OIDC client + Redis session + /api proxy)
+├── nitrowater-server      # business API (toolbox backend, problem/submission, static hosting) + Resource Server
 ├── nitrowater-judge       # playground judge service (compile → sandbox → judge)   [planned]
-└── nitrowater-web         # composite front-end: portal + toolbox + playground + docs + SSO callback
+└── nitrowater-web         # composite front-end: portal + toolbox + playground + docs (same-origin BFF client)
 ```
 
-Runtime (production): a gateway is the trust boundary; `/api/auth/**` routes to the SSO service, `/api/**` to business services, `/api/judge/**` to the judge service. Locally, `nitrowater-server` exposes JWT verification directly (no gateway).
+Runtime: the browser talks only to the **BFF** (`:8080`), which is a confidential OIDC client of the SSO service and proxies `/api/**` to the resource server with a server-held Bearer token. In production a gateway is the trust boundary; `/api/auth/**` routes to the SSO service, `/api/**` to business services, `/api/judge/**` to the judge service. Locally, `nitrowater-server` exposes JWT verification directly (no gateway).
 
 ## Tech Stack
 
 - **Backend**: Java 25, Spring Boot 4.1.1, Spring Security 7 + Spring Authorization Server 7 (OIDC), JPA + MySQL 8, Redis, Flyway.
-- **Frontend**: Vue 3 + TypeScript + Vite, `vue-router`, `oidc-client-ts`; ESLint (flat config).
+- **Frontend**: Vue 3 + TypeScript + Vite, `vue-router`; ESLint (flat config).
 - **Docs**: VitePress (`velochatx-docs`).
 
 ## Getting Started
@@ -138,16 +141,22 @@ Prerequisites: **JDK 25**, **MySQL 8**, **Redis** (Gradle wrapper is bundled).
 .\deploy\bin\start-account.bat
 # or: gradlew :nitrowater-account:bootRun
 
-# 5) End-to-end smoke (interactive)
-.\deploy\bin\smoke-auth.ps1
+# 5) Run the BFF (http://localhost:8080); the resource server on :8081
+.\deploy\bin\start-bff.bat        # requires the SSO service up (OIDC discovery at startup)
+# or: gradlew :nitrowater-bff:bootRun
+# or: gradlew :nitrowater-server:bootRun
 
-# 6) OIDC discovery check
+# 6) End-to-end smoke (interactive)
+.\deploy\bin\smoke-auth.ps1       # /api/auth/** flow
+.\deploy\bin\smoke-oidc.ps1       # OIDC auth-code + refresh_token (confidential BFF client)
+
+# 7) OIDC discovery check
 #    curl http://localhost:8090/.well-known/openid-configuration
 
-# 7) Front-end (SSO portal) -> http://localhost:5173
+# 8) Front-end (SSO portal) -> http://localhost:5173
 cd nitrowater-web
 npm install
-npm run dev          # login flow: http://localhost:5173 -> SSO (:8090) -> back with code
+npm run dev          # SPA proxies /api, /bff, /oauth2, /login, /logout to the BFF (:8080)
 npm run lint         # ESLint (flat config, TypeScript + Vue)
 npm run build        # vue-tsc + vite build
 ```

@@ -21,12 +21,14 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.support.lob.DefaultLobHandler;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.jackson.SecurityJacksonModules;
 import tools.jackson.databind.JacksonModule;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
@@ -53,16 +55,28 @@ import java.security.PublicKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
- * Phase 2：OIDC Provider（Spring Authorization Server 7.1）。
- * <p>复用 core 的 RSA 密钥（JwtKeyConfig 提供的 PublicKey/PrivateKey）签发，暴露 JWKS。
- * 认证由 {@link SsoAuthenticationProvider} 委托现有 LoginService。</p>
+ * OIDC Provider（Spring Authorization Server 7.1）。
+ *
+ * <p>The SPA no longer talks to this provider directly: the {@code nitrowater-bff} <em>confidential</em>
+ * client is the only browser-facing party, and it is the client type the Authorization Server is
+ * designed to issue refresh tokens to. The former public {@code nitrowater-web} client (which
+ * relied on iframe {@code prompt=none} renewal) has been retired.</p>
  */
 @Configuration
 public class AuthorizationServerConfig {
+
+    /** Encodes the confidential client secret; SAS verifies with a delegating encoder. */
+    private static final PasswordEncoder CLIENT_SECRET_ENCODER =
+            PasswordEncoderFactories.createDelegatingPasswordEncoder();
 
     /** AS 端点链（/oauth2/**、/.well-known/**、/userinfo 等）。未登录的 HTML 请求跳 /login。 */
     @Bean
@@ -85,7 +99,6 @@ public class AuthorizationServerConfig {
         return http.build();
     }
 
-    /** 默认链：Phase 1 的 /api/auth/** 放行；其它需登录；表单登录走自建 /login 页。 */
     @Bean
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
@@ -104,8 +117,7 @@ public class AuthorizationServerConfig {
     }
 
     /**
-     * Phase 2.5（方案 A）：OIDC 客户端 / 授权 / 同意 全部改为 JDBC 持久化，
-     * 使用 Spring Authorization Server 标准表（见 V1_1__oauth2_oidc_role.sql），重启不丢。
+     * JDBC Persistence
      */
     @Bean
     public RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
@@ -113,11 +125,10 @@ public class AuthorizationServerConfig {
     }
 
     /**
-     * Phase 2.5: JDBC authorization store. The default AS mapper denies the custom
+     * JDBC authorization store. The default AS mapper denies the custom
      * {@link SsoUserPrincipal} type, so a mapper allowing our package is supplied.
      */
     @Bean
-    @SuppressWarnings("deprecation") // AS JDBC mapper requires the deprecated LobHandler API
     public OAuth2AuthorizationService authorizationService(JdbcTemplate jdbcTemplate,
             RegisteredClientRepository registeredClientRepository) {
         JdbcOAuth2AuthorizationService service =
@@ -127,7 +138,6 @@ public class AuthorizationServerConfig {
         JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationRowMapper rowMapper =
                 new JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationRowMapper(
                         registeredClientRepository, jsonMapper);
-        rowMapper.setLobHandler(new DefaultLobHandler());
         service.setAuthorizationRowMapper(rowMapper);
 
         JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationParametersMapper parametersMapper =
@@ -151,36 +161,76 @@ public class AuthorizationServerConfig {
         return new JdbcOAuth2AuthorizationConsentService(jdbcTemplate, registeredClientRepository);
     }
 
-    /** 幂等播种首方客户端 nitrowater-web（已存在则跳过）。 */
+    /**
+     * Idempotently seeds the first-party {@code nitrowater-bff} client.
+     *
+     * <p>The BFF is a <em>confidential</em> client (client_secret + authorization_code +
+     * refresh_token). This is what makes the Authorization Server issue a refresh token: it
+     * deliberately withholds one from public clients, so the BFF is the supported way to get
+     * server-side silent refresh (no iframe).</p>
+     */
     @Bean
-    public ApplicationRunner registeredClientSeeder(RegisteredClientRepository registeredClientRepository) {
-        return args -> {
-            if (registeredClientRepository.findByClientId("nitrowater-web") == null) {
-                registeredClientRepository.save(nitrowaterWebClient());
-            }
-        };
+    public ApplicationRunner registeredClientSeeder(
+            RegisteredClientRepository registeredClientRepository,
+            @Value("${app.oidc.bff-client-secret}") String bffClientSecret,
+            @Value("${app.oidc.bff-redirect-uris}") String bffRedirectUris,
+            @Value("${app.oidc.bff-post-logout-redirect-uris}") String bffPostLogoutRedirectUris) {
+        return args -> upsertClient(registeredClientRepository, "nitrowater-bff",
+                id -> nitrowaterBffClient(id, bffClientSecret, bffRedirectUris, bffPostLogoutRedirectUris));
     }
 
-    private static RegisteredClient nitrowaterWebClient() {
-        return RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId("nitrowater-web")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.NONE) // 公共客户端 + PKCE
+    /**
+     * Insert-or-update by client id: a fresh row gets a new id, an existing row is updated in
+     * place so config changes (secret / redirect URIs) reconcile on restart.
+     */
+    private static void upsertClient(RegisteredClientRepository repository, String clientId,
+            Function<String, RegisteredClient> factory) {
+        RegisteredClient existing = repository.findByClientId(clientId);
+        String id = existing != null ? existing.getId() : UUID.randomUUID().toString();
+        repository.save(factory.apply(id));
+    }
+
+    private static RegisteredClient nitrowaterBffClient(String id, String secret,
+            String redirectUrisCsv, String postLogoutRedirectUrisCsv) {
+        RegisteredClient.Builder builder = RegisteredClient.withId(id)
+                .clientId("nitrowater-bff")
+                .clientSecret(CLIENT_SECRET_ENCODER.encode(secret))
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri("http://localhost:5173/auth/callback")
-                .postLogoutRedirectUri("http://localhost:5173/")
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)
                 .clientSettings(ClientSettings.builder()
-                        .requireProofKey(true)
+                        // Confidential client: authenticated by client_secret, so PKCE is not
+                        // required. (SAS 7.1 defaults require-proof-key to true — set it explicitly.)
+                        .requireProofKey(false)
                         .requireAuthorizationConsent(false)
                         .build())
                 .tokenSettings(TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofHours(2))
+                        // Short AT TTL narrows the revocation window; the BFF refreshes silently
+                        // with the refresh token. The resource server is unaffected.
+                        .accessTokenTimeToLive(Duration.ofMinutes(15))
                         .refreshTokenTimeToLive(Duration.ofDays(30))
                         .reuseRefreshTokens(false)
-                        .build())
-                .build();
+                        .build());
+        for (String uri : splitCsv(redirectUrisCsv)) {
+            builder.redirectUri(uri);
+        }
+        for (String uri : splitCsv(postLogoutRedirectUrisCsv)) {
+            builder.postLogoutRedirectUri(uri);
+        }
+        return builder.build();
+    }
+
+    /** Parses a comma separated list, ignoring blanks. */
+    private static List<String> splitCsv(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .toList();
     }
 
     /** JWKS：复用 core RSA 密钥对。 */
@@ -206,13 +256,12 @@ public class AuthorizationServerConfig {
     }
 
     /**
-     * Phase 2.4：令牌定制。
-     * <p>把 {@link SsoUserPrincipal} 的身份上下文映射进 access_token / id_token：
-     * {@code sub=uid}、{@code uid}、{@code preferred_username}、{@code name}、{@code roles}、{@code did}。
-     * 这些 claim 亦经默认 {@code /userinfo}（由 id_token claims 映射）对外暴露。</p>
+     * Customizer token
+     * @return encoded jwt context
      */
     @Bean
-    public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
+    public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
+            @Value("${app.oidc.access-token-audiences:}") String resourceAudiencesCsv) {
         return context -> {
             SsoUserPrincipal principal = resolvePrincipal(context);
             String uid = principal != null
@@ -234,10 +283,44 @@ public class AuthorizationServerConfig {
                     claims.claim("did", principal.getDid());
                 }
             }
+            // RFC 9068: the access token's `aud` identifies the RESOURCE it may be used on.
+            // Id tokens are deliberately untouched — OIDC Core §2 requires their `aud` to be
+            // exactly the client_id, so widening it would break OIDC conformance.
+            if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
+                Set<String> distinct = new LinkedHashSet<>(resourceAudiencesOf(resourceAudiencesCsv));
+                RegisteredClient client = context.getRegisteredClient();
+                if (client != null) {
+                    // keep the client identity so existing audience checks keep passing
+                    distinct.add(client.getClientId());
+                }
+                if (!distinct.isEmpty()) {
+                    claims.audience(new ArrayList<>(distinct));
+                }
+            }
         };
     }
 
-    /** 从令牌上下文取回登录主体；AS 在授权码与刷新链路都会注入该 Authentication。 */
+    /**
+     * Parses {@code app.oidc.access-token-audiences} (comma separated) into a list.
+     *
+     * <p>Split by hand rather than relying on {@code @Value} list conversion so a YAML list and
+     * a comma separated scalar behave the same way.
+     */
+    private static List<String> resourceAudiencesOf(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .toList();
+    }
+
+    /**
+     * Resolve principle from a jwt context
+     * @param context {@link JwtEncodingContext}
+     * @return {@link SsoUserPrincipal}
+     */
     private static SsoUserPrincipal resolvePrincipal(JwtEncodingContext context) {
         Authentication authentication = context.getPrincipal();
         if (authentication != null && authentication.getPrincipal() instanceof SsoUserPrincipal p) {
@@ -253,10 +336,14 @@ public class AuthorizationServerConfig {
         return null;
     }
 
-    /** 回退：取授权记录的 principalName（uid）。 */
+    /**
+     * Resolve simple uid
+     * @param context {@link JwtEncodingContext}
+     * @return {@link SsoUserPrincipal}
+     */
     private static String resolveUid(JwtEncodingContext context) {
         OAuth2Authorization authorization = context.getAuthorization();
-        if (authorization != null && authorization.getPrincipalName() != null) {
+        if (authorization != null) {
             return authorization.getPrincipalName();
         }
         Authentication principal = context.getPrincipal();

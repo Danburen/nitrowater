@@ -37,6 +37,14 @@ spring:
           issuer-uri: ${JWT_ISSUER:http://localhost:8090}
           jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
 
+# -------- 本服务的额外 JWT 校验（Spring 默认不校验 aud，这里显式收紧）--------
+# audiences：允许消费的 aud 列表，逗号分隔。必须与 AS 的
+# app.oidc.access-token-audiences 对齐（AS 会额外保留 client_id）。
+app:
+  security:
+    jwt:
+      audiences: nitrowater-server
+
 logging:
   level:
     root: INFO

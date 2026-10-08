@@ -74,6 +74,7 @@ go.work.sum
 .opencode/
 .omo/
 .codegraph/
+.playwright-mcp/
 
 # secrets / keys
 **/src/main/resources/keys/*.key

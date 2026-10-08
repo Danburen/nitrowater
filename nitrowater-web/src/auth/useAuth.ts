@@ -1,33 +1,23 @@
 import { ref } from 'vue'
-import type { User } from 'oidc-client-ts'
-import { userManager } from './oidc'
+import { fetchSession, login as bffLogin, logout as bffLogout } from './bff'
+import type { BffSession } from './bff'
 
 /**
- * Shared reactive SSO session state.
+ * Shared reactive SSO session state, backed by the BFF (`/bff/me`).
  *
- * A single module-level store is exposed so every component observes the same user;
- * event hooks keep it in sync across tabs/renewals.
+ * A single module-level store is exposed so every component observes the same session.
  */
-const user = ref<User | null>(null)
+const session = ref<BffSession | null>(null)
 const loading = ref(true)
 let initialized = false
 
 async function refresh(): Promise<void> {
-  user.value = await userManager.getUser()
+  session.value = await fetchSession()
 }
 
 function init(): void {
   if (initialized) return
   initialized = true
-  userManager.events.addUserLoaded((loaded) => {
-    user.value = loaded
-  })
-  userManager.events.addUserUnloaded(() => {
-    user.value = null
-  })
-  userManager.events.addAccessTokenExpired(() => {
-    user.value = null
-  })
   void refresh().finally(() => {
     loading.value = false
   })
@@ -36,12 +26,13 @@ function init(): void {
 export function useAuth() {
   init()
   return {
-    user,
+    session,
     loading,
-    login: (): Promise<void> => userManager.signinRedirect(),
-    logout: (): Promise<void> => userManager.signoutRedirect(),
-    renew: async (): Promise<void> => {
-      await userManager.signinSilent()
+    /** Full-page redirect into the SSO login. */
+    login: (): void => bffLogin(),
+    /** Ends the BFF session then returns home. */
+    logout: async (): Promise<void> => {
+      await bffLogout()
     },
     refresh,
   }

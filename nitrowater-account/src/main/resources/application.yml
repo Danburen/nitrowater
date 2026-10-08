@@ -132,6 +132,19 @@ app:
   cookie:
     same-site: Strict
     secure: false
+  # access token 的 aud（RFC 9068：标识"这张票能在哪个资源上用"）。
+  # 逗号分隔；始终追加 client_id，id_token 的 aud 不受影响（OIDC Core §2 要求 = client_id）。
+  # Resource Server 用 app.security.jwt.audiences 校验这个值，两边要对齐。
+  oidc:
+    access-token-audiences: nitrowater-server
+    # BFF（confidential client）——服务端持 AT/RT，唯一面向浏览器的客户端。
+    # 密文由 seeder 用 DelegatingPasswordEncoder 编码后存入 oauth2_registered_client。
+    # 生产把 BFF_CLIENT_SECRET 换成强随机值（务必与 nitrowater-bff 的配置一致）。
+    bff-client-secret: "${BFF_CLIENT_SECRET:nitrowater-bff-secret}"
+    # 重定向 URI：dev 经 Vite 代理(5173) / 直接 BFF(8080)；prod 为门户域名。逗号分隔。
+    bff-redirect-uris: "${BFF_REDIRECT_URIS:http://localhost:5173/login/oauth2/code/nitrowater,http://localhost:8080/login/oauth2/code/nitrowater,https://nitrowater.cn/login/oauth2/code/nitrowater}"
+    # RP-initiated logout 回跳地址：逗号分隔。
+    bff-post-logout-redirect-uris: "${BFF_POST_LOGOUT_REDIRECT_URIS:http://localhost:5173/,http://localhost:8080/,https://nitrowater.cn/}"
 
 logging:
   level:

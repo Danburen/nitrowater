@@ -40,9 +40,10 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
 | 模块 | 职责 | 状态 |
 |---|---|---|
 | `nitrowater-core` | 共享库（实体、仓储、认证服务、安全工具），不独立部署 | ✅ 认证核心已迁移 |
-| `nitrowater-account` | **SSO / OIDC 认证中心** —— 登录注册 API + OIDC Provider + 托管登录页 | ✅ Phase 1 完成 · ✅ Phase 2.5（JDBC + 令牌定制） · 🚧 网关待续 |
+| `nitrowater-account` | **SSO / OIDC 认证中心** —— 登录注册 API + OIDC Provider + 托管登录页 | ✅ Phase 1 完成 · ✅ Phase 2.5（JDBC + 令牌定制） · ✅ 已播种 confidential BFF 客户端 |
+| `nitrowater-bff` | **BFF（Backend for Frontend / Token Handler）** —— confidential OIDC 客户端；浏览器只持 HttpOnly 会话 Cookie，令牌留在服务端，`/api/**` 代理到资源服务 | ✅ Phase 3（BFF）完成 |
 | `nitrowater-server` | 业务 API —— 工具箱后端、题目/提交管理、静态托管、Resource Server | ⏳ 仅骨架 |
-| `nitrowater-web` | 前端（Vue 3 + TypeScript + Vite）—— 导航门户、工具箱、演练场、文档频道、SSO 登录 | 🚧 Phase 2.6：OIDC 客户端（`oidc-client-ts`）+ 门户壳完成 · 工具箱/演练场/文档待续 |
+| `nitrowater-web` | 前端（Vue 3 + TypeScript + Vite）—— 导航门户、工具箱、演练场、文档频道、SSO 登录 | 🚧 SSO 门户壳（Element Plus）完成 · 现为同源 BFF 客户端 · 工具箱/演练场/文档待续 |
 | `nitrowater-judge` | 演练场判题服务（编译 → 沙箱 → 判题） | ⏳ 规划中（模块未创建） |
 
 ## 当前状态
@@ -69,13 +70,14 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
 - **SSO 托管登录/注册页** —— 由 AS 在 auth 域直接托管（仿 WaterFun `AuthBox`，无框架）：`GET /login`（原生表单 POST → Spring Security → 续跑 OIDC）与 `GET /register`（调 `/api/auth/**`）。身份 UI 归属身份中心，`nitrowater-web` 保持业务客户端。
 - **issuer 统一** —— 单一 `jwt.issuer`（环境变量 `JWT_ISSUER`，开发默认 `http://localhost:8090`）由 Phase1 自研 AT 与 AS 共用，且等于 OIDC 发现文档的 `issuer`；须与前端 `VITE_OIDC_AUTHORITY` 一致。
 - **AT/RT 标记废弃** —— Phase1 自研令牌服务（`AccessTokenService`、`AuthCoreService`）标 `@Deprecated`（由 OIDC 取代），仅保留给 `/api/auth/**` 兼容层。
+- **Phase 3 —— BFF（Token Handler）** —— 新增 `nitrowater-bff` 模块（Servlet/WebMVC）：confidential OIDC 客户端（`spring-boot-starter-security-oauth2-client`）、Redis 会话（`spring-session-data-redis`）、CSRF、`/bff/me` 会话自省，以及 `/api/**` 代理——附加**服务端持有的** Bearer access token（过期用 `refresh_token` 自动续期）。浏览器**零 token**。由于客户端是 confidential，授权服务器会签发 refresh token（它刻意不给 public client 签发），从而取代 iframe `prompt=none` 路径。旧 public 客户端机制（`X-Frame-Options`/`frame-ancestors`、`/auth/silent-callback`）已移除；`nitrowater-web` 弃用 `oidc-client-ts`，改为同源调用 BFF（`/bff/me`、`/oauth2/authorization/nitrowater`、`/logout`）。
 
 ### 🚧 进行中 / 未完成
 
 **Phase 2 —— 完成真正的 OIDC 单点登录**（下一里程碑）：
 
-- [x] **`nitrowater-web` OIDC 客户端** —— 接入 `oidc-client-ts`（`/auth/callback`、silent renew、登出）—— 已完成。
-- [x] **端到端取证** —— 服务端授权码流已验证（`deploy/bin/smoke-oidc.ps1`）：`sub/uid/preferred_username/roles/did`。
+- [x] **OIDC 客户端** —— 已被取代：SPA 不再持有 token；由 **`nitrowater-bff`** confidential 客户端（Phase 3）在服务端完成登录/续期/登出。
+- [x] **端到端取证** —— 授权码流已验证（`deploy/bin/smoke-oidc.ps1`）：`sub/uid/preferred_username/roles/did` + confidential BFF 客户端已下发 `refresh_token`。
 - [ ] **WaterFun 网关切换** —— 验签公钥改 JWKS；置顶新增 `/api/auth/** → SSO` 路由；校对白名单路径。
 
 **其它模块（尚未开始）：**
@@ -107,9 +109,10 @@ NitroWater 是一个新建的 Gradle 多模块工程，把四个独立诉求收�
 nitrowater（Gradle monorepo）
 ├── nitrowater-core        # 共享库（实体/仓储/认证服务）—— 不部署
 ├── nitrowater-account     # SSO 认证中心（授权服务器 + 认证 API + 托管登录页）
-├── nitrowater-server      # 业务 API（工具箱后端、题目/提交、静态托管）
+├── nitrowater-bff         # BFF / Token Handler（confidential OIDC 客户端 + Redis 会话 + /api 代理）
+├── nitrowater-server      # 业务 API（工具箱后端、题目/提交、静态托管）+ Resource Server
 ├── nitrowater-judge       # 演练场判题服务（编译 → 沙箱 → 判题）   [规划中]
-└── nitrowater-web         # 复合前端：门户 + 工具箱 + 演练场 + 文档 + SSO 回调
+└── nitrowater-web         # 复合前端：门户 + 工具箱 + 演练场 + 文档（同源 BFF 客户端）
 ```
 
 运行时（生产）：网关为信任边界；`/api/auth/**` 路由到 SSO 服务，`/api/**` 到业务服务，`/api/judge/**` 到判题服务。本地开发无网关时，`nitrowater-server` 直接暴露 JWT 验签（与网关一致）。
@@ -117,7 +120,7 @@ nitrowater（Gradle monorepo）
 ## 技术栈
 
 - **后端**：Java 25、Spring Boot 4.1.1、Spring Security 7 + Spring Authorization Server 7（OIDC）、JPA + MySQL 8、Redis、Flyway
-- **前端**：Vue 3 + TypeScript + Vite、`vue-router`、`oidc-client-ts`；ESLint（flat config）
+- **前端**：Vue 3 + TypeScript + Vite、`vue-router`；ESLint（flat config）
 - **文档**：VitePress（`velochatx-docs`）
 
 ## 快速开始
@@ -138,16 +141,22 @@ nitrowater（Gradle monorepo）
 .\deploy\bin\start-account.bat
 # 或：gradlew :nitrowater-account:bootRun
 
-# 5) 端到端冒烟（交互式）
-.\deploy\bin\smoke-auth.ps1
+# 5) 启动 BFF（http://localhost:8080）与资源服务（http://localhost:8081）
+.\deploy\bin\start-bff.bat        # 需先启动 SSO（启动时要拉 OIDC 发现文档）
+# 或：gradlew :nitrowater-bff:bootRun
+# 或：gradlew :nitrowater-server:bootRun
 
-# 6) OIDC 发现端点自检
+# 6) 端到端冒烟（交互式）
+.\deploy\bin\smoke-auth.ps1       # /api/auth/** 流程
+.\deploy\bin\smoke-oidc.ps1       # OIDC 授权码 + refresh_token（confidential BFF 客户端）
+
+# 7) OIDC 发现端点自检
 #    curl http://localhost:8090/.well-known/openid-configuration
 
-# 7) 前端（SSO 门户）-> http://localhost:5173
+# 8) 前端（SSO 门户）-> http://localhost:5173
 cd nitrowater-web
 npm install
-npm run dev          # 登录流： http://localhost:5173 -> SSO(:8090) -> 回调带回 code
+npm run dev          # SPA 将 /api、/bff、/oauth2、/login、/logout 代理到 BFF（:8080）
 npm run lint         # ESLint（flat config，TypeScript + Vue）
 npm run build        # vue-tsc + vite build
 ```
