@@ -157,4 +157,30 @@ public class SsoUserPrincipal implements UserDetails {
     public boolean isEnabled() {
         return accountStatus == AccountStatus.ACTIVE;
     }
+
+    /**
+     * Identity is the account uid.
+     *
+     * <p>Spring Authorization Server's {@code SessionRegistryImpl} keys tracked OIDC sessions by
+     * the principal object. The principal is persisted inside the {@code OAuth2Authorization}
+     * (JDBC) and rehydrated as a <em>new</em> instance at the token endpoint, so without value
+     * equality the registry lookup misses and the {@code id_token} is minted without a {@code sid}
+     * claim — which then makes RP-Initiated Logout fail with {@code 400 invalid_token (sid)}.
+     * Value equality by uid (the token {@code sub}) makes the lookup stable.</p>
+     */
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof SsoUserPrincipal that)) {
+            return false;
+        }
+        return uid == that.uid;
+    }
+
+    @Override
+    public int hashCode() {
+        return Long.hashCode(uid);
+    }
 }

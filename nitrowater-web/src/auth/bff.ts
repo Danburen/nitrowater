@@ -35,14 +35,25 @@ export function login(): void {
   window.location.assign('/oauth2/authorization/nitrowater')
 }
 
-/** Ends the BFF session (and the upstream SSO session) then returns home. */
-export async function logout(): Promise<void> {
-  await fetch('/logout', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: csrfHeaders(),
-  })
-  window.location.assign('/')
+/**
+ * Ends the BFF session and the upstream SSO session.
+ *
+ * A top-level form POST (not `fetch`) is used on purpose: the BFF answers with a 302 chain to the
+ * Authorization Server's end-session endpoint, and only a top-level navigation carries the SSO
+ * session cookie there (a `fetch` would drop it cross-origin and the SSO session would survive).
+ * The CSRF token is submitted as the `_csrf` form field the BFF expects.
+ */
+export function logout(): void {
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = '/logout'
+  const csrf = document.createElement('input')
+  csrf.type = 'hidden'
+  csrf.name = '_csrf'
+  csrf.value = readCookie('XSRF-TOKEN') ?? ''
+  form.appendChild(csrf)
+  document.body.appendChild(form)
+  form.submit()
 }
 
 /** Asks the BFF who the current user is. Never carries a token. */

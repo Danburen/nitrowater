@@ -144,7 +144,7 @@ app:
     # 重定向 URI：dev 经 Vite 代理(5173) / 直接 BFF(8080)；prod 为门户域名。逗号分隔。
     bff-redirect-uris: "${BFF_REDIRECT_URIS:http://localhost:5173/login/oauth2/code/nitrowater,http://localhost:8080/login/oauth2/code/nitrowater,https://nitrowater.cn/login/oauth2/code/nitrowater}"
     # RP-initiated logout 回跳地址：逗号分隔。
-    bff-post-logout-redirect-uris: "${BFF_POST_LOGOUT_REDIRECT_URIS:http://localhost:5173/,http://localhost:8080/,https://nitrowater.cn/}"
+    bff-post-logout-redirect-uris: "${BFF_POST_LOGOUT_REDIRECT_URIS:http://localhost:5173,http://localhost:5173/,http://localhost:8080,http://localhost:8080/,https://nitrowater.cn,https://nitrowater.cn/}"
 
 logging:
   level:

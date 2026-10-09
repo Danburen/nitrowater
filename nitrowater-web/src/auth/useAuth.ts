@@ -30,9 +30,9 @@ export function useAuth() {
     loading,
     /** Full-page redirect into the SSO login. */
     login: (): void => bffLogin(),
-    /** Ends the BFF session then returns home. */
-    logout: async (): Promise<void> => {
-      await bffLogout()
+    /** Ends the BFF session and the upstream SSO session (top-level navigation). */
+    logout: (): void => {
+      bffLogout()
     },
     refresh,
   }

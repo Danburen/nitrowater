@@ -16,9 +16,14 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Phase 2: delegates authentication to the existing {@link LoginServiceImpl}
@@ -62,7 +67,12 @@ public class SsoAuthenticationProvider implements AuthenticationProvider {
                     : null;
             SsoUserPrincipal principal = SsoUserPrincipal.of(
                     user, deviceFp, did, userRoleService.findRoleCodes(user.getUid()));
-            return UsernamePasswordAuthenticationToken.authenticated(principal, null, principal.getAuthorities());
+            // Mark the authentication factor (PASSWORD). Spring Security's
+            // AbstractUserDetailsAuthenticationProvider does this for the standard form login;
+            // since this provider is custom it must add it explicitly, otherwise the AS cannot
+            // derive the id_token `auth_time` claim once an OIDC session is tracked.
+            Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());            authorities.add(FactorGrantedAuthority.fromAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY));
+            return UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities);
         } catch (RuntimeException e) {
             throw new BadCredentialsException(e.getMessage() == null ? "login failed" : e.getMessage(), e);
         }

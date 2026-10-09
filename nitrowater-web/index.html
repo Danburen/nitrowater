@@ -1,10 +1,44 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NitroWater · SSO Portal</title>
+    <meta name="color-scheme" content="dark light" />
+    <!-- Mobile browser chrome follows the theme (values mirror style.css tokens). -->
+    <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)" />
+    <meta
+      name="description"
+      content="NitroWater —— 在线工具箱（Java DTO 转 TypeScript、压缩/解压、树形与列表树可视化、在线代码运行）、编程演练场、工程文档与个人服务器展示，统一 SSO 登录。"
+    />
+    <meta name="keywords" content="NitroWater,在线工具箱,Java转TypeScript,ZIP压缩解压,树形可视化,在线代码运行,编程演练场,SSO,OIDC" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="NitroWater" />
+    <meta property="og:title" content="NitroWater · 工具箱 / 演练场 / 文档 / 服务器" />
+    <meta property="og:description" content="在线工具箱 + 编程演练场 + 工程文档 + 个人服务器展示，统一 SSO 登录。" />
+    <meta property="og:url" content="https://nitrowater.cn/" />
+    <meta name="twitter:card" content="summary" />
+    <title>NitroWater · 工具箱 / 演练场 / 文档 / 服务器</title>
+    <!-- Set the theme before first paint to avoid a flash of the wrong theme (FOUC).
+         Mirrors src/shared/theme/useTheme.ts: persisted choice, else the OS preference. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('nitrowater-theme')
+          var theme =
+            stored === 'light' || stored === 'dark'
+              ? stored
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+          document.documentElement.dataset.theme = theme
+          document.documentElement.style.colorScheme = theme
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>站点名 · 工具箱 / 演练场 / 文档 / 服务器</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-soft: #171a21;
+    --card: #1c2029;
+    --border: #2a2f3a;
+    --text: #e6e8ec;
+    --text-dim: #9aa1ad;
+    --accent: #5b8cff;
+    --accent-soft: rgba(91, 140, 255, 0.12);
+    --radius: 14px;
+    --maxw: 1120px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ---------- 顶部导航 ---------- */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(15, 17, 21, 0.82);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .logo-mark {
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #5b8cff, #9b6bff);
+  }
+  .nav-links {
+    display: flex;
+    gap: 26px;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .nav-links a:hover { color: var(--text); }
+  .nav-actions { display: flex; gap: 10px; align-items: center; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 9px;
+    font-size: 13.5px;
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+    color: var(--text);
+    cursor: pointer;
+    transition: 0.18s;
+  }
+  .btn:hover { border-color: #3a4150; }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: #4a7bf0; }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    padding: 72px 0 48px;
+    text-align: center;
+  }
+  .hero-badge {
+    display: inline-block;
+    font-size: 12.5px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid rgba(91,140,255,0.25);
+    padding: 5px 12px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: 40px;
+    line-height: 1.25;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 16px;
+  }
+  .hero h1 span {
+    background: linear-gradient(135deg, #5b8cff, #9b6bff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero p {
+    color: var(--text-dim);
+    font-size: 16px;
+    max-width: 560px;
+    margin: 0 auto 28px;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* ---------- 通用区块 ---------- */
+  section { padding: 40px 0; }
+  .section-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 22px;
+  }
+  .section-head h2 {
+    font-size: 21px;
+    font-weight: 650;
+    letter-spacing: -0.2px;
+  }
+  .section-head p {
+    font-size: 13.5px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .section-head a {
+    font-size: 13.5px;
+    color: var(--accent);
+  }
+
+  /* ---------- 工具卡片网格 ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    transition: 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card:hover {
+    border-color: #3a4150;
+    transform: translateY(-2px);
+  }
+  .card-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .card-icon {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg-soft);
+  }
+  .card h3 {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .card .desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 11.5px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .tag-lock {
+    color: #f0b45b;
+    border-color: rgba(240,180,91,0.3);
+    background: rgba(240,180,91,0.08);
+  }
+
+  /* ---------- 大卡片：演练场 ---------- */
+  .feature {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .feature-body {
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+  }
+  .feature-body h3 {
+    font-size: 22px;
+    font-weight: 650;
+  }
+  .feature-body p {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .feature-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .feature-img {
+    width: 100%;
+    height: 100%;
+    min-height: 260px;
+    object-fit: cover;
+    opacity: 0.9;
+  }
+
+  /* ---------- 文档列表 ---------- */
+  .doc-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .doc-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    transition: 0.18s;
+  }
+  .doc-item:hover { border-color: #3a4150; }
+  .doc-item .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .doc-item .doc-title { font-size: 14px; font-weight: 500; }
+  .doc-item .doc-sub { font-size: 12.5px; color: var(--text-dim); }
+
+  /* ---------- 服务器列表 ---------- */
+  .server-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+  .server-card {
+    display: flex;
+    gap: 14px;
+    padding: 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: 0.18s;
+  }
+  .server-card:hover { border-color: #3a4150; }
+  .server-banner {
+    width: 68px; height: 68px;
+    border-radius: 10px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg-soft);
+  }
+  .server-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .server-info h4 { font-size: 14.5px; font-weight: 600; }
+  .server-meta {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: #6fcf8f;
+  }
+  .status::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #6fcf8f;
+  }
+  .status.offline { color: #d97b7b; }
+  .status.offline::before { background: #d97b7b; }
+
+  /* ---------- CTA 条 ---------- */
+  .cta {
+    margin: 24px 0 0;
+    padding: 28px 32px;
+    background: linear-gradient(135deg, rgba(91,140,255,0.12), rgba(155,107,255,0.10));
+    border: 1px solid rgba(91,140,255,0.25);
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .cta h3 { font-size: 18px; font-weight: 650; margin-bottom: 4px; }
+  .cta p { font-size: 13.5px; color: var(--text-dim); }
+
+  /* ---------- Footer ---------- */
+  footer {
+    margin-top: 56px;
+    padding: 28px 0 40px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  footer a:hover { color: var(--text); }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 760px) {
+    .hero h1 { font-size: 30px; }
+    .feature { grid-template-columns: 1fr; }
+    .feature-img { min-height: 180px; }
+    .nav-links { display: none; }
+    .section-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 顶部导航 ========== -->
+<header>
+  <div class="wrap nav">
+    <div class="logo">
+      <div class="logo-mark"></div>
+      <span>站点名</span>
+    </div>
+    <nav class="nav-links">
+      <a href="#tools">工具箱</a>
+      <a href="#playground">演练场</a>
+      <a href="#docs">文档</a>
+      <a href="#servers">服务器</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn" href="#">登录</a>
+      <a class="btn btn-primary" href="#playground">进入演练场</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ========== Hero ========== -->
+  <section class="hero">
+    <div class="hero-badge">匿名工具箱 · 在线演练场 · 插件文档 · 服务器列表</div>
+    <h1>一个站点，装下你的<br><span>工具、代码与服务器</span></h1>
+    <p>匿名即可使用在线工具箱；登录后可进入 ACM 模式编程演练场；工程文档、插件说明与我的世界服务器列表集中在这里。</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="#tools">开始使用工具箱</a>
+      <a class="btn" href="#playground">进入演练场</a>
+    </div>
+  </section>
+
+  <!-- ========== 匿名工具箱 ========== -->
+  <section id="tools">
+    <div class="section-head">
+      <div>
+        <h2>在线工具箱</h2>
+        <p>无需登录，打开即用</p>
+      </div>
+      <a href="#">查看全部 →</a>
+    </div>
+
+    <div class="grid">
+      <a class="card" href="#">
+        <div class="card-top">
+          <img class="card-icon" src="https://picsum.photos/seed/tool1/80/80" alt="" />
+          <h3>JSON 格式化</h3>
+        </div>
+        <p class="desc">粘贴、校验、压缩与美化 JSON，支持大文本。</p>
+        <span class="tag">匿名可用</span>
+      </a>
+
+      <a class="card" href="#">
+        <div class="card-top">
+          <img class="card-icon" src="https://picsum.photos/seed/tool2/80/80" alt="" />
+          <h3>时间戳转换</h3>
+        </div>
+        <p class="desc">Unix 时间戳与本地时间互转，支持毫秒。</p>
+        <span class="tag">匿名可用</span>
+      </a>
+
+      <a class="card" href="#">
+        <div class="card-top">
+          <img class="card-icon" src="https://picsum.photos/seed/tool3/80/80" alt="" />
+          <h3>二维码生成</h3>
+        </div>
+        <p class="desc">文本、链接一键生成二维码，可下载 PNG。</p>
+        <span class="tag">匿名可用</span>
+      </a>
+
+      <a class="card" href="#">
+        <div class="card-top">
+          <img class="card-icon" src="https://picsum.photos/seed/tool4/80/80" alt="" />
+          <h3>Base64 编解码</h3>
+        </div>
+        <p class="desc">文本与 Base64 互转，支持 URL 安全字符集。</p>
+        <span class="tag">匿名可用</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ========== 编程演练场 ========== -->
+  <section id="playground">
+    <div class="section-head">
+      <div>
+        <h2>在线编程演练场</h2>
+        <p>ACM 模式 · 登录后可用</p>
+      </div>
+    </div>
+
+    <div class="feature">
+      <div class="feature-body">
+        <h3>ACM 模式在线判题</h3>
+        <p>提交代码、实时判题、查看运行结果。支持多语言，题目按难度与标签组织。</p>
+        <div class="feature-list">
+          <span class="tag">C++</span>
+          <span class="tag">Python</span>
+          <span class="tag">Java</span>
+          <span class="tag tag-lock">需登录</span>
+        </div>
+        <div style="margin-top:8px;">
+          <a class="btn btn-primary" href="#">登录后进入 →</a>
+        </div>
+      </div>
+      <img class="feature-img" src="https://picsum.photos/seed/playground/900/600" alt="演练场预览" />
+    </div>
+  </section>
+
+  <!-- ========== 文档中心 ========== -->
+  <section id="docs">
+    <div class="section-head">
+      <div>
+        <h2>文档中心</h2>
+        <p>工程文档与插件说明</p>
+      </div>
+      <a href="#">全部文档 →</a>
+    </div>
+
+    <div class="doc-list">
+      <a class="doc-item" href="#">
+        <span class="dot"></span>
+        <div>
+          <div class="doc-title">项目工程文档</div>
+          <div class="doc-sub">架构说明 · 部署指南 · API 参考</div>
+        </div>
+      </a>
+      <a class="doc-item" href="#">
+        <span class="dot"></span>
+        <div>
+          <div class="doc-title">插件使用说明</div>
+          <div class="doc-sub">安装 · 配置 · 常见问题</div>
+        </div>
+      </a>
+      <a class="doc-item" href="#">
+        <span class="dot"></span>
+        <div>
+          <div class="doc-title">开发笔记</div>
+          <div class="doc-sub">更新日志 · 踩坑记录</div>
+        </div>
+      </a>
+      <a class="doc-item" href="#">
+        <span class="dot"></span>
+        <div>
+          <div class="doc-title">更新日志</div>
+          <div class="doc-sub">版本历史与变更说明</div>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- ========== 服务器列表 ========== -->
+  <section id="servers">
+    <div class="section-head">
+      <div>
+        <h2>我的世界服务器列表</h2>
+        <p>朋友与未来腐竹的服务器</p>
+      </div>
+      <a href="#">提交服务器 →</a>
+    </div>
+
+    <div class="server-grid">
+      <div class="server-card">
+        <img class="server-banner" src="https://picsum.photos/seed/mc1/120/120" alt="" />
+        <div class="server-info">
+          <h4>生存服 · 示例一</h4>
+          <div class="server-meta">
+            <span>Java 1.20</span>
+            <span>生存 / 建筑</span>
+          </div>
+          <span class="status">在线 · 12 人</span>
+        </div>
+      </div>
+
+      <div class="server-card">
+        <img class="server-banner" src="https://picsum.photos/seed/mc2/120/120" alt="" />
+        <div class="server-info">
+          <h4>模组服 · 示例二</h4>
+          <div class="server-meta">
+            <span>Forge 1.19</span>
+            <span>科技 / 冒险</span>
+          </div>
+          <span class="status offline">离线</span>
+        </div>
+      </div>
+
+      <div class="server-card">
+        <img class="server-banner" src="https://picsum.photos/seed/mc3/120/120" alt="" />
+        <div class="server-info">
+          <h4>小游戏服 · 示例三</h4>
+          <div class="server-meta">
+            <span>Paper 1.20</span>
+            <span>起床战争 / 空岛</span>
+          </div>
+          <span class="status">在线 · 8 人</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta">
+      <div>
+        <h3>你是腐竹？</h3>
+        <p>提交你的服务器信息，审核通过后会出现在这里。</p>
+      </div>
+      <a class="btn btn-primary" href="#">提交服务器</a>
+    </div>
+  </section>
+
+  <!-- ========== Footer ========== -->
+  <footer>
+    <div>© 2026 站点名 · 工具 / 演练场 / 文档 / 服务器</div>
+    <div style="display:flex; gap:18px;">
+      <a href="#">GitHub</a>
+      <a href="#">RSS</a>
+      <a href="#">联系</a>
+    </div>
+  </footer>
+
+</main>
+</body>
+</html>

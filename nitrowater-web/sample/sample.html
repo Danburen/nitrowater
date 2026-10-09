@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NitroWater · game servers, docs & playground</title>
+  <!-- Font Awesome 6 (free) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <!-- Google Fonts: Inter + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #070b12;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      color: #e3edf9;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem 2.5rem;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(0, 180, 255, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 75%, rgba(120, 80, 255, 0.1) 0%, transparent 45%),
+        linear-gradient(145deg, #070b12 0%, #0d1320 100%);
+    }
+
+    /* subtle animated grid */
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        linear-gradient(rgba(100, 170, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(100, 170, 255, 0.02) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1320px;
+      width: 100%;
+      position: relative;
+      z-index: 2;
+      margin: 0 auto;
+    }
+
+    /* ---------- HEADER ---------- */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #1ea0ff, #7b4eff);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 20px -6px rgba(30, 160, 255, 0.5);
+      font-size: 1.8rem;
+      color: #fff;
+    }
+
+    .logo-text {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(to right, #ffffff, #b7d9ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .logo-text span {
+      background: linear-gradient(to right, #4eb5ff, #a07aff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-badges {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 60px;
+      padding: 0.45rem 1.1rem;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #a4b9d4;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      backdrop-filter: blur(4px);
+      transition: all 0.2s;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .chip i {
+      color: #4eb5ff;
+      font-size: 0.7rem;
+    }
+
+    .chip:hover {
+      border-color: rgba(74, 158, 255, 0.35);
+      background: rgba(30, 160, 255, 0.1);
+      color: #c6defa;
+    }
+
+    .sso-login {
+      background: linear-gradient(135deg, #1e80e0, #6b4eff);
+      border: none;
+      border-radius: 60px;
+      padding: 0.6rem 1.5rem;
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      box-shadow: 0 6px 16px -6px rgba(30, 120, 255, 0.5);
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .sso-login i {
+      font-size: 0.8rem;
+    }
+
+    .sso-login:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px -8px #1e80e0;
+      filter: brightness(1.1);
+    }
+
+    /* ---------- BANNER (HERO) ---------- */
+    .banner {
+      background: linear-gradient(105deg, rgba(16, 28, 48, 0.9) 0%, rgba(22, 36, 62, 0.85) 100%);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 40px;
+      padding: 3rem 3.2rem;
+      margin-bottom: 2.5rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 30px 50px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(74, 158, 255, 0.1) inset;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 2rem;
+    }
+
+    .banner::after {
+      content: "";
+      position: absolute;
+      top: -30%;
+      right: -10%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(30, 160, 255, 0.18), transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .banner-content {
+      flex: 1 1 500px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .banner-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(30, 160, 255, 0.12);
+      border: 1px solid rgba(30, 160, 255, 0.25);
+      border-radius: 100px;
+      padding: 0.4rem 1.1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: #9ac8ff;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+
+    .banner h1 {
+      font-size: 3.2rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.2rem;
+      background: linear-gradient(to bottom, #ffffff, #b2c9e8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .banner h1 .highlight {
+      background: linear-gradient(135deg, #4eb5ff, #b07aff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .banner p {
+      font-size: 1.15rem;
+      color: #97acc8;
+      max-width: 560px;
+      margin-bottom: 2rem;
+      font-weight: 400;
+      line-height: 1.7;
+    }
+
+    .banner-actions {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #1e80e0, #6b4eff);
+      border: none;
+      border-radius: 60px;
+      padding: 0.9rem 2rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 12px 24px -10px #1e80e0;
+      font-family: 'Inter', sans-serif;
+      text-decoration: none;
+    }
+
+    .btn-primary i {
+      font-size: 0.9rem;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 30px -10px #1e80e0;
+      filter: brightness(1.1);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 60px;
+      padding: 0.9rem 2rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #d0e2fc;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(4px);
+      font-family: 'Inter', sans-serif;
+      text-decoration: none;
+    }
+
+    .btn-secondary i {
+      font-size: 0.9rem;
+      color: #4eb5ff;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(74, 158, 255, 0.4);
+    }
+
+    /* banner visual (right side graphic) */
+    .banner-visual {
+      flex: 0 0 280px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      z-index: 2;
+    }
+
+    .glow-ring {
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(30, 160, 255, 0.25) 0%, transparent 70%);
+      position: absolute;
+      filter: blur(25px);
+      animation: pulse 4s infinite alternate;
+    }
+
+    .floating-icons {
+      position: relative;
+      width: 100%;
+      height: 200px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .float-icon {
+      width: 70px;
+      height: 70px;
+      background: rgba(18, 28, 48, 0.8);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(74, 158, 255, 0.25);
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      color: #4eb5ff;
+      box-shadow: 0 15px 30px -12px rgba(0, 0, 0, 0.8);
+      transition: all 0.25s;
+      animation: float 6s infinite ease-in-out;
+    }
+
+    .float-icon:nth-child(2) {
+      animation-delay: 1.5s;
+      color: #a07aff;
+      border-color: rgba(160, 122, 255, 0.3);
+    }
+
+    .float-icon:nth-child(3) {
+      animation-delay: 3s;
+      color: #4ed9a0;
+      border-color: rgba(78, 217, 160, 0.3);
+    }
+
+    .float-icon:nth-child(4) {
+      animation-delay: 0.8s;
+      color: #ffb84e;
+      border-color: rgba(255, 184, 78, 0.3);
+    }
+
+    @keyframes float {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-12px); }
+      100% { transform: translateY(0px); }
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.5; transform: scale(0.9); }
+      100% { opacity: 1; transform: scale(1.15); }
+    }
+
+    /* ---------- MAIN NAVIGATION CARDS (4 modules) ---------- */
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.75rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #6f8aa8;
+    }
+
+    .section-label i {
+      color: #4eb5ff;
+      font-size: 0.9rem;
+    }
+
+    .section-label .line {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(to right, rgba(74, 158, 255, 0.2), transparent);
+    }
+
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    /* card design */
+    .module-card {
+      background: rgba(16, 24, 40, 0.65);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 30px;
+      padding: 2rem 1.6rem 1.8rem;
+      transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.7);
+    }
+
+    .module-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at 20% 0%, rgba(30, 160, 255, 0.12), transparent 65%);
+      opacity: 0;
+      transition: opacity 0.35s;
+      pointer-events: none;
+    }
+
+    .module-card:hover {
+      border-color: rgba(74, 158, 255, 0.35);
+      transform: translateY(-6px);
+      box-shadow: 0 30px 45px -15px rgba(0, 120, 255, 0.35);
+      background: rgba(20, 30, 50, 0.8);
+    }
+
+    .module-card:hover::before {
+      opacity: 1;
+    }
+
+    .card-icon {
+      width: 58px;
+      height: 58px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.9rem;
+      margin-bottom: 1.5rem;
+      background: rgba(30, 160, 255, 0.1);
+      color: #4eb5ff;
+      border: 1px solid rgba(30, 160, 255, 0.2);
+      transition: all 0.25s;
+    }
+
+    .module-card:hover .card-icon {
+      background: rgba(30, 160, 255, 0.2);
+      border-color: rgba(74, 158, 255, 0.5);
+      box-shadow: 0 0 25px -6px #1e80e0;
+    }
+
+    .module-card h3 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.6rem;
+      color: #f0f7ff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .module-card h3 i {
+      font-size: 0.9rem;
+      color: #4a7db0;
+      transition: transform 0.2s, color 0.2s;
+    }
+
+    .module-card:hover h3 i {
+      transform: translateX(6px);
+      color: #4eb5ff;
+    }
+
+    .module-card p {
+      color: #8a9bb5;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+      flex: 1;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #6f86a3;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 1.2rem;
+      margin-top: 0.2rem;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    .card-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .card-meta i {
+      font-size: 0.7rem;
+      color: #4e7db0;
+    }
+
+    /* ---------- FOOTER / TECH STACK ---------- */
+    .footer-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      color: #5e718b;
+      font-size: 0.85rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 2.2rem;
+      margin-top: 1rem;
+    }
+
+    .footer-note .chip {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      padding: 0.4rem 1.2rem;
+      border-radius: 100px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: #9bb1cc;
+    }
+
+    .footer-note .chip i {
+      color: #4eb5ff;
+    }
+
+    .footer-note .separator {
+      color: #2e3e54;
+      font-size: 0.7rem;
+    }
+
+    /* ---------- RESPONSIVE ---------- */
+    @media (max-width: 1100px) {
+      .modules-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .banner h1 {
+        font-size: 2.8rem;
+      }
+      .banner {
+        padding: 2.5rem;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .banner {
+        padding: 2rem 1.8rem;
+        border-radius: 30px;
+      }
+      .banner h1 {
+        font-size: 2.2rem;
+      }
+      .banner p {
+        font-size: 1rem;
+      }
+      .banner-visual {
+        display: none;
+      }
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .logo-text {
+        font-size: 1.8rem;
+      }
+      .modules-grid {
+        grid-template-columns: 1fr;
+      }
+      .sso-login {
+        padding: 0.55rem 1.2rem;
+        font-size: 0.8rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 1rem 0.8rem 2rem;
+      }
+      .banner-actions {
+        flex-direction: column;
+        width: 100%;
+      }
+      .btn-primary, .btn-secondary {
+        justify-content: center;
+        width: 100%;
+      }
+      .banner h1 {
+        font-size: 1.9rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- ========== HEADER ========== -->
+    <header class="header">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <i class="fas fa-droplet"></i>
+        </div>
+        <div class="logo-text">Nitro<span>Water</span></div>
+      </div>
+      <div class="header-badges">
+        <div class="chip"><i class="fas fa-cubes"></i> monorepo</div>
+        <div class="chip"><i class="fas fa-leaf"></i> spring</div>
+        <div class="chip"><i class="fas fa-shield-alt"></i> sso</div>
+        <button class="sso-login">
+          <i class="fas fa-key"></i> Sign in with SSO
+        </button>
+      </div>
+    </header>
+
+    <!-- ========== BANNER / HERO ========== -->
+    <div class="banner">
+      <div class="banner-content">
+        <div class="banner-tag">
+          <i class="fas fa-bolt"></i> a faster, modern resource & tool hosting
+        </div>
+        <h1>
+          Game servers, docs &<br>
+          <span class="highlight">playground</span> in one place
+        </h1>
+        <p>
+          Integrate your game server, browse plugin documentation, download assets, 
+          and prototype code — all within a unified, high-performance hub.
+        </p>
+        <div class="banner-actions">
+          <a href="#" class="btn-primary">
+            <i class="fas fa-rocket"></i> Get started
+          </a>
+          <a href="#" class="btn-secondary">
+            <i class="fas fa-server"></i> Explore servers
+          </a>
+        </div>
+      </div>
+      <div class="banner-visual">
+        <div class="glow-ring"></div>
+        <div class="floating-icons">
+          <div class="float-icon"><i class="fas fa-gamepad"></i></div>
+          <div class="float-icon"><i class="fas fa-puzzle-piece"></i></div>
+          <div class="float-icon"><i class="fas fa-code"></i></div>
+          <div class="float-icon"><i class="fas fa-toolbox"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MODULES SECTION (4 cards) ========== -->
+    <div class="section-label">
+      <i class="fas fa-compass"></i> Main modules
+      <div class="line"></div>
+    </div>
+
+    <div class="modules-grid">
+      <!-- Card 1: Game Server Integration -->
+      <a href="#" class="module-card">
+        <div class="card-icon">
+          <i class="fas fa-server"></i>
+        </div>
+        <h3>
+          Game Servers
+          <i class="fas fa-arrow-right"></i>
+        </h3>
+        <p>
+          Manage, deploy, and integrate game servers. Real-time status, 
+          console access, and performance metrics in one dashboard.
+        </p>
+        <div class="card-meta">
+          <span><i class="fas fa-play"></i> 12 running</span>
+          <span><i class="fas fa-signal"></i> live</span>
+        </div>
+      </a>
+
+      <!-- Card 2: Plugin Docs & Downloads -->
+      <a href="#" class="module-card">
+        <div class="card-icon">
+          <i class="fas fa-puzzle-piece"></i>
+        </div>
+        <h3>
+          Plugin Docs & DL
+          <i class="fas fa-arrow-right"></i>
+        </h3>
+        <p>
+          Complete VeloChatX plugin documentation, API reference, plus 
+          versioned downloads. More plugins coming soon.
+        </p>
+        <div class="card-meta">
+          <span><i class="fas fa-file-pdf"></i> v2.4.0</span>
+          <span><i class="fas fa-download"></i> 8.2k</span>
+        </div>
+      </a>
+
+      <!-- Card 3: Programming Playground -->
+      <a href="#" class="module-card">
+        <div class="card-icon">
+          <i class="fas fa-code"></i>
+        </div>
+        <h3>
+          Playground
+          <i class="fas fa-arrow-right"></i>
+        </h3>
+        <p>
+          Run, test, and share code snippets in a fast, sandboxed environment. 
+          Supports multiple runtimes and live collaboration.
+        </p>
+        <div class="card-meta">
+          <span><i class="fas fa-microchip"></i> spring</span>
+          <span><i class="fas fa-users"></i> collab</span>
+        </div>
+      </a>
+
+      <!-- Card 4: WTools Toolbox -->
+      <a href="#" class="module-card">
+        <div class="card-icon">
+          <i class="fas fa-toolbox"></i>
+        </div>
+        <h3>
+          WTools
+          <i class="fas fa-arrow-right"></i>
+        </h3>
+        <p>
+          A curated set of developer utilities: formatters, converters, 
+          generators, and NitroWater-specific helpers.
+        </p>
+        <div class="card-meta">
+          <span><i class="fas fa-bolt"></i> 12+ tools</span>
+          <span><i class="fas fa-lock"></i> private</span>
+        </div>
+      </a>
+    </div>
+
+    <!-- ========== FOOTER TECH STACK ========== -->
+    <div class="footer-note">
+      <div class="chip">
+        <i class="fas fa-code-branch"></i> monorepo
+      </div>
+      <span class="separator">·</span>
+      <div class="chip">
+        <i class="fas fa-leaf"></i> spring boot
+      </div>
+      <span class="separator">·</span>
+      <div class="chip">
+        <i class="fas fa-key"></i> single sign-on
+      </div>
+      <span class="separator">·</span>
+      <div class="chip">
+        <i class="fas fa-rocket"></i> nitro performance
+      </div>
+    </div>
+  </div>
+</body>
+</html>
