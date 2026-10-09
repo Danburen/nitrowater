@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.*;
 import org.hibernate.proxy.HibernateProxy;
-import cn.nitrowater.core.api.VO.OptionVO;
+import cn.nitrowater.lib.api.VO.OptionVO;
 
 import java.time.Instant;
 import java.util.Objects;

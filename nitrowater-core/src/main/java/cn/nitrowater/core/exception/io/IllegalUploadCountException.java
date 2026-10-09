@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception.io;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 public class IllegalUploadCountException extends IllegalUploadArgumentException{
     public IllegalUploadCountException(int count) {

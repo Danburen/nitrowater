@@ -1,7 +1,7 @@
 package cn.nitrowater.core.services.auth.code;
 
 import org.springframework.stereotype.Component;
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.exception.BizException;
 

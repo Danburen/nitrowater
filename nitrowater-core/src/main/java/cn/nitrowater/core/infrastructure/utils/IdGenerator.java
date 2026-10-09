@@ -1,6 +1,6 @@
 package cn.nitrowater.core.infrastructure.utils;
 
-import cn.nitrowater.core.utils.codec.Snowflake;
+import cn.nitrowater.lib.utils.codec.Snowflake;
 
 public final class IdGenerator {
     private static final long DETACENTER_CONTENT = 1L;

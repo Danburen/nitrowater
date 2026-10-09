@@ -5,8 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
-import cn.nitrowater.core.common.validation.PhoneNumber;
-import cn.nitrowater.core.common.validation.StrongPassword;
+import cn.nitrowater.lib.common.validation.PhoneNumber;
+import cn.nitrowater.lib.common.validation.StrongPassword;
 
 @Data
 public class RegisterRequest {

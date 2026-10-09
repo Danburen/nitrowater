@@ -5,7 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.http.ResponseCookie;
-import cn.nitrowater.core.api.TokenPair;
+import cn.nitrowater.lib.api.TokenPair;
 
 import java.util.Arrays;
 

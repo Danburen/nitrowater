@@ -1,8 +1,8 @@
 package cn.nitrowater.account.web.infrastructure;
 
-import cn.nitrowater.core.api.BaseResponseCode;
-import cn.nitrowater.core.api.ErrorResponse;
-import cn.nitrowater.core.common.exceptions.AuthException;
+import cn.nitrowater.lib.api.BaseResponseCode;
+import cn.nitrowater.lib.api.ErrorResponse;
+import cn.nitrowater.lib.common.exceptions.AuthException;
 import cn.nitrowater.core.exception.BizException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import jakarta.validation.ConstraintViolation;

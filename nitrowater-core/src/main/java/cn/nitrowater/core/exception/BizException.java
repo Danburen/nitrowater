@@ -3,8 +3,8 @@ package cn.nitrowater.core.exception;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.http.HttpStatus;
-import cn.nitrowater.core.api.BaseResponseCode;
-import cn.nitrowater.core.api.ResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
+import cn.nitrowater.lib.api.ResponseCode;
 
 @Getter
 public class BizException extends RuntimeException{

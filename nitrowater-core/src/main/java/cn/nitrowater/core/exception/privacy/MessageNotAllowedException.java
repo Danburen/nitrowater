@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception.privacy;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 /**
  * Thrown when a user tries to send a direct message but the recipient's privacy settings

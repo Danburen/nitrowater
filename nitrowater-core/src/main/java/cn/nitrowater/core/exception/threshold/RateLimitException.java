@@ -1,7 +1,7 @@
 package cn.nitrowater.core.exception.threshold;
 
 import org.springframework.http.HttpStatus;
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.core.exception.BizException;
 
 public class RateLimitException extends BizException {

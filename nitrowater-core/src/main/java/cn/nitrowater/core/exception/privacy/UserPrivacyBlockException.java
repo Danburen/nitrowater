@@ -1,7 +1,7 @@
 package cn.nitrowater.core.exception.privacy;
 
 import org.springframework.http.HttpStatus;
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.core.exception.BizException;
 
 /**

@@ -2,7 +2,7 @@ package cn.nitrowater.core.services.account;
 
 import jakarta.annotation.Nullable;
 import cn.nitrowater.core.services.auth.code.VerificationService;
-import cn.nitrowater.core.common.TokenResult;
+import cn.nitrowater.lib.common.TokenResult;
 import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.resp.auth.CodeResult;
 

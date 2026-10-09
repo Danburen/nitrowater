@@ -2,8 +2,8 @@ package cn.nitrowater.core.infrastructure.utils.generator;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import cn.nitrowater.core.utils.UidGenerator;
-import cn.nitrowater.core.utils.codec.HashUtil;
+import cn.nitrowater.lib.utils.UidGenerator;
+import cn.nitrowater.lib.utils.codec.HashUtil;
 
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;

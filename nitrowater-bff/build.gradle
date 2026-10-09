@@ -19,6 +19,7 @@ repositories {
 }
 
 dependencies {
+    implementation project(":nitrowater-lib")
     // --- Servlet / WebMVC（响应式迁移冻结：不要 WebFlux）---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     // --- Security：BFF 是 Cookie 会话认证 → 必须开 CSRF ---

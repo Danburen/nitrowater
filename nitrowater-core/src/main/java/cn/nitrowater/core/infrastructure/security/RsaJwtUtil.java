@@ -5,7 +5,7 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import cn.nitrowater.core.common.TokenResult;
+import cn.nitrowater.lib.common.TokenResult;
 
 import java.security.PrivateKey;
 import java.security.PublicKey;

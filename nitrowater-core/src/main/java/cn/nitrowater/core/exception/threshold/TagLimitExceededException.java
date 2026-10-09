@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception.threshold;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.core.exception.BizException;
 
 public class TagLimitExceededException extends BizException {

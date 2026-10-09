@@ -2,10 +2,10 @@ package cn.nitrowater.core.services.auth.impl;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import cn.nitrowater.core.common.RedisKeyPrefix;
-import cn.nitrowater.core.common.TokenResult;
-import cn.nitrowater.core.common.cache.RedisKeyBuilder;
-import cn.nitrowater.core.utils.StringUtil;
+import cn.nitrowater.lib.common.RedisKeyPrefix;
+import cn.nitrowater.lib.common.TokenResult;
+import cn.nitrowater.lib.common.cache.RedisKeyBuilder;
+import cn.nitrowater.lib.utils.StringUtil;
 import cn.nitrowater.core.exception.TokenInvalidOrExpireException;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
 import cn.nitrowater.core.services.auth.SingleUseTokenService;

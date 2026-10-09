@@ -5,15 +5,15 @@ import cn.hutool.captcha.LineCaptcha;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import cn.nitrowater.core.common.cache.RedisKeyBuilder;
-import cn.nitrowater.core.utils.StringUtil;
+import cn.nitrowater.lib.common.cache.RedisKeyBuilder;
+import cn.nitrowater.lib.utils.StringUtil;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
 import cn.nitrowater.core.services.auth.CaptchaService;
 import cn.nitrowater.core.services.auth.LineCaptchaResult;
 
 import java.time.Duration;
 
-import static cn.nitrowater.core.common.RedisKeyPrefix.VERIFY;
+import static cn.nitrowater.lib.common.RedisKeyPrefix.VERIFY;
 
 @Service
 @Transactional(readOnly = true)

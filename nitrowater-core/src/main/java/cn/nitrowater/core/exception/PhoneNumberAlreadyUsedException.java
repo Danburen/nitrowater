@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 public class PhoneNumberAlreadyUsedException extends BizException {
     public PhoneNumberAlreadyUsedException() {

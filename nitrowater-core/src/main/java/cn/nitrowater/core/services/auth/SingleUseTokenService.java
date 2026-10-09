@@ -1,7 +1,7 @@
 package cn.nitrowater.core.services.auth;
 
-import cn.nitrowater.core.api.BaseResponseCode;
-import cn.nitrowater.core.common.TokenResult;
+import cn.nitrowater.lib.api.BaseResponseCode;
+import cn.nitrowater.lib.common.TokenResult;
 import cn.nitrowater.core.exception.BizException;
 
 public interface SingleUseTokenService {

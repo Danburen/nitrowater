@@ -3,3 +3,5 @@ include ':nitrowater-account'
 include ':nitrowater-bff'
 include ':nitrowater-core'
 include ':nitrowater-server'
+include ':nitrowater-lib'
+

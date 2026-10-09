@@ -1,6 +1,6 @@
 package cn.nitrowater.core.api;
 
-import cn.nitrowater.core.common.io.FileExtension;
+import cn.nitrowater.lib.common.io.FileExtension;
 
 import java.util.UUID;
 

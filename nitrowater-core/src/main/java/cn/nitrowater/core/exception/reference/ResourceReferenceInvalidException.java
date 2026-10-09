@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception.reference;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 import java.io.Serializable;
 

@@ -17,9 +17,7 @@ import java.io.IOException;
 import java.util.Locale;
 
 /**
- * Phase 1 本地身份注入：无网关直连开发时，从 {@code Authorization: Bearer <AT>}
- * 解析 uid / jti / did 填充 {@link UserCtxHolder}。
- * <p>若存在 {@code X-User-Uid} 头（经网关注入），优先信任。</p>
+ * Local user info injection
  */
 @Slf4j
 @Component

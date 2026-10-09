@@ -1,7 +1,7 @@
 package cn.nitrowater.core.exception;
 
 import org.springframework.http.HttpStatus;
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 public class ForbiddenException extends BizException {
     public ForbiddenException() {

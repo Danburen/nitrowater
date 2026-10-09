@@ -1,7 +1,7 @@
 package cn.nitrowater.core.services.auth;
 
 import jakarta.servlet.http.HttpServletResponse;
-import cn.nitrowater.core.api.TokenPair;
+import cn.nitrowater.lib.api.TokenPair;
 import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.resp.auth.LoginClientData;
 import cn.nitrowater.core.entity.user.User;

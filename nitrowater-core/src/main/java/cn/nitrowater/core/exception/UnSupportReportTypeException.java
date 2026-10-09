@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 public class UnSupportReportTypeException extends BizException {
     public UnSupportReportTypeException() {

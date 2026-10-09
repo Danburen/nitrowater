@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 /**
  * Thrown when a banned user attempts an action they are restricted from.

@@ -1,6 +1,6 @@
 package cn.nitrowater.core.exception.notfound;
 
-import cn.nitrowater.core.api.BaseResponseCode;
+import cn.nitrowater.lib.api.BaseResponseCode;
 
 public class BannerNotFoundException extends NotFoundException {
     public BannerNotFoundException() {

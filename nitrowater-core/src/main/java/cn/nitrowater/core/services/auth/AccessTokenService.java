@@ -1,7 +1,7 @@
 package cn.nitrowater.core.services.auth;
 
 import io.jsonwebtoken.Claims;
-import cn.nitrowater.core.common.TokenResult;
+import cn.nitrowater.lib.common.TokenResult;
 import cn.nitrowater.core.infrastructure.security.RefreshTokenPayload;
 
 import java.util.Set;

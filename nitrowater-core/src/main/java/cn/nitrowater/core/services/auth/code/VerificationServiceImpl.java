@@ -5,9 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import cn.nitrowater.core.api.BaseResponseCode;
-import cn.nitrowater.core.common.cache.RedisKeyBuilder;
-import cn.nitrowater.core.utils.codec.HashUtil;
+import cn.nitrowater.lib.api.BaseResponseCode;
+import cn.nitrowater.lib.common.cache.RedisKeyBuilder;
+import cn.nitrowater.lib.utils.codec.HashUtil;
 import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.api.auth.VerifyScene;
 import cn.nitrowater.core.api.req.auth.SecurityVerifyCodeDto;
@@ -31,7 +31,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import static cn.nitrowater.core.common.RedisKeyPrefix.THRESHOLD;
+import static cn.nitrowater.lib.common.RedisKeyPrefix.THRESHOLD;
 
 @Slf4j
 @Service

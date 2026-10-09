@@ -7,7 +7,7 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import cn.nitrowater.core.utils.JsonUtil;
+import cn.nitrowater.lib.utils.JsonUtil;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
