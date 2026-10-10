@@ -25,10 +25,10 @@ import { useAuth } from '../../../auth/useAuth'
 import { toast } from '../../../shared/ui/toast'
 import ToolShell from '../ToolShell.vue'
 import CodeEditor from './CodeEditor.vue'
-import { DEFAULT_LANGUAGE_ID, RUNNER_LANGUAGES } from './langCatalog'
+import { DEFAULT_LANGUAGE_ID, RUNNER_LANGUAGES, isLocalLanguage } from './langCatalog'
 import { ansiToHtml } from './lib/ansi'
 import { flushMemoryCache, useContentCache, type UseContentCacheReturn } from './lib/contentCache'
-import { ensureRuntime, isPyodideReady, runPythonCode } from './lib/pyodide/pyodideManager'
+import { ensureLanguage, isLanguageReady, runLocalCode } from './lib/runtimes/runtimeManager'
 
 const { login } = useAuth()
 
@@ -55,6 +55,11 @@ const stdin = ref('')
 const output = ref('')
 const status = ref('就绪')
 const running = ref(false)
+
+/** Language id for editor syntax highlighting (all available languages are browser-local). */
+const editorLanguage = computed(() =>
+  isLocalLanguage(languageId.value) ? languageId.value : undefined,
+)
 
 const outputHtml = computed(() => ansiToHtml(output.value))
 
@@ -90,16 +95,20 @@ async function copyCode() {
 
 async function run() {
   if (running.value) return
+  if (!isLocalLanguage(languageId.value)) {
+    toast.error('该语言暂未开放')
+    return
+  }
+  const language = languageId.value
   running.value = true
   output.value = ''
   status.value = '准备中...'
   try {
-    if (!isPyodideReady()) await ensureRuntime((message) => (status.value = message))
-    const result = await runPythonCode(code.value, {
-      stdin: stdin.value,
-      onMessage: (message) => (status.value = message),
-    })
-    output.value = result
+    if (!isLanguageReady(language)) {
+      await ensureLanguage(language, (message) => (status.value = message))
+    }
+    status.value = '运行中...'
+    output.value = await runLocalCode(language, code.value, { stdin: stdin.value })
   } catch (error) {
     output.value = `[运行错误] ${error instanceof Error ? error.message : String(error)}`
   } finally {
@@ -120,7 +129,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
   <ToolShell
     fill
     title="在线代码运行器"
-    desc="纯浏览器运行 Python（Pyodide / WASM），代码不上传。更多语言将在服务端运行，需登录。"
+    desc="纯浏览器运行 Python / JavaScript / TypeScript / Lua（WASM / Web Worker），代码不上传。更多语言将在服务端运行，需登录。"
   >
     <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
       <!-- Editor panel -->
@@ -207,13 +216,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
         <div class="min-h-0 flex-1 overflow-hidden rounded-md border border-line">
           <CodeEditor
             v-model="code"
-            language="python"
+            :language="editorLanguage"
           />
         </div>
 
         <details class="mt-3">
           <summary class="cursor-pointer select-none text-xs text-faint">
-            标准输入（可选，供 input() 读取）
+            标准输入（可选，供 input() / readline() 读取）
           </summary>
           <textarea
             v-model="stdin"

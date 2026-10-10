@@ -28,6 +28,9 @@ export default defineConfig({
       '@codemirror/language',
       '@codemirror/autocomplete',
       '@codemirror/lang-python',
+      '@codemirror/lang-javascript',
+      // Only the Lua mode is used; the package has no root export, so we must name the subpath.
+      '@codemirror/legacy-modes/mode/lua',
       '@codemirror/theme-one-dark',
       'echarts',
       'd3',
@@ -37,7 +40,12 @@ export default defineConfig({
       'file-saver',
       'element-plus',
       '@element-plus/icons-vue',
+      'docx',
+      'marked',
     ],
+    // @ffmpeg/ffmpeg creates its Worker via `new Worker(new URL('./worker.js', import.meta.url))`.
+    // Pre-bundling rewrites that URL and breaks worker resolution in dev, so keep it as-is.
+    exclude: ['@ffmpeg/ffmpeg'],
   },
   build: {
     rollupOptions: {

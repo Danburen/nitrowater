@@ -16,6 +16,7 @@ import {
 import { Compartment, EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import {
+  StreamLanguage,
   bracketMatching,
   defaultHighlightStyle,
   indentOnInput,
@@ -23,12 +24,15 @@ import {
 } from '@codemirror/language'
 import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/autocomplete'
 import { python } from '@codemirror/lang-python'
+import { javascript } from '@codemirror/lang-javascript'
+import { lua } from '@codemirror/legacy-modes/mode/lua'
 import { useTheme } from '../../../shared/theme/useTheme'
 import { editorTheme } from './codeTheme'
+import type { LocalLanguageId } from './langCatalog'
 
 const props = defineProps<{
   modelValue: string
-  language?: 'python'
+  language?: LocalLanguageId
 }>()
 
 const emit = defineEmits<{
@@ -44,8 +48,19 @@ let resizeObserver: ResizeObserver | null = null
 const languageCompartment = new Compartment()
 const themeCompartment = new Compartment()
 
-function languageExtension() {
-  return python()
+/** Map a runner language id to its CodeMirror language extension. */
+function languageExtension(language: LocalLanguageId | undefined) {
+  switch (language) {
+    case 'javascript':
+      return javascript()
+    case 'typescript':
+      return javascript({ typescript: true })
+    case 'lua':
+      return StreamLanguage.define(lua)
+    case 'python':
+    default:
+      return python()
+  }
 }
 
 onMounted(() => {
@@ -63,7 +78,7 @@ onMounted(() => {
         closeBrackets(),
         autocompletion(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        languageCompartment.of(languageExtension()),
+        languageCompartment.of(languageExtension(props.language)),
         themeCompartment.of(editorTheme(theme.value === 'dark')),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
@@ -85,6 +100,14 @@ watch(
   () => theme.value,
   (value) => {
     view?.dispatch({ effects: themeCompartment.reconfigure(editorTheme(value === 'dark')) })
+  },
+)
+
+// Swap the language highlighting (Python / JavaScript / TypeScript / Lua) in place.
+watch(
+  () => props.language,
+  (value) => {
+    view?.dispatch({ effects: languageCompartment.reconfigure(languageExtension(value)) })
   },
 )
 
