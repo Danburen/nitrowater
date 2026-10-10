@@ -54,5 +54,26 @@ import { tools } from './catalog'
         </span>
       </component>
     </div>
+
+    <router-link
+      to="/about#credits"
+      class="mt-5 flex items-center justify-between gap-3 rounded-[14px] border border-line bg-card px-4 py-3.5 text-[13.5px] transition hover:border-line-strong"
+    >
+      <span class="flex items-center gap-2 text-dim">
+        <svg
+          class="size-4 shrink-0 text-accent"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+        </svg>
+        本站工具构建在众多开源项目之上
+      </span>
+      <span class="shrink-0 text-accent">开源鸣谢 →</span>
+    </router-link>
   </div>
 </template>

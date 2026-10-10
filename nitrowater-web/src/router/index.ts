@@ -10,6 +10,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
     {
       path: '/tools',
       component: () => import('../features/tools/ToolsLayout.vue'),
@@ -21,6 +22,8 @@ const router = createRouter({
         { path: 'tree', name: 'tool-tree', component: () => import('../features/tools/tree/TreeTool.vue') },
         { path: 'list-tree', name: 'tool-list-tree', component: () => import('../features/tools/list-tree/ListTreeTool.vue') },
         { path: 'code-runner', name: 'tool-code-runner', component: () => import('../features/tools/code-runner/CodeRunnerTool.vue') },
+        { path: 'video-to-gif', name: 'tool-video-to-gif', component: () => import('../features/tools/video-to-gif/VideoToGifTool.vue') },
+        { path: 'markdown-to-word', name: 'tool-markdown-to-word', component: () => import('../features/tools/markdown-to-word/MarkdownToWordTool.vue') },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

@@ -292,6 +292,12 @@ function enterPlayground(): void {
       <footer class="mt-14 flex flex-wrap justify-between gap-3 border-t border-line py-7 text-[13px] text-dim">
         <div>© 2026 NitroWater · 工具 / 演练场 / 文档 / 服务器</div>
         <div class="flex gap-[18px]">
+          <router-link
+            to="/about"
+            class="transition hover:text-ink"
+          >
+            关于
+          </router-link>
           <a
             :href="REPO.github"
             target="_blank"

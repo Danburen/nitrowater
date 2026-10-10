@@ -11,21 +11,34 @@ const { session, loading, login, logout } = useAuth()
 const isLoggedIn = computed(() => !!session.value?.authenticated)
 const displayName = computed(() => session.value?.name || session.value?.username || '已登录')
 
-/** Landing-page sections reachable from the site nav. */
-const sections = [
+/** Landing-page sections + one standalone route reachable from the site nav. */
+interface NavItem {
+  label: string
+  /** Home section id to scroll to (mutually exclusive with `to`). */
+  id?: string
+  /** Route to navigate to. */
+  to?: string
+}
+
+const nav: NavItem[] = [
   { id: 'tools', label: '工具箱' },
   { id: 'playground', label: '演练场' },
   { id: 'docs', label: '文档' },
   { id: 'servers', label: '服务器' },
-] as const
+  { to: '/about', label: '关于' },
+]
 
-/** Scroll to a home section; navigates home first when on another route. */
-async function goSection(id: string): Promise<void> {
+/** Navigate to a route item, or scroll to a home section (navigating home first). */
+async function onNav(item: NavItem): Promise<void> {
+  if (item.to) {
+    if (route.path !== item.to) await router.push(item.to)
+    return
+  }
   if (route.name !== 'home') {
     await router.push('/')
   }
   await nextTick()
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  if (item.id) document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })
 }
 </script>
 
@@ -42,13 +55,13 @@ async function goSection(id: string): Promise<void> {
 
       <nav class="hidden gap-[26px] text-sm text-dim md:flex">
         <button
-          v-for="section in sections"
-          :key="section.id"
+          v-for="item in nav"
+          :key="item.label"
           type="button"
           class="cursor-pointer transition hover:text-ink"
-          @click="goSection(section.id)"
+          @click="onNav(item)"
         >
-          {{ section.label }}
+          {{ item.label }}
         </button>
       </nav>
 
