@@ -4,8 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import cn.nitrowater.core.api.resp.CloudResPresignedUrlResp;
-import cn.nitrowater.core.entity.user.AccountStatus;
-import cn.nitrowater.core.entity.user.User;
+import cn.nitrowater.core.domain.user.AccountStatus;
+import cn.nitrowater.core.domain.user.User;
 
 import java.io.Serializable;
 import java.time.Instant;

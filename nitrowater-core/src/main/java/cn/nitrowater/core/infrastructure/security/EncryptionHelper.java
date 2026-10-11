@@ -1,7 +1,7 @@
 package cn.nitrowater.core.infrastructure.security;
 
-import cn.nitrowater.core.entity.EncryptionDataKey;
-import cn.nitrowater.core.entity.KeyStatus;
+import cn.nitrowater.core.domain.EncryptionDataKey;
+import cn.nitrowater.core.domain.KeyStatus;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;

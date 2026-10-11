@@ -1,35 +1,45 @@
 package cn.nitrowater.lib.utils;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.PropertyNamingStrategies;
+import tools.jackson.databind.json.JsonMapper;
 
+/**
+ * Shared JSON helper (Jackson 3 — {@code tools.jackson}). Internally used by the caching/IO layers
+ * and by the business modules for their JSON columns; keeping one mapper here keeps the JSON
+ * behaviour consistent across modules.
+ *
+ * <p>Public signatures expose Jackson types, so this module exports {@code jackson-databind} as an
+ * {@code api} dependency.</p>
+ */
 public final class JsonUtil {
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
-    private static final ObjectMapper SNAKE_MAPPER = new ObjectMapper()
-            .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-            .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
-    private JsonUtil() {}
-    static {
-        MAPPER.registerModule(new JavaTimeModule());
-        MAPPER.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        SNAKE_MAPPER.registerModule(new JavaTimeModule());
-        SNAKE_MAPPER.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+    private static final JsonMapper MAPPER = JsonMapper.builder()
+            .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(JsonInclude.Include.NON_NULL))
+            .build();
+
+    private static final JsonMapper SNAKE_MAPPER = JsonMapper.builder()
+            .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+            .changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(JsonInclude.Include.NON_NULL))
+            .build();
+
+    private JsonUtil() {
     }
+
     public static String toJson(Object obj) {
         try {
             return MAPPER.writeValueAsString(obj);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to serialize to JSON", ex);
         }
     }
 
     public static <T> T fromJson(String json, TypeReference<T> typeRef) {
-        if (json == null || json.isBlank()) return null;
+        if (json == null || json.isBlank()) {
+            return null;
+        }
         try {
             return MAPPER.readValue(json, typeRef);
         } catch (Exception e) {
@@ -37,18 +47,21 @@ public final class JsonUtil {
         }
     }
 
-
     public static <T> T fromJson(String json, Class<T> clazz) {
-        if (json == null) return null;
+        if (json == null || json.isBlank()) {
+            return null;
+        }
         try {
             return MAPPER.readValue(json, clazz);
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Failed to parse JSON", e);
         }
     }
 
     public static <T> T fromJsonSnakeCase(String json, Class<T> clazz) {
-        if (json == null) return null;
+        if (json == null) {
+            return null;
+        }
         try {
             return SNAKE_MAPPER.readValue(json, clazz);
         } catch (Exception e) {

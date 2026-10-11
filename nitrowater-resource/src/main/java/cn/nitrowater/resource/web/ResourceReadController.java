@@ -3,7 +3,7 @@ package cn.nitrowater.resource.web;
 import cn.nitrowater.resource.config.ResourceProperties;
 import cn.nitrowater.resource.domain.Resource;
 import cn.nitrowater.resource.domain.ResourceVisibility;
-import cn.nitrowater.resource.service.ResourceService;
+import cn.nitrowater.resource.application.ResourceService;
 import cn.nitrowater.resource.web.dto.ResourceMetaResp;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.CacheControl;

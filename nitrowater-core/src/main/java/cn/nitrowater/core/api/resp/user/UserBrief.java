@@ -4,7 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import cn.nitrowater.core.api.resp.CloudResPresignedUrlResp;
-import cn.nitrowater.core.entity.user.UserType;
+import cn.nitrowater.core.domain.user.UserType;
 
 @Data
 @AllArgsConstructor

@@ -6,7 +6,7 @@ import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @SpringBootApplication(scanBasePackages = "cn.nitrowater")
-@EntityScan(basePackages = "cn.nitrowater.core.entity")
+@EntityScan(basePackages = "cn.nitrowater.core.domain")
 @EnableJpaRepositories(basePackages = "cn.nitrowater.core.infrastructure.persistence")
 public class NitrowaterAccountApplication {
 

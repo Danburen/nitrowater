@@ -15,6 +15,12 @@
 | `start-bff.bat`       | `nitrowater-bff`（BFF / Token Handler，:8080） |
 | `start-seaweedfs.bat` | 自托管 SeaweedFS（S3，:8333；本地磁盘） |
 | `start-resource.bat`  | `nitrowater-resource`（统一资源服务，:8093） |
+| `start-piston.bat`    | Piston 代码沙箱（判题/运行，:2000；需 Docker + cgroup v2 + privileged） |
+
+> **Piston 语言运行时**：官方镜像 `ghcr.io/engineer-man/piston` **不含任何语言**。首次用
+> `.\bin\install-piston-langs.ps1` 安装（经 GitHub 代理 `ghproxy.net` 拉包；装 java/gcc/node/python/typescript/lua，
+> 覆盖 server 的 7 语言）。运行时持久化在命名卷 `nitrowater-piston`，只需装一次。生产/compose 路径见
+> `deploy/docker/docker-compose.piston.yml`（不映射宿主端口）。
 
 ## 快速开始（本地 dev）
 

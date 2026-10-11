@@ -4,7 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import cn.nitrowater.core.entity.user.User;
+import cn.nitrowater.core.domain.user.User;
 
 import java.time.Instant;
 import java.util.List;

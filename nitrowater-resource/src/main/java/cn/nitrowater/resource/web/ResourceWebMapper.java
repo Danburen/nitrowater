@@ -3,7 +3,7 @@ package cn.nitrowater.resource.web;
 import cn.nitrowater.resource.domain.Resource;
 import cn.nitrowater.resource.domain.ResourceVisibility;
 import cn.nitrowater.resource.domain.StorageBackend;
-import cn.nitrowater.resource.service.ResourceException;
+import cn.nitrowater.resource.application.ResourceException;
 import cn.nitrowater.resource.web.dto.ResourceMetaResp;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;

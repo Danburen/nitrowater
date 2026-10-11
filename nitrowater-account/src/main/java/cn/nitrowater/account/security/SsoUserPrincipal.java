@@ -1,8 +1,8 @@
 package cn.nitrowater.account.security;
 
-import cn.nitrowater.core.entity.user.AccountStatus;
-import cn.nitrowater.core.entity.user.User;
-import cn.nitrowater.core.entity.user.UserType;
+import cn.nitrowater.core.domain.user.AccountStatus;
+import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.domain.user.UserType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

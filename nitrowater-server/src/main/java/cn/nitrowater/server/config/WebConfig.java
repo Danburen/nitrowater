@@ -1,6 +1,6 @@
 package cn.nitrowater.server.config;
 
-import cn.nitrowater.server.ratelimit.SandboxRateLimitInterceptor;
+import cn.nitrowater.server.infra.ratelimit.SandboxRateLimitInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;

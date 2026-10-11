@@ -20,6 +20,10 @@ repositories {
 
 dependencies {
     implementation project(':nitrowater-core')
+    // --- nitrowater-lib: 直依赖以便复用共享工具（如 IdentifierGenerator/Romanizer；core 的 implementation 不传递）---
+    implementation project(':nitrowater-lib')
+    // --- 拼音：离线中文→拉丁音译（slug 生成；替代重量级 ICU，见 .ai/context）---
+    implementation 'com.belerweb:pinyin4j:2.5.1'
     // --- web + security（OAuth2 Resource Server：校验 SSO 签发的 JWT）---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -27,6 +31,9 @@ dependencies {
     // --- 业务库（与 SSO 库隔离；core 的依赖 implementation 不传递，故按 Option B 在此重声明）---
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // --- Flyway：迁移业务库 nitrowater_biz ---
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    runtimeOnly 'org.flywaydb:flyway-mysql'
     // --- Redis：代码运行器的匿名限流（per-IP 滑动窗口 + 全局并发闸）---
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     runtimeOnly 'com.mysql:mysql-connector-j'

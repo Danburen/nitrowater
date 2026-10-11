@@ -1,7 +1,7 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.service.ResourceException;
-import cn.nitrowater.resource.storage.StorageException;
+import cn.nitrowater.resource.application.ResourceException;
+import cn.nitrowater.resource.infrastructure.StorageException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;

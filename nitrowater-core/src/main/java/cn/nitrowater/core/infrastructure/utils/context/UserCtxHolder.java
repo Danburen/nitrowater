@@ -2,7 +2,7 @@ package cn.nitrowater.core.infrastructure.utils.context;
 
 
 import org.jetbrains.annotations.Nullable;
-import cn.nitrowater.core.entity.user.User;
+import cn.nitrowater.core.domain.user.User;
 
 import java.util.Locale;
 import java.util.Optional;

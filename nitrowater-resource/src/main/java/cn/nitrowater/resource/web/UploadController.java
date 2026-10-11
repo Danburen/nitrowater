@@ -1,7 +1,7 @@
 package cn.nitrowater.resource.web;
 
 import cn.nitrowater.resource.domain.Resource;
-import cn.nitrowater.resource.service.ResourceService;
+import cn.nitrowater.resource.application.ResourceService;
 import cn.nitrowater.resource.web.dto.UploadCallbackReq;
 import cn.nitrowater.resource.web.dto.UploadPolicyReq;
 import cn.nitrowater.resource.web.dto.UploadPolicyResp;

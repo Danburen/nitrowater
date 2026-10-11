@@ -1,7 +1,7 @@
 package cn.nitrowater.core.infrastructure.persistence.user;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import cn.nitrowater.core.entity.user.UserDatum;
+import cn.nitrowater.core.domain.user.UserDatum;
 
 import java.util.List;
 import java.util.Optional;

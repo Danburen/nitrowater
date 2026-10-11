@@ -3,8 +3,8 @@ package cn.nitrowater.core.infrastructure.persistence.role;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import cn.nitrowater.core.entity.role.UserRole;
-import cn.nitrowater.core.entity.role.UserRoleId;
+import cn.nitrowater.core.domain.role.UserRole;
+import cn.nitrowater.core.domain.role.UserRoleId;
 
 import java.util.List;
 

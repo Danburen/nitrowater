@@ -7,11 +7,11 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
-import cn.nitrowater.account.web.api.request.*;
-import cn.nitrowater.account.web.api.response.EmailChangeVo;
-import cn.nitrowater.account.web.api.response.PhoneChangeVo;
-import cn.nitrowater.account.web.api.response.ReAuthInfoResp;
-import cn.nitrowater.account.web.api.response.ReAuthTokenVo;
+import cn.nitrowater.account.web.dto.request.*;
+import cn.nitrowater.account.web.dto.response.EmailChangeVo;
+import cn.nitrowater.account.web.dto.response.PhoneChangeVo;
+import cn.nitrowater.account.web.dto.response.ReAuthInfoResp;
+import cn.nitrowater.account.web.dto.response.ReAuthTokenVo;
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.lib.common.TokenResult;
 import cn.nitrowater.lib.utils.MaskUtil;
@@ -23,10 +23,10 @@ import cn.nitrowater.core.infrastructure.aspect.RateLimit;
 import cn.nitrowater.core.infrastructure.utils.CookieUtil;
 import cn.nitrowater.core.infrastructure.utils.ResponseUtil;
 import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;
-import cn.nitrowater.core.services.account.AccountCoreService;
-import cn.nitrowater.core.services.auth.SingleUseTokenService;
-import cn.nitrowater.core.services.auth.code.VerificationService;
-import cn.nitrowater.core.services.user.UserDatumCoreService;
+import cn.nitrowater.core.application.account.AccountCoreService;
+import cn.nitrowater.core.application.auth.SingleUseTokenService;
+import cn.nitrowater.core.application.auth.code.VerificationService;
+import cn.nitrowater.core.application.user.UserDatumCoreService;
 
 @Slf4j
 @RestController

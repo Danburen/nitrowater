@@ -32,9 +32,9 @@ spring:
       username: default
       password: "${REDIS_PASSWORD:}"
 
-  # -------- 业务表迁移（M2 设计业务表后启用；当前无业务迁移）--------
+  # -------- 业务表迁移（业务库 nitrowater_biz；V1 baseline）--------
   flyway:
-    enabled: false
+    enabled: true
 
   # -------- OAuth2 Resource Server：校验 SSO(AS) 签发的 JWT（JWKS 验签）--------
   # issuer 必须等于 AS 的 issuer（= nitrowater-account 的 jwt.issuer）。生产设 JWT_ISSUER=https://auth.nitrowater.cn。
