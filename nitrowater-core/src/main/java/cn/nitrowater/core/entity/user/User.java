@@ -49,6 +49,10 @@ public class User {
     @Column(name = "nickname", length = 12)
     private String nickname;
 
+    /** Canonical avatar resource uuid (references nitrowater-resource's resource.uuid; OIDC picture derives from it). */
+    @Column(name = "avatar_resource_uuid", length = 36)
+    private String avatarResourceUuid;
+
     @Column(name = "last_active_at")
     private Instant lastActiveAt;
 

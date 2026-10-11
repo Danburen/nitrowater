@@ -82,6 +82,14 @@ public interface AccountCoreService {
     void unbindEmail(long userUid, String email, @Nullable DeviceInfo deviceInfo);
 
     /**
+     * Bind (or clear) the canonical avatar resource for a user.
+     *
+     * @param resourceUuid the avatar's {@code resource.uuid} from nitrowater-resource;
+     *                     {@code null}/blank clears the avatar
+     */
+    void updateAvatarResourceUuid(long userUid, @Nullable String resourceUuid);
+
+    /**
      * Reset password using a reAuthToken (consumed one-time).
      * Called after the forgot-password SMS verification flow.
      *

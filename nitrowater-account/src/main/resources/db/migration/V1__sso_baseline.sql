@@ -3,7 +3,8 @@
 -- nitrowater SSO 库基线（库名：nitrowater）
 -- 对齐实体：cn.nitrowater.core.lib.entity.*
 --    user / user_data / user_data_archive / account_audit_log / encryption_data_key
--- 说明：已剔除 waterfun 原表的业务列（avatar_resource_uuid 等）与业务 FK；
+-- 说明：已剔除 waterfun 原表的业务关联列（post_resource 等）与业务 FK；
+--       avatar_resource_uuid 按新设计保留（引用 nitrowater-resource 的 resource.uuid，OIDC picture 由此派生）；
 --       保留 user_data -> user 的级联 FK。
 -- ============================================================
 
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS `user` (
     level              TINYINT UNSIGNED NOT NULL DEFAULT 1,
     exp                INT UNSIGNED     NOT NULL DEFAULT 0,
     nickname           VARCHAR(12)      NULL,
+    avatar_resource_uuid CHAR(36)       NULL COMMENT '头像资源uuid(资源服务resource.uuid；OIDC picture 由此派生)',
     status_changed_at  TIMESTAMP(3)     NULL,
     last_active_at     TIMESTAMP(3)     NULL,
     created_at         TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

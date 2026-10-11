@@ -26,7 +26,8 @@ class AuthorizationJsonMapperTest {
         JsonMapper mapper = AuthorizationServerConfig.authorizationJsonMapper();
 
         SsoUserPrincipal principal = new SsoUserPrincipal(
-                1647980857L, "smokeuser1", "nick", UserType.COMMON, AccountStatus.ACTIVE,
+                1647980857L, "smokeuser1", "nick", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                UserType.COMMON, AccountStatus.ACTIVE,
                 "device-fp", "did-value", List.of("ADMIN", "USER"));
         var authentication = UsernamePasswordAuthenticationToken.authenticated(
                 principal, null, principal.getAuthorities());
@@ -44,12 +45,14 @@ class AuthorizationJsonMapperTest {
         assertInstanceOf(SsoUserPrincipal.class, restoredPrincipal);
         assertEquals(1647980857L, ((SsoUserPrincipal) restoredPrincipal).getUid());
         assertEquals(List.of("ADMIN", "USER"), ((SsoUserPrincipal) restoredPrincipal).getRoleCodes());
+        assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                ((SsoUserPrincipal) restoredPrincipal).getAvatarUuid());
     }
 
     @Test
     void rolesAreConcreteMutableList() {
         SsoUserPrincipal principal = new SsoUserPrincipal(
-                1L, "u", "n", UserType.COMMON, AccountStatus.ACTIVE, null, null, List.of());
+                1L, "u", "n", null, UserType.COMMON, AccountStatus.ACTIVE, null, null, List.of());
 
         List<String> roles = principal.getRoles();
         assertInstanceOf(ArrayList.class, roles);
@@ -63,7 +66,7 @@ class AuthorizationJsonMapperTest {
         JsonMapper mapper = AuthorizationServerConfig.authorizationJsonMapper();
 
         SsoUserPrincipal principal = new SsoUserPrincipal(
-                1L, "smokeuser1", "nick", UserType.COMMON, AccountStatus.ACTIVE,
+                1L, "smokeuser1", "nick", null, UserType.COMMON, AccountStatus.ACTIVE,
                 "fp", "did", List.of("ADMIN", "USER"));
 
         // Mimics OAuth2Authorization metadata.token.claims (the token customizer output).

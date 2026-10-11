@@ -132,6 +132,10 @@ app:
   cookie:
     same-site: Strict
     secure: false
+  # 头像：OIDC picture claim 由 user.avatar_resource_uuid 派生（稳定读路径，非存储URL）。
+  # 此处为资源服务对外的稳定基址；生产设 https://files.nitrowater.cn（或网关域名）。
+  avatar:
+    picture-base-url: "${AVATAR_PICTURE_BASE_URL:http://localhost:8093}"
   # access token 的 aud（RFC 9068：标识"这张票能在哪个资源上用"）。
   # 逗号分隔；始终追加 client_id，id_token 的 aud 不受影响（OIDC Core §2 要求 = client_id）。
   # Resource Server 用 app.security.jwt.audiences 校验这个值，两边要对齐。

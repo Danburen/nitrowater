@@ -172,4 +172,12 @@ public class AuthAccountController {
         accountCoreService.unbindEmail(uid, body.getEmail(), body.getDeviceInfo());
         return ApiResponse.success();
     }
+
+    @Operation(summary = "绑定头像资源（写入 avatar_resource_uuid；传空清除）")
+    @PutMapping("/avatar")
+    @RateLimit(key = "account.default", permits = 10, window = 300)
+    public ApiResponse<Void> updateAvatar(@Valid @RequestBody UpdateAvatarReq body) {
+        accountCoreService.updateAvatarResourceUuid(UserCtxHolder.getUserUid(), body.getResourceUuid());
+        return ApiResponse.success();
+    }
 }

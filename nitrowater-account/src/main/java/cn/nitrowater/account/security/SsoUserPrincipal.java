@@ -24,7 +24,7 @@ import java.util.List;
  *
  * <p>Stored by Spring Authorization Server's JDBC store (default typing), so it must be
  * Jackson-constructible: the creator + JsonIgnore'd computed getters keep the persisted
- * JSON to the 8 fields below.</p>
+ * JSON to the 9 fields below.</p>
  *
  * <p>{@link #getUsername()} returns uid on purpose: Spring Authorization Server uses
  * {@code principal.getName()} as the token {@code sub}, keeping {@code sub = uid}
@@ -41,6 +41,9 @@ public class SsoUserPrincipal implements UserDetails {
     private final String loginName;
 
     private final String nickname;
+
+    /** Canonical avatar resource uuid (mapped to the OIDC {@code picture} claim by the token customizer). */
+    private final String avatarUuid;
 
     private final UserType userType;
 
@@ -60,6 +63,7 @@ public class SsoUserPrincipal implements UserDetails {
             @JsonProperty("uid") long uid,
             @JsonProperty("loginName") String loginName,
             @JsonProperty("nickname") String nickname,
+            @JsonProperty("avatarUuid") String avatarUuid,
             @JsonProperty("userType") UserType userType,
             @JsonProperty("accountStatus") AccountStatus accountStatus,
             @JsonProperty("deviceFp") String deviceFp,
@@ -68,6 +72,7 @@ public class SsoUserPrincipal implements UserDetails {
         this.uid = uid;
         this.loginName = loginName;
         this.nickname = nickname;
+        this.avatarUuid = avatarUuid;
         this.userType = userType;
         this.accountStatus = accountStatus;
         this.deviceFp = deviceFp;
@@ -81,6 +86,7 @@ public class SsoUserPrincipal implements UserDetails {
                 user.getUid(),
                 user.getUsername(),
                 user.getNickname(),
+                user.getAvatarResourceUuid(),
                 user.getUserType(),
                 user.getAccountStatus(),
                 deviceFp,

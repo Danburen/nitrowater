@@ -31,6 +31,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("UPDATE User u SET u.lastActiveAt = :lastActiveAt WHERE u.uid = :uid")
     int updateLastActiveAt(@Param("uid") Long uid, @Param("lastActiveAt") Instant lastActiveAt);
 
+    @Modifying
+    @Query("UPDATE User u SET u.avatarResourceUuid = :avatarResourceUuid WHERE u.uid = :uid")
+    int updateAvatarResourceUuid(@Param("uid") Long uid, @Param("avatarResourceUuid") String avatarResourceUuid);
+
     @Query("SELECT u.createdAt FROM User u WHERE u.uid = :uid")
     Instant getUserCreatedAtByUid(@Param("uid") Long uid);
 }

@@ -261,7 +261,8 @@ public class AuthorizationServerConfig {
      */
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
-            @Value("${app.oidc.access-token-audiences:}") String resourceAudiencesCsv) {
+            @Value("${app.oidc.access-token-audiences:}") String resourceAudiencesCsv,
+            @Value("${app.avatar.picture-base-url:}") String pictureBaseUrl) {
         return context -> {
             SsoUserPrincipal principal = resolvePrincipal(context);
             String uid = principal != null
@@ -281,6 +282,13 @@ public class AuthorizationServerConfig {
                 claims.claim("roles", principal.getRoles());
                 if (principal.getDid() != null) {
                     claims.claim("did", principal.getDid());
+                }
+                // OIDC standard `picture`: a STABLE URL (the resource service read path), derived from
+                // the avatar's resource uuid — never a stored/presigned URL, so it cannot expire.
+                if (principal.getAvatarUuid() != null && !principal.getAvatarUuid().isBlank()
+                        && pictureBaseUrl != null && !pictureBaseUrl.isBlank()) {
+                    claims.claim("picture", trimTrailingSlash(pictureBaseUrl)
+                            + "/api/public/resource/" + principal.getAvatarUuid());
                 }
             }
             // RFC 9068: the access token's `aud` identifies the RESOURCE it may be used on.
@@ -348,5 +356,11 @@ public class AuthorizationServerConfig {
         }
         Authentication principal = context.getPrincipal();
         return principal != null ? principal.getName() : null;
+    }
+
+    /** @return {@code value} without a trailing slash, so path concatenation never doubles it */
+    private static String trimTrailingSlash(String value) {
+        String trimmed = value.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 }
