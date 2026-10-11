@@ -14,8 +14,9 @@ final class ResourceWebMapper {
     private ResourceWebMapper() {
     }
 
-    /** Builds a metadata view, embedding a read URL when one is available. */
+    /** Builds a metadata view, embedding a read URL (or the service read path when not presignable). */
     static ResourceMetaResp toMeta(Resource resource, String url) {
+        String effectiveUrl = url != null ? url : serviceReadPath(resource);
         return new ResourceMetaResp(
                 resource.getUuid(),
                 resource.getApp(),
@@ -24,7 +25,16 @@ final class ResourceWebMapper {
                 resource.getSizeBytes(),
                 resource.getVisibility().name(),
                 resource.getStatus().name(),
-                url);
+                effectiveUrl);
+    }
+
+    /**
+     * @return the same-origin service read path, used when the backend cannot presign (e.g. LOCAL),
+     *         so callers always receive a usable URL
+     */
+    private static String serviceReadPath(Resource resource) {
+        String prefix = resource.getVisibility() == ResourceVisibility.PUBLIC ? "/api/public" : "/api";
+        return prefix + "/resource/" + resource.getUuid();
     }
 
     /** @return the caller's numeric uid from the {@code uid} claim (falling back to {@code sub}) */

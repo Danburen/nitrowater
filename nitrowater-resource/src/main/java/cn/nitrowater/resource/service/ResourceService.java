@@ -1,5 +1,6 @@
 package cn.nitrowater.resource.service;
 
+import cn.nitrowater.resource.cache.PresignedUrlCache;
 import cn.nitrowater.resource.config.ResourceProperties;
 import cn.nitrowater.resource.domain.Resource;
 import cn.nitrowater.resource.domain.ResourceRepository;
@@ -40,13 +41,15 @@ public class ResourceService {
     private final FileStorageRegistry storageRegistry;
     private final ResourceProperties properties;
     private final FileTypeValidator validator;
+    private final PresignedUrlCache readUrlCache;
 
     public ResourceService(ResourceRepository repository, FileStorageRegistry storageRegistry,
-            ResourceProperties properties, FileTypeValidator validator) {
+            ResourceProperties properties, FileTypeValidator validator, PresignedUrlCache readUrlCache) {
         this.repository = repository;
         this.storageRegistry = storageRegistry;
         this.properties = properties;
         this.validator = validator;
+        this.readUrlCache = readUrlCache;
     }
 
     /**
@@ -162,11 +165,35 @@ public class ResourceService {
 
     /**
      * @param resource an activated resource
-     * @return a presigned GET URL, or {@code null} when the backend cannot presign
+     * @return a presigned GET URL (Redis-cached), or {@code null} when the backend cannot presign
      */
     public String presignedGetUrl(Resource resource) {
-        return storageRegistry.get(resource.getBackend())
-                .presignedGetUrl(resource.getBucketKey(), Duration.ofSeconds(properties.presignExpirySeconds()));
+        Duration expiry = Duration.ofSeconds(properties.presignExpirySeconds());
+        return readUrlCache.getOrSign(resource.getUuid(), expiry, properties.effectiveCacheSafetyMarginSeconds(),
+                () -> storageRegistry.get(resource.getBackend()).presignedGetUrl(resource.getBucketKey(), expiry));
+    }
+
+    /**
+     * Deletes a resource's bytes and marks the metadata row {@code DELETED} (idempotent).
+     *
+     * @param uuid resource identifier
+     * @param ownerUid expected owner
+     * @throws ResourceException when the resource is missing or does not belong to the caller
+     */
+    @Transactional
+    public void delete(String uuid, Long ownerUid) {
+        Resource resource = require(uuid);
+        if (!Objects.equals(resource.getOwnerUid(), ownerUid)) {
+            throw new ResourceException(HttpStatus.FORBIDDEN, "not_owner", "Resource does not belong to caller");
+        }
+        if (resource.getStatus() == ResourceStatus.DELETED) {
+            return;
+        }
+        storageRegistry.get(resource.getBackend()).remove(resource.getBucketKey());
+        resource.setStatus(ResourceStatus.DELETED);
+        resource.setUpdatedAt(Instant.now());
+        repository.save(resource);
+        readUrlCache.evict(resource.getUuid());
     }
 
     /** @return a stream over the resource bytes (caller closes) */

@@ -29,10 +29,14 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     runtimeOnly 'org.flywaydb:flyway-mysql'
     runtimeOnly 'com.mysql:mysql-connector-j'
+    // --- 读缓存：presigned GET URL 缓存（Redis），对齐 waterfun 读取缓存范式 ---
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     // --- S3 兼容对象存储客户端（AWS SDK v2，厂商中立；指向自托管 SeaweedFS）---
     implementation platform('software.amazon.awssdk:bom:2.29.0')
     implementation 'software.amazon.awssdk:s3'
     implementation 'software.amazon.awssdk:url-connection-client'
+    // --- 腾讯 COS 对象存储客户端（可选后端；仅当 app.resource.cos.* 配置时装配）---
+    implementation 'com.qcloud:cos_api:5.6.247'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
