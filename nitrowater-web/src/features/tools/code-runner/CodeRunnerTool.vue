@@ -20,28 +20,44 @@ import {
   Select,
   VideoPlay,
 } from '@element-plus/icons-vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '../../../auth/useAuth'
+import { apiFetch } from '../../../auth/bff'
 import { toast } from '../../../shared/ui/toast'
 import ToolShell from '../ToolShell.vue'
 import CodeEditor from './CodeEditor.vue'
-import { DEFAULT_LANGUAGE_ID, RUNNER_LANGUAGES, isLocalLanguage } from './langCatalog'
+import {
+  DEFAULT_LANGUAGE_ID,
+  RUNNER_LANGUAGES,
+  isLocalLanguage,
+  isRunnerLanguage,
+  type RunnerLanguageId,
+} from './langCatalog'
 import { ansiToHtml } from './lib/ansi'
 import { flushMemoryCache, useContentCache, type UseContentCacheReturn } from './lib/contentCache'
 import { ensureLanguage, isLanguageReady, runLocalCode } from './lib/runtimes/runtimeManager'
 
-const { login } = useAuth()
+const { login, session } = useAuth()
 
-/** Only languages that run online today — the picker never lists unavailable ones. */
-const availableLanguages = RUNNER_LANGUAGES.filter((item) => item.available)
+/** Picker entries: anonymous callers only get browser-local (WASM) languages. */
+const availableLanguages = computed(() =>
+  RUNNER_LANGUAGES.filter(
+    (item) => item.available && (session.value?.authenticated || item.engine === 'local'),
+  ),
+)
 const languageId = ref(DEFAULT_LANGUAGE_ID)
+
+// Fall back to the default when the current language is no longer offered (e.g. after logout).
+watch(languageId, (value) => {
+  if (!availableLanguages.value.some((item) => item.id === value)) {
+    languageId.value = DEFAULT_LANGUAGE_ID
+  }
+})
 
 // Per-language content cache (switching languages never overwrites another's draft).
 const caches = new Map<string, UseContentCacheReturn>()
 for (const item of RUNNER_LANGUAGES) {
-  if (item.engine === 'local') {
-    caches.set(item.id, useContentCache(`runner-code-${item.id}`, item.defaultCode))
-  }
+  caches.set(item.id, useContentCache(`runner-code-${item.id}`, item.defaultCode))
 }
 const activeCache = computed<UseContentCacheReturn>(() => caches.get(languageId.value) ?? caches.get('python')!)
 const code = computed<string>({
@@ -56,9 +72,9 @@ const output = ref('')
 const status = ref('就绪')
 const running = ref(false)
 
-/** Language id for editor syntax highlighting (all available languages are browser-local). */
-const editorLanguage = computed(() =>
-  isLocalLanguage(languageId.value) ? languageId.value : undefined,
+/** Language id for editor syntax highlighting (all selectable languages have a mode). */
+const editorLanguage = computed<RunnerLanguageId | undefined>(() =>
+  isRunnerLanguage(languageId.value) ? languageId.value : undefined,
 )
 
 const outputHtml = computed(() => ansiToHtml(output.value))
@@ -93,22 +109,80 @@ async function copyCode() {
 //  Run
 // ──────────────────────────────────────────
 
+/** Response shape of the backend sandbox run endpoint. */
+interface ServerRunResponse {
+  stdout: string | null
+  stderr: string | null
+  status: string | null
+  exitCode: number | null
+  wallTimeMs: number | null
+  memoryBytes: number | null
+  message: string | null
+}
+
+/** Human-readable hint for a non-OK sandbox status. */
+function serverStatusHint(status: string | null): string {
+  switch (status) {
+    case 'CE':
+      return '编译失败'
+    case 'TO':
+      return '运行超时'
+    case 'OL':
+    case 'EL':
+      return '输出超限'
+    case 'RE':
+    case 'SG':
+      return '运行错误'
+    case 'SE':
+      return '执行服务异常'
+    default:
+      return ''
+  }
+}
+
+/** Runs code on the backend sandbox and formats its output for the console. */
+async function runOnServer(language: string, source: string, input: string): Promise<string> {
+  if (!session.value?.authenticated) {
+    return '[需登录] Java / C / C++ 仅在登录后于服务端运行。'
+  }
+  const response = await apiFetch('/api/sandbox/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language, code: source, stdin: input }),
+  })
+  if (response.status === 429) {
+    return '[请求过于频繁] 请稍后再试。'
+  }
+  if (!response.ok) {
+    const detail = await response.text()
+    return `[服务器错误 ${response.status}] ${detail}`
+  }
+  const data = (await response.json()) as ServerRunResponse
+  const text = `${data.stdout ?? ''}${data.stderr ?? ''}`
+  const hint = serverStatusHint(data.status)
+  if (hint) {
+    return `${text}${text && !text.endsWith('\n') ? '\n' : ''}[${hint}]`
+  }
+  return text || '[无输出]'
+}
+
 async function run() {
   if (running.value) return
-  if (!isLocalLanguage(languageId.value)) {
-    toast.error('该语言暂未开放')
-    return
-  }
   const language = languageId.value
   running.value = true
   output.value = ''
   status.value = '准备中...'
   try {
-    if (!isLanguageReady(language)) {
-      await ensureLanguage(language, (message) => (status.value = message))
+    if (isLocalLanguage(language)) {
+      if (!isLanguageReady(language)) {
+        await ensureLanguage(language, (message) => (status.value = message))
+      }
+      status.value = '运行中...'
+      output.value = await runLocalCode(language, code.value, { stdin: stdin.value })
+    } else {
+      status.value = '运行中...'
+      output.value = await runOnServer(language, code.value, stdin.value)
     }
-    status.value = '运行中...'
-    output.value = await runLocalCode(language, code.value, { stdin: stdin.value })
   } catch (error) {
     output.value = `[运行错误] ${error instanceof Error ? error.message : String(error)}`
   } finally {
@@ -129,7 +203,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
   <ToolShell
     fill
     title="在线代码运行器"
-    desc="纯浏览器运行 Python / JavaScript / TypeScript / Lua（WASM / Web Worker），代码不上传。更多语言将在服务端运行，需登录。"
+    desc="Python / JavaScript / TypeScript / Lua 在浏览器本地运行（代码不上传）；Java / C / C++ 需登录后在服务端沙箱运行。"
   >
     <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
       <!-- Editor panel -->
@@ -141,7 +215,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
           </span>
           <el-select
             v-model="languageId"
-            class="!w-[92px] shrink-0"
+            class="!w-[118px] shrink-0"
             size="small"
             :disabled="running"
           >
@@ -152,8 +226,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
               :value="item.id"
             />
           </el-select>
-          <span class="min-w-0 truncate text-xs text-faint">
-            更多语言需
+          <span
+            v-if="!session?.authenticated"
+            class="min-w-0 truncate text-xs text-faint"
+          >
+            Java / C / C++ 需
             <button
               type="button"
               class="text-accent hover:text-accent-strong"

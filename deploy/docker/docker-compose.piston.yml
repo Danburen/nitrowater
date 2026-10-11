@@ -1,0 +1,38 @@
+# ============================================================
+# NitroWater 执行基础设施：Piston（判题/运行沙箱）
+# 按需启用（判题阶段）。硬约束：--privileged、Linux 内核、cgroup v2（须禁用 v1）、/piston 卷。
+# 端口不映射宿主：仅内网 nitrowater-net 可达（server 经 http://piston:2000 调用）。
+# 语言预装：自建镜像 `FROM ghcr.io/engineer-man/piston` + `cli/index.js ppman install java c c++`，
+#           或首启后 `docker exec ... cli/index.js ppman install ...`。
+#
+# 用法：
+#   docker compose -f deploy/docker/docker-compose.piston.yml up -d
+# ============================================================
+name: nitrowater-piston
+
+services:
+  piston:
+    image: ghcr.io/engineer-man/piston
+    container_name: nitrowater-piston
+    privileged: true
+    volumes:
+      - "/tmp"                     # 匿名卷（isolate 需要可执行 /tmp）
+      - nitrowater-piston:/piston  # 语言包持久化
+    environment:
+      PISTON_RUN_TIMEOUT: "10000"
+      PISTON_COMPILE_TIMEOUT: "20000"
+      PISTON_RUN_MEMORY_LIMIT: "268435456"
+      PISTON_COMPILE_MEMORY_LIMIT: "536870912"
+      PISTON_OUTPUT_MAX_SIZE: "1048576"
+      PISTON_MAX_CONCURRENT_JOBS: "8"
+    mem_limit: 1024m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+networks:
+  nitrowater-net:
+    external: true
+
+volumes:
+  nitrowater-piston:

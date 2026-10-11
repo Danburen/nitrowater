@@ -26,13 +26,14 @@ import { autocompletion, closeBrackets, completionKeymap } from '@codemirror/aut
 import { python } from '@codemirror/lang-python'
 import { javascript } from '@codemirror/lang-javascript'
 import { lua } from '@codemirror/legacy-modes/mode/lua'
+import { c as clikeC, cpp as clikeCpp, java as clikeJava } from '@codemirror/legacy-modes/mode/clike'
 import { useTheme } from '../../../shared/theme/useTheme'
 import { editorTheme } from './codeTheme'
-import type { LocalLanguageId } from './langCatalog'
+import type { RunnerLanguageId } from './langCatalog'
 
 const props = defineProps<{
   modelValue: string
-  language?: LocalLanguageId
+  language?: RunnerLanguageId
 }>()
 
 const emit = defineEmits<{
@@ -49,7 +50,7 @@ const languageCompartment = new Compartment()
 const themeCompartment = new Compartment()
 
 /** Map a runner language id to its CodeMirror language extension. */
-function languageExtension(language: LocalLanguageId | undefined) {
+function languageExtension(language: RunnerLanguageId | undefined) {
   switch (language) {
     case 'javascript':
       return javascript()
@@ -57,6 +58,12 @@ function languageExtension(language: LocalLanguageId | undefined) {
       return javascript({ typescript: true })
     case 'lua':
       return StreamLanguage.define(lua)
+    case 'java':
+      return StreamLanguage.define(clikeJava)
+    case 'c':
+      return StreamLanguage.define(clikeC)
+    case 'cpp':
+      return StreamLanguage.define(clikeCpp)
     case 'python':
     default:
       return python()

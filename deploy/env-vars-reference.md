@@ -22,7 +22,8 @@
 | 前端 OIDC 配置（Vite env） | `nitrowater-web/.env.local`（模板 `.env.example`） |
 | 开发密钥登记（模板） | `deploy/config/common-dev-secrets.yml` |
 | JWT 密钥对 | `deploy/keys/` |
-| 启动脚本 | `deploy/bin/` |
+| 启动脚本（本地 dev） | `bin/`（`start-*.bat`）；冒烟 `bin/test/` |
+| 运维/部署脚本 | `deploy/bin/`（gen-keys / check-env / backup_mysql / reset-sso-db / deploy） |
 
 ## 3. 端口
 
@@ -39,4 +40,4 @@
 - JWT 私钥改由环境变量 `JWT_PRIVATE_KEY` 指向挂载路径（`file:/etc/nitrowater/keys/private.key`）；
 - `WATERFUN_KEK` 由密钥管理系统注入；
 - JPA `ddl-auto` 由 `update` 改为 `validate` + Flyway 基线；
-- docker 部署（`deploy/docker/`）暂不引入，后续对齐 waterfun。
+- docker 部署：`deploy/docker/`（`docker-compose.{infra,app,piston}.yml` + 模板 `.env.example`；根单文件多目标 `Dockerfile`），已对齐 waterfun 约定（infra=中间件、external `nitrowater-net`、服务=app）。

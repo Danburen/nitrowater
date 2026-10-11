@@ -6,7 +6,7 @@
  *              so it stays anonymous-friendly. Runtimes are loaded from a CDN on first run
  *              (lazy) — JavaScript needs no download (native engine), TypeScript pulls the
  *              compiler from a CDN, Lua pulls the wasmoon WebAssembly VM, Python pulls Pyodide.
- * - `server` → runs on the backend sandbox (Piston-style); requires login.
+ * - `server` → runs on the backend sandbox (Piston); anonymous is rate-limited, login relaxes it.
  *
  * Only `available: true` languages are wired up today. The rest are listed so the picker
  * communicates the roadmap and the "登录以随时随地运行" CTA makes sense.
@@ -20,6 +20,12 @@ export type RunnerEngine = 'local' | 'server'
 
 /** Browser-only languages that have a runtime wired up in `lib/runtimes`. */
 export type LocalLanguageId = 'python' | 'javascript' | 'typescript' | 'lua'
+
+/** Languages executed on the backend sandbox (Piston) rather than in the browser. */
+export type ServerLanguageId = 'java' | 'c' | 'cpp'
+
+/** Every language id the runner can select. */
+export type RunnerLanguageId = LocalLanguageId | ServerLanguageId
 
 export interface RunnerLanguage {
   id: string
@@ -36,7 +42,7 @@ export interface RunnerLanguage {
 }
 
 /** Starter snippets, keyed by language id. `Record` keeps this in sync with the language union. */
-const SAMPLES: Record<LocalLanguageId, string> = samples
+const SAMPLES: Record<RunnerLanguageId, string> = samples
 
 export const RUNNER_LANGUAGES: RunnerLanguage[] = [
   {
@@ -78,29 +84,29 @@ export const RUNNER_LANGUAGES: RunnerLanguage[] = [
   {
     id: 'java',
     label: 'Java',
-    badge: '服务器 · 需登录',
+    badge: '服务端 · Piston',
     engine: 'server',
-    available: false,
+    available: true,
     cacheKey: 'java',
-    defaultCode: '',
+    defaultCode: SAMPLES.java,
   },
   {
     id: 'c',
     label: 'C',
-    badge: '服务器 · 需登录',
+    badge: '服务端 · Piston',
     engine: 'server',
-    available: false,
+    available: true,
     cacheKey: 'c',
-    defaultCode: '',
+    defaultCode: SAMPLES.c,
   },
   {
     id: 'cpp',
     label: 'C++',
-    badge: '服务器 · 需登录',
+    badge: '服务端 · Piston',
     engine: 'server',
-    available: false,
+    available: true,
     cacheKey: 'cpp',
-    defaultCode: '',
+    defaultCode: SAMPLES.cpp,
   },
 ]
 
@@ -116,6 +122,21 @@ const LOCAL_LANGUAGE_IDS: ReadonlySet<string> = new Set([
 
 export function isLocalLanguage(id: string): id is LocalLanguageId {
   return LOCAL_LANGUAGE_IDS.has(id)
+}
+
+/** Every selectable language id, so the editor can narrow to a syntax-highlighting mode. */
+const ALL_LANGUAGE_IDS: ReadonlySet<string> = new Set<RunnerLanguageId>([
+  'python',
+  'javascript',
+  'typescript',
+  'lua',
+  'java',
+  'c',
+  'cpp',
+])
+
+export function isRunnerLanguage(id: string): id is RunnerLanguageId {
+  return ALL_LANGUAGE_IDS.has(id)
 }
 
 export function findLanguage(id: string): RunnerLanguage {

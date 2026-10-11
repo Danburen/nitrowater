@@ -44,8 +44,8 @@ Prerequisites: **JDK 25**, **MySQL 8**, **Redis**.
 
 ```powershell
 .\deploy\bin\gen-keys.ps1        # generate JWT keys
-.\deploy\bin\start-account.bat   # SSO  -> http://localhost:8090
-.\deploy\bin\start-bff.bat       # BFF  -> http://localhost:8080
+.\bin\start-account.bat   # SSO  -> http://localhost:8090
+.\bin\start-bff.bat       # BFF  -> http://localhost:8080
 ```
 
 ## Repository & Docs

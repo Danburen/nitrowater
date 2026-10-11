@@ -81,7 +81,10 @@ go.work.sum
 **/keys/*.key
 deploy/config/common-dev-secrets.yml
 
-# deploy/bin scripts are tracked: local MySQL/Redis passwords are initial/default (safe to expose).
-# The generic `bin/` rule above would ignore them, so re-include explicitly.
+# Scripts tracked: root bin/ (launch start-* + bin/test smoke) and deploy/bin/ (ops/deploy).
+# The generic `bin/` rule above ignores ANY `bin` directory, so re-include both explicitly
+# (anchored patterns). Passwords in these scripts are initial/default dev values (safe to expose).
+!/bin/
+!/bin/**
 !deploy/bin/
 !deploy/bin/**

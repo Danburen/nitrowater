@@ -67,6 +67,9 @@ public class SecurityConfig {
 
         http
                 .authorizeHttpRequests(a -> a
+                        // Anonymous tool endpoints (e.g. the code sandbox runner) are public here;
+                        // abuse is bounded by rate limiting on the resource server.
+                        .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 .oauth2Login(oauth2 -> oauth2.defaultSuccessUrl("/", true))

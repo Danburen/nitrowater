@@ -73,3 +73,8 @@ tasks.named('bootRun') {
     workingDir = rootProject.projectDir
     environment 'WATERFUN_KEK', System.getenv('WATERFUN_KEK') ?: 'kElE+g/NUUkCAG0azg9ZcYYXbevGg9mYuUtJvICut98='
 }
+
+// 固定 bootJar 名称，便于根多目标 Dockerfile 提取（各服务同名 app.jar）。
+tasks.named('bootJar') {
+    archiveFileName = 'app.jar'
+}

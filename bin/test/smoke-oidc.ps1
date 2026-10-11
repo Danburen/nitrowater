@@ -12,8 +12,8 @@ Prereq:
   - a test account exists (default smokeuser1 / Passw0rd!)
 
 Usage (Windows PowerShell 5.1 or PowerShell 7):
-  .\deploy\bin\smoke-oidc.ps1
-  .\deploy\bin\smoke-oidc.ps1 -Username smokeuser1 -Password 'Passw0rd!'
+  .\bin\test\smoke-oidc.ps1
+  .\bin\test\smoke-oidc.ps1 -Username smokeuser1 -Password 'Passw0rd!'
 #>
 param(
     [string]$Base = 'http://localhost:8090',

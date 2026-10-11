@@ -1,0 +1,56 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'cn.nitrowater'
+version = '0.0.1-SNAPSHOT'
+description = 'nitrowater-resource'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // --- web + security（OAuth2 Resource Server：校验 SSO 签发的 JWT）---
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    // --- 资源元数据库（独立库 nitrowater_resource；Flyway 管理）---
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    runtimeOnly 'org.flywaydb:flyway-mysql'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    // --- S3 兼容对象存储客户端（AWS SDK v2，厂商中立；指向自托管 SeaweedFS）---
+    implementation platform('software.amazon.awssdk:bom:2.29.0')
+    implementation 'software.amazon.awssdk:s3'
+    implementation 'software.amazon.awssdk:url-connection-client'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// 与其它模块一致：workingDir = 仓库根，便于解析相对路径（如本地存储目录）。
+tasks.named('bootRun') {
+    workingDir = rootProject.projectDir
+}
+
+// 固定 bootJar 名称，便于 Dockerfile 复制（docker compose build 前先跑 bootJar）。
+tasks.named('bootJar') {
+    archiveFileName = 'app.jar'
+}

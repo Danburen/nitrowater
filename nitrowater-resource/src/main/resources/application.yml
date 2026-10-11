@@ -1,0 +1,65 @@
+# ============================================================
+# nitrowater-resource（统一资源管理服务 · 基础设施）
+# 独立库 nitrowater_resource；OAuth2 RS 校验 SSO 的 JWT；
+# 存储后端可插拔（S3 兼容 = 自托管 SeaweedFS；LOCAL 文件系统）。
+# 既有对象存储与本地托管统一走本服务。
+# ============================================================
+
+server:
+  port: 8093
+
+spring:
+  application:
+    name: nitrowater-resource
+
+  # -------- 资源元数据库（独立于 account/biz）--------
+  datasource:
+    url: jdbc:mysql://localhost:3306/nitrowater_resource?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true
+    username: root
+    password: "123456"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+  # -------- 迁移（仅本服务的库）--------
+  flyway:
+    enabled: true
+
+  # -------- OAuth2 Resource Server：校验 SSO(AS) 的 JWT --------
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER:http://localhost:8090}
+          jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
+
+# -------- JWT 校验（audience 收紧；Spring 默认不校验 aud）--------
+# 注意：AS 的 app.oidc.access-token-audiences 需与本值对齐（或 BFF 按资源受众换 token）。
+app:
+  security:
+    jwt:
+      audiences: ${RESOURCE_JWT_AUDIENCES:nitrowater-resource,nitrowater-server}
+  resource:
+    default-backend: ${RESOURCE_BACKEND:s3}        # s3 | local
+    presign-expiry-seconds: ${RESOURCE_PRESIGN_EXPIRY:600}
+    max-size-bytes: ${RESOURCE_MAX_SIZE:10485760}  # 10MB
+    # S3 兼容后端（默认自托管 SeaweedFS 的 S3 网关 :8333）。
+    # 反代对外时需给 SeaweedFS 配 -s3.externalUrl，使 presigned URL 使用对外域名。
+    s3:
+      endpoint: ${S3_ENDPOINT:http://localhost:8333}          # 服务端访问（容器内用 http://seaweedfs:8333）
+      access-key: ${S3_ACCESS_KEY:nitrowater}
+      secret-key: ${S3_SECRET_KEY:change-me}
+      bucket: ${S3_BUCKET:nitrowater}
+      region: ${S3_REGION:us-east-1}
+      public-endpoint: ${S3_PUBLIC_ENDPOINT:}                 # presigned URL 用（浏览器可达；空=同 endpoint）
+    local:
+      base-path: ${RESOURCE_LOCAL_PATH:./deploy/resource-storage}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN

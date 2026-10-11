@@ -23,6 +23,15 @@ spring:
       ddl-auto: none
     open-in-view: false
 
+  # -------- Redis：仅用于代码运行器匿名限流（不是会话存储）--------
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      username: default
+      password: "${REDIS_PASSWORD:}"
+
   # -------- 业务表迁移（M2 设计业务表后启用；当前无业务迁移）--------
   flyway:
     enabled: false
@@ -44,6 +53,19 @@ app:
   security:
     jwt:
       audiences: nitrowater-server
+  # -------- 代码沙箱（Piston）--------
+  # 业务服务直连 Piston（不设独立模块）；仅登录用户可用（匿名只跑浏览器本地 WASM）。
+  sandbox:
+    base-url: ${PISTON_BASE_URL:http://localhost:2000}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 30000          # 需 > compile+run 之和，否则长跑会被截断
+    max-code-bytes: 65536
+    global-concurrency: 4           # 同时最多 4 个在途执行（保护 Piston）
+    compile-timeout-ms: 20000
+    per-ip-per-minute: 30           # 登录用户 per-IP 限流
+    run-timeout-ms: 10000
+    memory-limit-bytes: 536870912   # 512MB（单位 bytes）
+
 
 logging:
   level:

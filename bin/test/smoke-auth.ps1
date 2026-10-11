@@ -8,8 +8,8 @@
 #   - 验证码为图形码，需人工识别；短信验证码由 ConsoleSmsCodeSender 打到 account 控制台
 #
 # 用法：
-#   .\deploy\bin\smoke-auth.ps1
-#   .\deploy\bin\smoke-auth.ps1 -Base http://localhost:8090 -Phone 13800000001 -Username smokeuser1
+#   .\bin\test\smoke-auth.ps1
+#   .\bin\test\smoke-auth.ps1 -Base http://localhost:8090 -Phone 13800000001 -Username smokeuser1
 # ============================================================
 
 param(

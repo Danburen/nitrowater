@@ -15,9 +15,9 @@ Prereq:
   - captcha: pass -Captcha, or -RedisCli to read it from Redis automatically, else it is prompted.
 
 Usage:
-  .\deploy\bin\smoke-logout.ps1
-  .\deploy\bin\smoke-logout.ps1 -RedisCli 'E:\Program Files\Redis\redis-cli.exe'
-  .\deploy\bin\smoke-logout.ps1 -Mysql 'mysql.exe'    # also assert refresh-token revocation
+  .\bin\test\smoke-logout.ps1
+  .\bin\test\smoke-logout.ps1 -RedisCli 'E:\Program Files\Redis\redis-cli.exe'
+  .\bin\test\smoke-logout.ps1 -Mysql 'mysql.exe'    # also assert refresh-token revocation
 #>
 param(
   [string]$Bff = 'http://localhost:8080',

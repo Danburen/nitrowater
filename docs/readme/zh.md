@@ -44,8 +44,8 @@
 
 ```powershell
 .\deploy\bin\gen-keys.ps1        # 生成 JWT 密钥
-.\deploy\bin\start-account.bat   # SSO  -> http://localhost:8090
-.\deploy\bin\start-bff.bat       # BFF  -> http://localhost:8080
+.\bin\start-account.bat   # SSO  -> http://localhost:8090
+.\bin\start-bff.bat       # BFF  -> http://localhost:8080
 ```
 
 ## 仓库与文档

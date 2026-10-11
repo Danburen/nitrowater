@@ -1,44 +1,35 @@
-# deploy/bin — nitrowater 运维/调试脚本
+# deploy/bin — 运维 / 部署脚本
 
-> 参考 waterfun `deploy/` 迁移而来；**docker 部署部分暂不引入**。
+> 与 `bin/`（本地启动）分离：这里放**运维/部署**脚本。均从**仓库根目录**执行。
+> 每个脚本同时提供 **`.ps1`（Windows）** 与 **`.sh`（Linux/macOS）**；`.sh` 首次使用前 `chmod +x deploy/bin/*.sh`。
 
-所有脚本位于 `deploy/bin/`，在**仓库根目录**执行。
+| 用途 | Windows | Linux/macOS |
+|------|---------|-------------|
+| 生成 JWT 密钥 → `deploy/keys/` | `gen-keys.ps1` | `gen-keys.sh` |
+| 环境自检（端口/密钥/KEK/salt；加载 `.env`） | `check-env.ps1` | `check-env.sh` |
+| 备份 `nitrowater_account`（gzip + 保留 30 天） | `backup_mysql.ps1` | `backup_mysql.sh` |
+| 清空 SSO 表（Flyway 重建） | `reset-sso-db.ps1` | `reset-sso-db.sh` |
+| **单入口部署**（校验 `.env` → compose config → 起 infra+app） | `deploy.ps1` | `deploy.sh` |
 
-## 脚本清单
-
-| 脚本 | 用途 |
-|------|------|
-| `check-env.ps1`      | 自检：MySQL/Redis 端口、JWT 密钥、WATERFUN_KEK、DEVICE_SALT |
-| `start-redis.bat`    | 启动本地 Redis（127.0.0.1:6379） |
-| `start-account.bat`  | 启动 `nitrowater-account`（SSO，端口 8090） |
-| `start-bff.bat`      | 启动 `nitrowater-bff`（BFF / Token Handler，端口 8080） |
-| `gen-keys.ps1`       | 生成 RSA 2048 密钥对 → `deploy/keys/{private,public}.key` |
-| `backup_mysql.ps1`   | 备份 `nitrowater_account` 库（gzip + 保留 30 天） |
-| `smoke-oidc.ps1`     | OIDC 授权码流冒烟（confidential `nitrowater-bff` 客户端，断言下发 refresh_token） |
-
-## 快速开始
+## 部署（单入口）
 
 ```powershell
-# 1) 生成/放置 JWT 密钥（若已有 waterfun 密钥可直接复制到 deploy/keys/）
-.\deploy\bin\gen-keys.ps1
-
-# 2) 启动 Redis（MySQL 作为 Windows 服务，假定已在运行）
-.\deploy\bin\start-redis.bat
-
-# 3) 自检
-.\deploy\bin\check-env.ps1
-
-# 4) 启动 account
-.\deploy\bin\start-account.bat
+# Windows
+Copy-Item deploy/docker/.env.example deploy/docker/.env   # 填写真实值
+.\deploy\bin\deploy.ps1            # 起 infra + app
+.\deploy\bin\deploy.ps1 -InfraOnly # 只起中间件
+.\deploy\bin\deploy.ps1 -Build     # 本地构建镜像
+```
+```bash
+# Linux / macOS
+cp deploy/docker/.env.example deploy/docker/.env          # 填写真实值
+chmod +x deploy/bin/*.sh
+bash deploy/bin/deploy.sh              # 起 infra + app
+bash deploy/bin/deploy.sh --infra-only # 只起中间件
+bash deploy/bin/deploy.sh --build      # 本地构建镜像
 ```
 
-## 前置配置
+`deploy.{ps1,sh}` 先 `docker compose config` 校验（缺必需变量/语法错即失败），再依次拉起 infra、app —— 对齐 waterfun 的 `deploy/bin/deploy.sh`；compose 自带 mysql/redis `healthcheck`。
 
-1. **JWT 密钥**：`deploy/keys/private.key` + `deploy/keys/public.key`
-   （可直接复制 `D:\Project\waterfun\deploy\keys\*`；已 gitignore）。
-   也可用 `gen-keys.ps1` 重新生成。
-2. **WATERFUN_KEK**：32 字节 AES KEK 的 Base64。设置环境变量，或使用
-   `nitrowater-account/build.gradle` 中 `bootRun` 的开发默认值。
-3. **DEVICE_SALT**：设备指纹盐值，已在 `application.yml` 复用 waterfun 开发值。
+详见 `deploy/docker/` 与 `deploy/env-vars-reference.md`。
 
-详见 `deploy/env-vars-reference.md`。

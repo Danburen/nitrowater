@@ -1,0 +1,82 @@
+# ============================================================
+# NitroWater 基础设施编排（有状态中间件：MySQL + Redis + SeaweedFS）
+# 与服务编排（docker-compose.app.yml）分离，独立部署。
+#
+# 用法：
+#   docker network create nitrowater-net        # 只需一次
+#   docker compose -f deploy/docker/docker-compose.infra.yml up -d
+#
+# 环境变量经同目录 .env 注入（模板见 .env.example），缺失走默认（便于本地 dev）。
+# ============================================================
+name: nitrowater-infra
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: nitrowater-mysql
+    # 不映射宿主端口：仅内网可达（避免与宿主本地 MySQL 冲突）。需要宿主访问时按需加 ports。
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: nitrowater_account
+    volumes:
+      - nitrowater-mysql:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=128M
+      --max-connections=50
+      --performance-schema=OFF
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 512m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: nitrowater-redis
+    # 不映射宿主端口：仅内网可达（避免与宿主本地 Redis 冲突）。
+    volumes:
+      - nitrowater-redis:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 256m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    container_name: nitrowater-seaweedfs
+    ports:
+      - "8333:8333"
+      - "8888:8888"
+      - "9333:9333"
+      - "23646:23646"
+    volumes:
+      - nitrowater-seaweedfs:/data
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-nitrowater}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-change-me}
+      S3_BUCKET: ${S3_BUCKET:-nitrowater}
+    mem_limit: 512m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+networks:
+  nitrowater-net:
+    external: true
+
+volumes:
+  nitrowater-mysql:
+  nitrowater-redis:
+  nitrowater-seaweedfs:

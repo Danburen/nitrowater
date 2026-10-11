@@ -1,0 +1,16 @@
+# 构建上下文裁剪（根 Dockerfile 在镜像内构建，源码之外无需进入 context）
+.git
+.gitignore
+.gradle/
+.idea/
+.omo/
+.codegraph/
+.playwright-mcp/
+docs/
+deploy/
+**/build/
+**/node_modules/
+**/dist/
+*.iml
+HELP.md
+README.md

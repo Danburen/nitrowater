@@ -67,6 +67,12 @@ spring:
 app:
   rs:
     base-url: ${RS_BASE_URL:http://localhost:8081}
+  # 统一资源服务（/api/resource/** 与 /api/public/resource/** 路由到这里）
+  resource:
+    base-url: ${RESOURCE_BASE_URL:http://localhost:8093}
+  # Downstream call budget: must exceed the resource server's sandbox compile+run budget.
+  api:
+    read-timeout-ms: ${API_READ_TIMEOUT_MS:45000}
   web:
     # Vite 产物 assets/* 文件名带内容 hash → 可长缓存（默认 1 年）；index.html 不缓存。
     assets-cache-seconds: ${WEB_ASSETS_CACHE_SECONDS:31536000}

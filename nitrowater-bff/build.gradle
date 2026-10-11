@@ -56,3 +56,8 @@ tasks.named('processResources') {
         into 'static'
     }
 }
+
+// 固定 bootJar 名称，便于根多目标 Dockerfile 提取。
+tasks.named('bootJar') {
+    archiveFileName = 'app.jar'
+}
