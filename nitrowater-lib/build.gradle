@@ -19,10 +19,9 @@ repositories {
 }
 
 dependencies {
-    // JsonUtil 的公开签名含 Jackson 类型（TypeReference/ObjectMapper）→ 必须 api 导出，
-    // 否则引用它的模块（如 server，用 Jackson 3）编译期会 "cannot access TypeReference"。
-    api 'com.fasterxml.jackson.core:jackson-databind'
-    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    // JsonUtil 的公开签名含 Jackson 类型（TypeReference/ObjectMapper）→ 必须 api 导出。
+    // 全项目统一 Jackson 3（tools.jackson，Spring Boot 4 默认）；java.time 支持已内置于 databind。
+    api 'tools.jackson.core:jackson-databind'
     implementation 'jakarta.validation:jakarta.validation-api'
 
     implementation 'org.jetbrains:annotations:26.0.2'
