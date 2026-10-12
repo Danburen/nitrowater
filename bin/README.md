@@ -21,6 +21,8 @@
 > `.\bin\install-piston-langs.ps1` 安装（经 GitHub 代理 `ghproxy.net` 拉包；装 java/gcc/node/python/typescript/lua，
 > 覆盖 server 的 7 语言）。运行时持久化在命名卷 `nitrowater-piston`，只需装一次。生产/compose 路径见
 > `deploy/docker/docker-compose.piston.yml`（不映射宿主端口）。
+> **TypeScript** 额外补 `@types/node`：脚本会自动安装并在 `compile` 步骤里暴露给 `tsc`，
+> 使 `require` / `process` 等不再报 `TS2580`。
 
 ## 快速开始（本地 dev）
 

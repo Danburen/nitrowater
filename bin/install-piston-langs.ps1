@@ -117,6 +117,31 @@ try {
         Write-Step "installed: $pkg $ver"
     }
 
+    # TypeScript: Piston's package ships no Node typings, so require/process/Buffer fail with TS2580.
+    # Install @types/node (persists in the volume) and make the compile step expose it to tsc.
+    if ($Packages -contains 'typescript') {
+        $tsVer = $Versions['typescript']
+        Write-Step "Wiring @types/node into typescript $tsVer ..."
+        docker exec $Container sh -lc "cd /piston/packages/typescript/$tsVer && [ -d types/node_modules/@types/node ] || bin/npm install --prefix /piston/packages/typescript/$tsVer/types @types/node@18 --registry https://registry.npmmirror.com --no-audit --no-fund" | Out-Null
+        $compileScript = @'
+#!/usr/bin/env bash
+rename 's/$/\.ts/' "$@"
+
+# Piston's TypeScript package ships no Node typings, so require/process/Buffer/__dirname fail
+# with TS2580. Make the pre-installed @types/node visible to tsc in the job directory.
+mkdir -p node_modules/@types
+ln -sf __TS_TYPES__/node_modules/@types/node node_modules/@types/node
+
+tsc *.ts
+'@
+        $compileScript = $compileScript -replace '__TS_TYPES__', "/piston/packages/typescript/$tsVer/types"
+        $compilePath = Join-Path $env:TEMP 'piston-ts-compile.sh'
+        [IO.File]::WriteAllText($compilePath, $compileScript)
+        docker cp $compilePath "${Container}:/piston/packages/typescript/$tsVer/compile" | Out-Null
+        docker exec $Container chmod +x "/piston/packages/typescript/$tsVer/compile" | Out-Null
+        Write-Step "typescript @types/node wired in."
+    }
+
     Write-Step "Runtimes now available:"
     (Invoke-RestMethod "$PistonApi/api/v2/runtimes" -TimeoutSec 30) |
         ForEach-Object { Write-Host ("  {0} {1}" -f $_.language, $_.version) }
