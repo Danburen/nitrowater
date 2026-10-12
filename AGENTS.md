@@ -36,8 +36,8 @@
 - 后端响应式冻结：一律 **Servlet/WebMVC**（勿 WebFlux）。
 - 注释**英文** + 方法 **Javadoc**。
 - Redis 命名空间 `nitrowater:*`（缓存如 `nitrowater:cache:*`）。
-- Windows 脚本编码：`.bat` = ASCII + CRLF；`.ps1` = **UTF-8 with BOM**。
-  - 注：`.ai/context/events.log` 为历史 **GBK** 编码（追加时保持 GBK）。
+- Windows 脚本编码：`.bat` = ASCII + CRLF；`.ps1` = **UTF-8 with BOM**（脚本非日志，保持 BOM）。
+- 日志编码：`.ai/context/*.md` 与 `events.log` 一律 **UTF-8 无 BOM**；写入前先探测，遇历史 GBK 先按原编码读出再以 UTF-8 无 BOM 重写（内容不变），随后一律 UTF-8。
 - 前端 **Tailwind-first**，Element Plus 仅按需用于复杂组件。
 - issuer 单一来源 `jwt.issuer`（**必须是 URL**）；RS 校验 `aud` 与本服务的 audiences 对齐。
 - 密钥/凭据不入库不入仓；COS 等云凭据用环境变量，本地缺省即禁用该后端。
