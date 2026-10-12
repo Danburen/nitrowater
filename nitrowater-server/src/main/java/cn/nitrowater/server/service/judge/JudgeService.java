@@ -132,7 +132,7 @@ public class JudgeService {
         }
         finish(submissionId, overall, passed, total, score, outcomes,
                 compileMessage, (int) maxWall, (int) maxMemory);
-        awardIfSolved(submission, problem, overall == Verdict.AC);
+        awardIfSolved(submission, problem, overall == Verdict.AC, score);
     }
 
     private CaseOutcome runCase(Problem problem, Submission submission, ProblemTestCase testCase,
@@ -222,8 +222,14 @@ public class JudgeService {
         }));
     }
 
-    /** Updates the user's per-problem status and awards points on first AC (idempotent per problem). */
-    private void awardIfSolved(Submission submission, Problem problem, boolean solved) {
+    /**
+     * Updates the user's per-problem status and awards points on first AC (idempotent per problem).
+     *
+     * <p>{@code score} is passed explicitly rather than read from {@code submission}: the entity
+     * captured before judging still carries its initial (zero) score, because {@link #finish}
+     * persists the real score through a separate transaction and a separate managed instance.</p>
+     */
+    private void awardIfSolved(Submission submission, Problem problem, boolean solved, int score) {
         tx.executeWithoutResult(status -> {
             UserProblemStatusId id = new UserProblemStatusId(submission.getUserId(), problem.getId());
             UserProblemStatus ups = userProblemStatus.findById(id).orElseGet(() -> {
@@ -237,8 +243,9 @@ public class JudgeService {
             if (solved) {
                 ups.setStatus(ProblemStatus.SOLVED);
                 ups.setBestVerdict(Verdict.AC);
-                if (ups.getBestScore() < submission.getScore()) {
-                    ups.setBestScore(submission.getScore());
+                int currentBest = ups.getBestScore() == null ? 0 : ups.getBestScore();
+                if (currentBest < score) {
+                    ups.setBestScore(score);
                 }
                 if (firstSolve) {
                     ups.setFirstSolvedAt(Instant.now());

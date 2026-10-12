@@ -44,15 +44,15 @@ CREATE TABLE biz_user_role (
   CONSTRAINT fk_bur_role FOREIGN KEY (role_id) REFERENCES biz_role(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户-应用角色映射';
 
--- ---------- 题库 ----------
+-- ---------- 题库（题面双语：直列 _en 列，缺省回退中文）----------
 CREATE TABLE problem (
   id              BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
   slug            VARCHAR(64)      NOT NULL                       COMMENT '稳定可读 ID',
-  title           VARCHAR(200)     NOT NULL,
+  title           VARCHAR(200)     NOT NULL                       COMMENT '中文标题',
+  title_en        VARCHAR(200)     NULL                           COMMENT '英文标题（缺省回退中文）',
   difficulty      TINYINT UNSIGNED NOT NULL DEFAULT 0             COMMENT '0=EASY 1=MEDIUM 2=HARD',
-  category        VARCHAR(64)      NULL,
-  tags            JSON             NULL,
-  description     MEDIUMTEXT       NOT NULL                       COMMENT 'markdown 题面',
+  description     MEDIUMTEXT       NOT NULL                       COMMENT '中文题面 markdown',
+  description_en  MEDIUMTEXT       NULL                           COMMENT '英文题面 markdown',
   io_mode         TINYINT UNSIGNED NOT NULL DEFAULT 0             COMMENT '0=ACM 1=LEETCODE',
   judge_config    JSON             NULL                           COMMENT '比较策略/方法签名(LC)',
   templates       JSON             NULL                           COMMENT '各语言起始模板',
@@ -66,9 +66,60 @@ CREATE TABLE problem (
   PRIMARY KEY (id),
   UNIQUE KEY uk_problem_slug (slug),
   KEY idx_problem_enabled (enabled),
-  KEY idx_problem_difficulty (difficulty),
-  KEY idx_problem_category (category)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题库';
+  KEY idx_problem_difficulty (difficulty)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题库（题面双语直列 _en）';
+
+-- ---------- 标签（双语直列；kind 分组：主题/公司/分类）----------
+CREATE TABLE tag (
+  id         BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  slug       VARCHAR(64)      NOT NULL                       COMMENT '稳定键，如 array / dynamic-programming',
+  name       VARCHAR(64)      NOT NULL                       COMMENT '中文名',
+  name_en    VARCHAR(64)      NULL                           COMMENT '英文名（缺省回退中文）',
+  kind       TINYINT UNSIGNED NOT NULL DEFAULT 0             COMMENT '0=TOPIC 1=COMPANY',
+  color      VARCHAR(16)      NULL,
+  enabled    TINYINT(1)       NOT NULL DEFAULT 1,
+  created_at TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_tag_slug (slug),
+  KEY idx_tag_kind (kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题库标签（双语直列，kind: 0=TOPIC 1=COMPANY）';
+
+CREATE TABLE problem_tag (
+  problem_id BIGINT UNSIGNED NOT NULL,
+  tag_id     BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (problem_id, tag_id),
+  CONSTRAINT fk_pt_problem FOREIGN KEY (problem_id) REFERENCES problem(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pt_tag     FOREIGN KEY (tag_id)     REFERENCES tag(id)     ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题目-标签 映射';
+
+-- ---------- 题单（problem set：把题目归档到多个题单，如 热门题目/面试经典/数据结构）----------
+CREATE TABLE problem_set (
+  id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  slug           VARCHAR(64)  NOT NULL                       COMMENT '稳定键，如 hot-100 / interview-150',
+  name           VARCHAR(100) NOT NULL                       COMMENT '中文名，如 热门题目',
+  name_en        VARCHAR(100) NULL                           COMMENT '英文名（缺省回退中文）',
+  description    VARCHAR(500) NULL                           COMMENT '中文简介',
+  description_en VARCHAR(500) NULL                           COMMENT '英文简介（缺省回退中文）',
+  color          VARCHAR(16)  NULL,
+  sort_order     INT          NOT NULL DEFAULT 0             COMMENT '题单展示顺序（升序）',
+  enabled        TINYINT(1)   NOT NULL DEFAULT 1,
+  created_at     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_problem_set_slug (slug),
+  KEY idx_problem_set_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题单/problem set（一道题可属于多个题单）';
+
+CREATE TABLE problem_set_item (
+  problem_id BIGINT UNSIGNED NOT NULL,
+  set_id     BIGINT UNSIGNED NOT NULL,
+  ord        INT NOT NULL DEFAULT 0 COMMENT '题单内顺序（升序）',
+  PRIMARY KEY (problem_id, set_id),
+  KEY idx_psi_set (set_id, ord),
+  CONSTRAINT fk_psi_problem FOREIGN KEY (problem_id) REFERENCES problem(id)     ON DELETE CASCADE,
+  CONSTRAINT fk_psi_set     FOREIGN KEY (set_id)     REFERENCES problem_set(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题目-题单 映射';
 
 CREATE TABLE problem_test_case (
   id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -82,6 +133,28 @@ CREATE TABLE problem_test_case (
   UNIQUE KEY uk_case_problem_idx (problem_id, idx),
   CONSTRAINT fk_case_problem FOREIGN KEY (problem_id) REFERENCES problem(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题库用例';
+
+-- ---------- 题解（1:N，仅中文；全部可见；官方置顶；预留用户发布）----------
+CREATE TABLE problem_editorial (
+  id           BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  problem_id   BIGINT UNSIGNED  NOT NULL,
+  author_uid   BIGINT UNSIGNED  NULL                       COMMENT '逻辑关联 account.uid（官方=出题 admin uid）',
+  author_type  TINYINT UNSIGNED NOT NULL DEFAULT 0         COMMENT '0=OFFICIAL 1=USER',
+  title        VARCHAR(200)     NOT NULL,
+  content      MEDIUMTEXT       NOT NULL                   COMMENT 'markdown 正文（中文）',
+  language     TINYINT UNSIGNED NULL                       COMMENT '题解代码语言，同 submission.language（0=JAVA…6=LUA）',
+  status       TINYINT UNSIGNED NOT NULL DEFAULT 0         COMMENT '0=DRAFT 1=PUBLISHED 2=HIDDEN',
+  pinned       TINYINT(1)       NOT NULL DEFAULT 0         COMMENT '置顶（官方）',
+  like_count   INT              NOT NULL DEFAULT 0         COMMENT '点赞数（预留）',
+  view_count   INT              NOT NULL DEFAULT 0         COMMENT '浏览数（预留）',
+  published_at TIMESTAMP(3)     NULL,
+  created_at   TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at   TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_pe_problem (problem_id, status, pinned, published_at),
+  KEY idx_pe_author (author_uid),
+  CONSTRAINT fk_pe_problem FOREIGN KEY (problem_id) REFERENCES problem(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题解（author_type:0=OFFICIAL 1=USER；status:0=DRAFT 1=PUBLISHED 2=HIDDEN）';
 
 -- ---------- 提交/判题 ----------
 CREATE TABLE submission (

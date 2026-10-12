@@ -10,12 +10,19 @@ import java.util.Map;
 /**
  * Create/update payload for a problem (admin only).
  *
- * @param slug stable slug (optional; auto-generated from {@code title} when blank, ignored on update)
- * @param title title (required)
+ * <p>Bilingual: the {@code ..._en} fields are optional and display falls back to the Chinese
+ * value when absent.</p>
+ *
+ * @param slug stable slug (optional; auto-generated from {@code titleEn} when present, otherwise
+ *             from {@code title} — a conflict with an existing slug returns 409; ignored on update)
+ * @param title Chinese title (required)
+ * @param titleEn English title (optional)
  * @param difficulty {@code EASY}/{@code MEDIUM}/{@code HARD} (default {@code EASY})
- * @param category category (optional)
- * @param tags tags (optional)
- * @param description markdown statement (required)
+ * @param tagIds ids of existing tags to attach (optional; replaces the problem's current tag set)
+ * @param setIds ids of existing problem sets ("题单") to file the problem under
+ *             (optional; replaces the problem's current set membership)
+ * @param description Chinese markdown statement (required)
+ * @param descriptionEn English markdown statement (optional)
  * @param ioMode {@code ACM}/{@code LEETCODE} (default {@code ACM})
  * @param templates per-language starter templates (optional)
  * @param judgeConfig comparison strategy / method signature (optional)
@@ -27,10 +34,12 @@ import java.util.Map;
 public record ProblemUpsertReq(
         String slug,
         @NotBlank String title,
+        String titleEn,
         String difficulty,
-        String category,
-        List<String> tags,
+        List<Long> tagIds,
+        List<Long> setIds,
         @NotBlank String description,
+        String descriptionEn,
         String ioMode,
         Map<String, String> templates,
         Map<String, Object> judgeConfig,

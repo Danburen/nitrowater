@@ -55,6 +55,36 @@ import { tools } from './catalog'
       </component>
     </div>
 
+    <!-- Divider + shortcut to the standalone coding playground -->
+    <div class="mt-6 border-t border-line pt-5">
+      <router-link
+        to="/playground"
+        class="flex items-center gap-3 rounded-[14px] border border-accent/25 bg-gradient-to-br from-accent/10 to-accent-2/10 px-4 py-3.5 transition hover:border-accent/40"
+      >
+        <span class="grid size-10 shrink-0 place-items-center rounded-xl border border-accent/25 bg-gradient-to-br from-accent/15 to-accent-2/15 text-accent">
+          <svg
+            class="size-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M6 3h9l5 5v13H6zM15 3v5h5M9 15l2 2 4-4" />
+          </svg>
+        </span>
+        <span class="min-w-0">
+          <span class="flex items-center gap-2">
+            <span class="font-medium text-ink">编程演练场</span>
+            <span class="tag">ACM · 需登录</span>
+          </span>
+          <span class="mt-0.5 block text-[13px] leading-relaxed text-dim">ACM 模式在线判题：浏览题目、提交代码、查看评测结果。</span>
+        </span>
+        <span class="ml-auto shrink-0 text-accent">进入 →</span>
+      </router-link>
+    </div>
+
     <router-link
       to="/about#credits"
       class="mt-5 flex items-center justify-between gap-3 rounded-[14px] border border-line bg-card px-4 py-3.5 text-[13.5px] transition hover:border-line-strong"

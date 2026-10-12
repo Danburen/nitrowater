@@ -5,7 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 /**
  * Payload for a one-off code run.
  *
- * @param language front-end language id ({@code java}, {@code c} or {@code cpp})
+ * @param language front-end language id ({@code java}, {@code c}, {@code cpp}, {@code python},
+ *                 {@code javascript}, {@code typescript} or {@code lua})
  * @param code the source code to execute
  * @param stdin optional standard input (may be null/empty)
  */

@@ -11,6 +11,27 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
+    // The coding playground is a standalone top-level page (global header, no tools sidebar):
+    // browse problems and submit for judging, gated by login on the backend.
+    { path: '/playground', name: 'playground', component: () => import('../features/playground/PlaygroundProblems.vue') },
+    // Must precede `/playground/:id` so the literal path is not captured as an id.
+    { path: '/playground/submissions', name: 'playground-submissions', component: () => import('../features/playground/PlaygroundSubmissions.vue') },
+    { path: '/playground/:id', name: 'playground-problem', component: () => import('../features/playground/PlaygroundProblem.vue') },
+    // Admin console: nested layout with its own sidebar (global header hidden). Access is
+    // gated by role inside AdminLayout; the resource server enforces ROLE_ADMIN anyway.
+    {
+      path: '/admin',
+      component: () => import('../features/admin/AdminLayout.vue'),
+      meta: { layout: 'admin' },
+      children: [
+        { path: '', redirect: '/admin/problems' },
+        { path: 'problems', name: 'admin-problems', component: () => import('../features/admin/AdminProblems.vue') },
+        { path: 'problems/:id', name: 'admin-problem-edit', component: () => import('../features/admin/AdminProblemEdit.vue') },
+        { path: 'tags', name: 'admin-tags', component: () => import('../features/admin/AdminTags.vue') },
+        { path: 'sets', name: 'admin-sets', component: () => import('../features/admin/AdminSets.vue') },
+        { path: 'editorials', name: 'admin-editorials', component: () => import('../features/admin/AdminEditorials.vue') },
+      ],
+    },
     {
       path: '/tools',
       component: () => import('../features/tools/ToolsLayout.vue'),

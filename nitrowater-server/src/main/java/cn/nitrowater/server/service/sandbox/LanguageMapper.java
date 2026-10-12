@@ -7,14 +7,22 @@ import java.util.Optional;
  * Maps the front-end language ids to Piston runtime names and source file names.
  *
  * <p>Piston picks the run entry point from the file name for compiled languages, so the mapping
- * must be exact (e.g. Java needs a {@code Main.java} holding a {@code Main} class).</p>
+ * must be exact (e.g. Java needs a {@code Main.java} holding a {@code Main} class). Scripting
+ * runtimes (Python / JavaScript / TypeScript / Lua) are resolved by their own runtime names.</p>
+ *
+ * <p>The Piston {@code node} package registers the runtime as {@code javascript} (see
+ * {@code bin/install-piston-langs.ps1}), so the front-end id {@code javascript} maps to it.</p>
  */
 public final class LanguageMapper {
 
-    private static final Map<String, Target> TARGETS = Map.of(
-            "java", new Target("java", "*", "Main.java"),
-            "c", new Target("c", "*", "main.c"),
-            "cpp", new Target("c++", "*", "main.cpp"));
+    private static final Map<String, Target> TARGETS = Map.ofEntries(
+            Map.entry("java", new Target("java", "*", "Main.java")),
+            Map.entry("c", new Target("c", "*", "main.c")),
+            Map.entry("cpp", new Target("c++", "*", "main.cpp")),
+            Map.entry("python", new Target("python", "*", "main.py")),
+            Map.entry("javascript", new Target("javascript", "*", "main.js")),
+            Map.entry("typescript", new Target("typescript", "*", "main.ts")),
+            Map.entry("lua", new Target("lua", "*", "main.lua")));
 
     private LanguageMapper() {
     }

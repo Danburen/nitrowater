@@ -30,9 +30,30 @@ function csrfHeaders(): Record<string, string> {
   return token ? { 'X-XSRF-TOKEN': token } : {}
 }
 
-/** Full-page redirect into the SSO authorization endpoint (the BFF is the OIDC client). */
-export function login(): void {
+/** sessionStorage key holding the in-app path to return to once login completes. */
+const POST_LOGIN_KEY = 'nitrowater:post-login'
+
+/**
+ * Full-page redirect into the SSO authorization endpoint (the BFF is the OIDC client).
+ *
+ * The BFF always lands the user back on `/` after login, so the intended path is stashed in
+ * sessionStorage and consumed by {@link consumePostLogin} once the SPA sees an authenticated
+ * session — no BFF protocol change needed.
+ *
+ * @param returnTo in-app path to navigate to after login (e.g. {@code /playground})
+ */
+export function login(returnTo?: string): void {
+  if (returnTo && returnTo.startsWith('/')) {
+    sessionStorage.setItem(POST_LOGIN_KEY, returnTo)
+  }
   window.location.assign('/oauth2/authorization/nitrowater')
+}
+
+/** Reads and clears the pending post-login path (if any) recorded by {@link login}. */
+export function consumePostLogin(): string | null {
+  const target = sessionStorage.getItem(POST_LOGIN_KEY)
+  if (target) sessionStorage.removeItem(POST_LOGIN_KEY)
+  return target
 }
 
 /**

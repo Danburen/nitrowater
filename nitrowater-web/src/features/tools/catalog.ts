@@ -76,14 +76,6 @@ export const tools: ToolDef[] = [
     tags: ['Markdown', 'docx', '本地'],
     status: 'ready',
   },
-  {
-    key: 'playground',
-    title: '编程演练场',
-    desc: 'ACM 模式在线判题，题目 / 提交 / 评测（需登录）。',
-    icon: 'M6 3h9l5 5v13H6zM15 3v5h5M9 15l2 2 4-4',
-    tags: ['ACM', '判题'],
-    status: 'soon',
-  },
 ]
 
 export const readyTools = tools.filter(

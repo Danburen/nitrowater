@@ -244,14 +244,15 @@ async function doConvert(): Promise<void> {
 
     convertPercent.value = 100
     convertMessage.value = '转换完成'
-
-    // 清理虚拟文件系统。
-    await ffmpeg.deleteFile('input.mp4')
-    await ffmpeg.deleteFile('palette.png')
-    await ffmpeg.deleteFile('output.gif')
   } catch (error) {
     toast.error(`转换失败：${error instanceof Error ? error.message : String(error)}`)
   } finally {
+    // 无论成功或失败都清理虚拟文件系统，避免失败路径残留 input/palette/output。
+    await Promise.all([
+      ffmpeg.deleteFile('input.mp4').catch(() => undefined),
+      ffmpeg.deleteFile('palette.png').catch(() => undefined),
+      ffmpeg.deleteFile('output.gif').catch(() => undefined),
+    ])
     converting.value = false
   }
 }

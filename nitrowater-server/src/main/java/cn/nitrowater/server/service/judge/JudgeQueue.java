@@ -3,6 +3,7 @@ package cn.nitrowater.server.service.judge;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -36,7 +37,7 @@ public class JudgeQueue {
      * @return the next submission id, or {@code null} on timeout
      */
     public Long poll(int timeoutSeconds) {
-        String value = redis.opsForList().leftPop(QUEUE_KEY, timeoutSeconds, TimeUnit.SECONDS);
+        String value = redis.opsForList().leftPop(QUEUE_KEY, Duration.ofSeconds(timeoutSeconds));
         return value == null ? null : Long.valueOf(value);
     }
 }

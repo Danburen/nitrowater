@@ -143,7 +143,7 @@ function serverStatusHint(status: string | null): string {
 /** Runs code on the backend sandbox and formats its output for the console. */
 async function runOnServer(language: string, source: string, input: string): Promise<string> {
   if (!session.value?.authenticated) {
-    return '[需登录] Java / C / C++ 仅在登录后于服务端运行。'
+    return '[需登录] 服务端沙箱运行需要登录。'
   }
   const response = await apiFetch('/api/sandbox/run', {
     method: 'POST',
@@ -173,15 +173,18 @@ async function run() {
   output.value = ''
   status.value = '准备中...'
   try {
-    if (isLocalLanguage(language)) {
+    if (session.value?.authenticated) {
+      // Signed in: run everything on the backend sandbox (uniform, no WASM download).
+      status.value = '运行中...'
+      output.value = await runOnServer(language, code.value, stdin.value)
+    } else if (isLocalLanguage(language)) {
       if (!isLanguageReady(language)) {
         await ensureLanguage(language, (message) => (status.value = message))
       }
       status.value = '运行中...'
       output.value = await runLocalCode(language, code.value, { stdin: stdin.value })
     } else {
-      status.value = '运行中...'
-      output.value = await runOnServer(language, code.value, stdin.value)
+      output.value = '[需登录] 该语言在服务端沙箱运行，请先登录。'
     }
   } catch (error) {
     output.value = `[运行错误] ${error instanceof Error ? error.message : String(error)}`
@@ -203,7 +206,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
   <ToolShell
     fill
     title="在线代码运行器"
-    desc="Python / JavaScript / TypeScript / Lua 在浏览器本地运行（代码不上传）；Java / C / C++ 需登录后在服务端沙箱运行。"
+    desc="匿名时 Python / JavaScript / TypeScript / Lua 于浏览器本地运行（代码不上传）；登录后全部语言改为在服务端沙箱运行。Java / C / C++ 需登录。"
   >
     <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
       <!-- Editor panel -->

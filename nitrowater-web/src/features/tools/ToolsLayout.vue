@@ -188,7 +188,7 @@ function go(path: string): void {
             title="登录"
             aria-label="登录"
             :disabled="loading"
-            @click="login"
+            @click="login()"
           >
             <svg
               class="size-[18px]"
@@ -228,7 +228,7 @@ function go(path: string): void {
             v-if="!isLoggedIn"
             class="btn flex-1 justify-center"
             :disabled="loading"
-            @click="login"
+            @click="login()"
           >
             登录
           </button>

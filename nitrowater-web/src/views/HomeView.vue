@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuth } from '../auth/useAuth'
 import { readyTools } from '../features/tools/catalog'
 
+const router = useRouter()
 const { session, login } = useAuth()
 
 const isLoggedIn = computed(() => !!session.value?.authenticated)
@@ -33,15 +35,11 @@ const REPO = {
   gitee: 'https://gitee.com/blackwallet/nitrowarer',
 } as const
 
-function scrollTo(id: string): void {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-}
-
 function enterPlayground(): void {
   if (isLoggedIn.value) {
-    scrollTo('playground')
+    void router.push('/playground')
   } else {
-    login()
+    login('/playground')
   }
 }
 </script>

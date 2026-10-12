@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { fetchSession, login as bffLogin, logout as bffLogout } from './bff'
+import { consumePostLogin, fetchSession, login as bffLogin, logout as bffLogout } from './bff'
 import type { BffSession } from './bff'
 
 /**
@@ -28,12 +28,13 @@ export function useAuth() {
   return {
     session,
     loading,
-    /** Full-page redirect into the SSO login. */
-    login: (): void => bffLogin(),
+    /** Full-page redirect into the SSO login; `returnTo` is resumed after authentication. */
+    login: (returnTo?: string): void => bffLogin(returnTo),
     /** Ends the BFF session and the upstream SSO session (top-level navigation). */
     logout: (): void => {
       bffLogout()
     },
     refresh,
+    consumePostLogin,
   }
 }

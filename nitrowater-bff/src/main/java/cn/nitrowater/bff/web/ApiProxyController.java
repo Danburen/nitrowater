@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
@@ -74,10 +75,13 @@ public class ApiProxyController {
         String query = request.getQueryString();
         String target = query == null || query.isEmpty() ? path : path + "?" + query;
 
-        OAuth2AuthorizedClient client = authorizedClientManager.authorize(
-                OAuth2AuthorizeRequest.withClientRegistrationId(registrationId)
-                        .principal(authentication)
-                        .build());
+        OAuth2AuthorizedClient client = (authentication != null
+                && !(authentication instanceof AnonymousAuthenticationToken))
+                ? authorizedClientManager.authorize(
+                        OAuth2AuthorizeRequest.withClientRegistrationId(registrationId)
+                                .principal(authentication)
+                                .build())
+                : null;
 
         byte[] body = request.getInputStream().readAllBytes();
 

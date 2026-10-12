@@ -32,19 +32,20 @@ public class Problem {
     @Column(name = "title", nullable = false, length = 200)
     private String title;
 
+    /** English title; falls back to {@link #title} when absent. */
+    @Column(name = "title_en", length = 200)
+    private String titleEn;
+
     @Column(name = "difficulty", nullable = false, columnDefinition = "tinyint UNSIGNED")
     private ProblemDifficulty difficulty = ProblemDifficulty.EASY;
 
-    @Column(name = "category", length = 64)
-    private String category;
-
-    /** Free-form tags as JSON text. */
-    @Column(name = "tags", columnDefinition = "json")
-    private String tags;
-
-    /** Markdown statement. */
+    /** Markdown statement (Chinese). */
     @Column(name = "description", nullable = false, columnDefinition = "mediumtext")
     private String description;
+
+    /** English markdown statement; falls back to {@link #description} when absent. */
+    @Column(name = "description_en", columnDefinition = "mediumtext")
+    private String descriptionEn;
 
     @Column(name = "io_mode", nullable = false, columnDefinition = "tinyint UNSIGNED")
     private IoMode ioMode = IoMode.ACM;

@@ -10,6 +10,11 @@ const { session, loading, login, logout } = useAuth()
 
 const isLoggedIn = computed(() => !!session.value?.authenticated)
 const displayName = computed(() => session.value?.name || session.value?.username || '已登录')
+/** Admins get an extra nav entry into the admin console. */
+const isAdmin = computed(() => {
+  const roles = session.value?.roles ?? []
+  return roles.includes('ADMIN') || roles.includes('ROLE_ADMIN')
+})
 
 /** Landing-page sections + one standalone route reachable from the site nav. */
 interface NavItem {
@@ -20,13 +25,17 @@ interface NavItem {
   to?: string
 }
 
-const nav: NavItem[] = [
-  { id: 'tools', label: '工具箱' },
-  { id: 'playground', label: '演练场' },
-  { id: 'docs', label: '文档' },
-  { id: 'servers', label: '服务器' },
-  { to: '/about', label: '关于' },
-]
+const nav = computed<NavItem[]>(() => {
+  const items: NavItem[] = [
+    { to: '/tools', label: '工具箱' },
+    { to: '/playground', label: '演练场' },
+    { id: 'docs', label: '文档' },
+    { id: 'servers', label: '服务器' },
+    { to: '/about', label: '关于' },
+  ]
+  if (isAdmin.value) items.push({ to: '/admin', label: '管理' })
+  return items
+})
 
 /** Navigate to a route item, or scroll to a home section (navigating home first). */
 async function onNav(item: NavItem): Promise<void> {
@@ -71,7 +80,7 @@ async function onNav(item: NavItem): Promise<void> {
           v-if="!isLoggedIn"
           class="btn"
           :disabled="loading"
-          @click="login"
+          @click="login()"
         >
           登录
         </button>

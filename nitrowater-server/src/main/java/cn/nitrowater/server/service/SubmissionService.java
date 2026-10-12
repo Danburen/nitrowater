@@ -101,16 +101,22 @@ public class SubmissionService {
     }
 
     /**
+     * Lists the caller's submissions, newest first.
+     *
+     * <p>A caller that has never touched the business domain has no {@code biz_user} row (the row
+     * is upserted on first business action such as a submission); treating that as an error would
+     * 404 a brand-new user's history page, so it maps to an empty list instead.</p>
+     *
      * @param jwt caller's access token
-     * @return the caller's submissions, newest first
+     * @return the caller's submissions, newest first (empty when the caller has none)
      */
     @Transactional(readOnly = true)
     public List<SubmissionResp> listMine(Jwt jwt) {
-        BizUser user = users.findByUid(BizUserService.uidOf(jwt))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No submissions yet"));
-        return submissions.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
-                .map(SubmissionService::toResp)
-                .toList();
+        return users.findByUid(BizUserService.uidOf(jwt))
+                .map(user -> submissions.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
+                        .map(SubmissionService::toResp)
+                        .toList())
+                .orElseGet(List::of);
     }
 
     private static SubmissionResp toResp(Submission s) {

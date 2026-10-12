@@ -7,10 +7,11 @@ import java.util.List;
  *
  * @param id problem id
  * @param slug stable slug
- * @param title title
+ * @param title Chinese title
+ * @param titleEn English title (nullable; display falls back to {@code title})
  * @param difficulty {@code EASY}/{@code MEDIUM}/{@code HARD}
- * @param category category (nullable)
- * @param tags tags
+ * @param tags attached tags
+ * @param sets problem sets ("题单") the problem belongs to
  * @param rewardPoints points on first AC
  * @param timeLimitMs per-case time limit
  * @param memoryLimitKb per-case memory limit
@@ -20,9 +21,10 @@ public record ProblemSummaryResp(
         Long id,
         String slug,
         String title,
+        String titleEn,
         String difficulty,
-        String category,
-        List<String> tags,
+        List<TagResp> tags,
+        List<ProblemSetBriefResp> sets,
         Integer rewardPoints,
         Integer timeLimitMs,
         Integer memoryLimitKb,
