@@ -23,11 +23,32 @@ export class ApiError extends Error {
   }
 }
 
+// Reads a cookie value by name (the CSRF token lives in the readable `XSRF-TOKEN` cookie).
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  // Spring Security's CookieCsrfTokenRepository requires a state-changing request to echo the
+  // `XSRF-TOKEN` cookie back in `X-XSRF-TOKEN`; without it /api/admin/** mutations get a 403.
+  const headers: Record<string, string> = {}
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+  }
+  if (MUTATING_METHODS.has(method.toUpperCase())) {
+    const csrf = readCookie('XSRF-TOKEN')
+    if (csrf) {
+      headers['X-XSRF-TOKEN'] = csrf
+    }
+  }
+
   const res = await fetch(url, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 

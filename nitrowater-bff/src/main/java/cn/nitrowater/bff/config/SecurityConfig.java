@@ -34,7 +34,9 @@ import java.io.IOException;
  *   <li>OIDC login via the confidential {@code nitrowater} client; the tokens stay server-side
  *       in the Redis-backed session.</li>
  *   <li>The SPA is public (anonymous browsing is allowed); only {@code /api/**} requires a
- *       session, and it answers {@code 401} (not a redirect) so the SPA can react.</li>
+ *       session, and it answers {@code 401} (not a redirect) so the SPA can react. All data
+ *       endpoints MUST live under {@code /api/**}; the reserved {@code /actuator/**} and
+ *       {@code /internal/**} prefixes are denied as a fail-closed backstop.</li>
  *   <li>CSRF is mandatory for cookie auth: the token is exposed through the readable
  *       {@code XSRF-TOKEN} cookie so the SPA can echo it in {@code X-XSRF-TOKEN}.</li>
  *   <li>Logout destroys the BFF session (which is what holds the tokens), revokes the refresh
@@ -70,6 +72,16 @@ public class SecurityConfig {
                         // Anonymous tool endpoints (e.g. the code sandbox runner) are public here;
                         // abuse is bounded by rate limiting on the resource server.
                         .requestMatchers("/api/public/**").permitAll()
+                        // Defence-in-depth backstop: reserved sensitive namespaces are never public,
+                        // even if a handler is added under them later. Actuator is not on the classpath
+                        // today; this blocks the prefix structurally so a future dependency cannot
+                        // silently expose it through the catch-all below. (If a probe endpoint must
+                        // ever be public, permit it explicitly here, above the catch-all.)
+                        .requestMatchers("/actuator/**", "/internal/**").denyAll()
+                        // Convention: ALL data endpoints live under /api/** (gated above). Everything
+                        // else is the public SPA surface (index.html, hashed /assets bundles, history-mode
+                        // deep links) plus OIDC plumbing (/oauth2/**, /login/**, /logout, /error) and the
+                        // anonymous, self-scoped /bff/me.
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
                 .oauth2Login(oauth2 -> oauth2.defaultSuccessUrl("/", true))
@@ -83,9 +95,12 @@ public class SecurityConfig {
                                 request -> request.getRequestURI().startsWith("/bff/")
                                         || request.getRequestURI().startsWith("/api/"),
                                 new StaticHeadersWriter("Cache-Control", "no-store"))))
-                .exceptionHandling(ex -> ex.defaultAuthenticationEntryPointFor(
-                        new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
-                        request -> request.getRequestURI().startsWith("/api/")))
+                .exceptionHandling(ex ->
+                        ex.defaultAuthenticationEntryPointFor(
+                                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                                request -> request.getRequestURI().startsWith("/api/")
+                        )
+                )
                 .logout(logout -> logout
                         .addLogoutHandler(oidcSessionLogoutHandler)
                         .logoutSuccessHandler(oidcLogoutSuccessHandler)

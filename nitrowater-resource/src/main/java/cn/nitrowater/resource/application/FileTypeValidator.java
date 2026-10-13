@@ -26,6 +26,50 @@ public class FileTypeValidator {
             ResourceType.ARCHIVE, Set.of("zip", "rar", "7z", "tar", "gz"));
 
     /**
+     * Server-side MIME mapping (extension -&gt; media type).
+     *
+     * <p>The client-declared content type is never trusted: the stored / served media type is
+     * resolved from this table, so a caller cannot make the service echo an attacker-chosen
+     * {@code Content-Type} (which would turn a stored file into stored XSS).</p>
+     */
+    private static final Map<String, String> MIME_BY_EXTENSION = Map.ofEntries(
+            Map.entry("png", "image/png"),
+            Map.entry("jpg", "image/jpeg"),
+            Map.entry("jpeg", "image/jpeg"),
+            Map.entry("gif", "image/gif"),
+            Map.entry("webp", "image/webp"),
+            Map.entry("bmp", "image/bmp"),
+            Map.entry("svg", "image/svg+xml"),
+            Map.entry("mp4", "video/mp4"),
+            Map.entry("webm", "video/webm"),
+            Map.entry("mov", "video/quicktime"),
+            Map.entry("mp3", "audio/mpeg"),
+            Map.entry("wav", "audio/wav"),
+            Map.entry("ogg", "audio/ogg"),
+            Map.entry("txt", "text/plain"),
+            Map.entry("md", "text/markdown"),
+            Map.entry("csv", "text/csv"),
+            Map.entry("json", "application/json"),
+            Map.entry("log", "text/plain"),
+            Map.entry("pdf", "application/pdf"),
+            Map.entry("doc", "application/msword"),
+            Map.entry("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            Map.entry("xls", "application/vnd.ms-excel"),
+            Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            Map.entry("ppt", "application/vnd.ms-powerpoint"),
+            Map.entry("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+            Map.entry("zip", "application/zip"),
+            Map.entry("rar", "application/vnd.rar"),
+            Map.entry("7z", "application/x-7z-compressed"),
+            Map.entry("tar", "application/x-tar"),
+            Map.entry("gz", "application/gzip"));
+
+    /** Media types that must never be rendered inline: they can execute script in the browser. */
+    private static final Set<String> INLINE_UNSAFE_MIME_TYPES = Set.of(
+            "image/svg+xml", "text/html", "application/xhtml+xml",
+            "text/xml", "application/xml", "application/javascript", "text/javascript");
+
+    /**
      * @param fileName file name (extension is read from it)
      * @return the lower-cased extension, or empty when there is none
      */
@@ -61,6 +105,30 @@ public class FileTypeValidator {
                 .filter(e -> e.getValue().contains(ext))
                 .map(Map.Entry::getKey)
                 .findFirst());
+    }
+
+    /**
+     * Resolves the media type to store / serve, <em>from the extension</em> rather than from the
+     * client-declared content type.
+     *
+     * @param fileName file name being uploaded
+     * @return the mapped media type, or empty when the extension is unknown
+     */
+    public Optional<String> mimeTypeByExtension(String fileName) {
+        return extensionOf(fileName).map(MIME_BY_EXTENSION::get);
+    }
+
+    /**
+     * @param mimeType a media type string (parameters such as {@code ;charset=...} are ignored)
+     * @return whether the media type is safe to serve inline, i.e. it cannot execute script
+     */
+    public static boolean isInlineSafeMimeType(String mimeType) {
+        if (mimeType == null) {
+            return false;
+        }
+        int semi = mimeType.indexOf(';');
+        String base = (semi >= 0 ? mimeType.substring(0, semi) : mimeType).trim().toLowerCase();
+        return !INLINE_UNSAFE_MIME_TYPES.contains(base);
     }
 
     /**

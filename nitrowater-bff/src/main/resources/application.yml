@@ -26,7 +26,7 @@ spring:
       port: 6379
       database: 0
       username: default
-      password: ""
+      password: "${REDIS_PASSWORD:}"
 
   # -------- Spring Session → Redis（OAuth2AuthorizedClient(AT/RT) 随之持久化）--------
   # Boot 4.0 起，属性前缀由 spring.session.redis.* 更名为 spring.session.data.redis.*

@@ -66,12 +66,17 @@ public class SsoAuthenticationProvider implements AuthenticationProvider {
                     ? deviceService.calculaateDid(user.getUid(), deviceFp)
                     : null;
             SsoUserPrincipal principal = SsoUserPrincipal.of(
-                    user, deviceFp, did, userRoleService.findRoleCodes(user.getUid()));
+                    user,
+                    deviceFp,
+                    did,
+                    userRoleService.findRoleCodes(user.getUid())
+            );
             // Mark the authentication factor (PASSWORD). Spring Security's
             // AbstractUserDetailsAuthenticationProvider does this for the standard form login;
             // since this provider is custom it must add it explicitly, otherwise the AS cannot
             // derive the id_token `auth_time` claim once an OIDC session is tracked.
-            Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());            authorities.add(FactorGrantedAuthority.fromAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY));
+            Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());
+            authorities.add(FactorGrantedAuthority.fromAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY));
             return UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities);
         } catch (RuntimeException e) {
             throw new BadCredentialsException(e.getMessage() == null ? "login failed" : e.getMessage(), e);

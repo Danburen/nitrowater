@@ -15,6 +15,7 @@
 1. **时间列统一 `TIMESTAMP(3)`**（毫秒精度）；`DATETIME(3)` 仅在 `TIMESTAMP` 不适用（如超出 1970–2038）时作为**不得已**选择，且须先与用户确认。**唯一例外**：生日/纯日期语义字段用 `DATE`。
    - 配合 datasource `connectionTimeZone=UTC&preserveInstants=true`，JPA 实体用 `java.time.Instant`。
    - ⚠️ MySQL `TIMESTAMP` 范围 1970–2038；若某列需要 2038 之后（罕见），先与用户确认再破例。
+   - **例外（vendor schema）**：第三方库自带的 DDL **原样保留**，不强行套本项目约定——如 Spring Authorization Server 官方表（`V1_1` 的 `oauth2_registered_client`/`oauth2_authorization`/`oauth2_authorization_consent`，含裸 `timestamp` 列）。改动会偏离上游 schema，且被 `JdbcRegisteredClientRepository`/`JdbcOAuth2AuthorizationService` 直接读写。
 2. **枚举一律"整数编码 + 映射"**：DB 列 `TINYINT UNSIGNED`，JPA 用 `@Converter(autoApply = true)`。
    - 枚举自带 `short value` + `static fromValue(int)`；实体字段标 `@Column(..., columnDefinition="tinyint UNSIGNED")`。
    - **禁止** `@Enumerated(EnumType.STRING/ORDINAL)`、`@Convert(disableConversion=true)`。
@@ -32,6 +33,7 @@
 ## 其它工程约定
 
 - **无 subagent**：由主进程直接执行，不派子代理/后台任务。
+- **BFF 安全面（强制）**：`/api/**` 是**唯一数据命名空间**（需登录；`/api/public/**` 有意匿名）。其余路径是公开 SPA（静态资源 + history 深链接）+ OIDC 管线，故 `anyRequest().permitAll()`。`/actuator/**`、`/internal/**` 为**保留敏感前缀，默认 `denyAll`**（兜底，防新增依赖静默暴露）。**新增数据端点必须挂在 `/api/**` 下**；敏感内部接口不得落在该前缀之外。
 - **GitHub 拉取优先经代理**：`https://ghproxy.net/`（首选）或 `https://gh-proxy.com/` 前缀（直连 raw/releases 常被重置/拒绝）；例 `https://ghproxy.net/https://github.com/<org>/<repo>/...`。Docker/包管理器同理。
 - 后端响应式冻结：一律 **Servlet/WebMVC**（勿 WebFlux）。
 - 注释**英文** + 方法 **Javadoc**。

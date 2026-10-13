@@ -4,14 +4,15 @@
  * features/admin/AdminLayout. Fills the viewport and hosts the admin pages in a nested
  * <router-view>; the account service enforces ROLE_SUPER_ADMIN on /api/admin/**.
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { adminApi, type AdminSessionVO } from '@/api/admin'
+import { useSession } from '@/auth/session'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const route = useRoute()
-const session = ref<AdminSessionVO | null>(null)
+// Resolved by the router guard before this layout renders — read from the shared singleton.
+const { session } = useSession()
 
 const displayName = computed(() => session.value?.name || session.value?.username || '已登录')
 const roleLabels = computed(() => (session.value?.roles ?? []).map((r) => r.replace(/^ROLE_/, '')))
@@ -34,6 +35,11 @@ const nav: NavItem[] = [
     label: '角色管理',
     icon: 'M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7-7A2 2 0 0 1 3 12.2V5a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.8zM7.5 7.5h.01',
   },
+  {
+    to: '/clients',
+    label: '应用管理',
+    icon: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
+  },
 ]
 
 function isActive(to: string): boolean {
@@ -44,14 +50,6 @@ function logout(): void {
   // Same-origin redirect to Spring Security's logout; the account service then returns to login.
   window.location.assign('/logout')
 }
-
-onMounted(async () => {
-  try {
-    session.value = await adminApi.session()
-  } catch {
-    // 401 is handled by the http layer (redirect to the SSO login page); ignore here.
-  }
-})
 </script>
 
 <template>

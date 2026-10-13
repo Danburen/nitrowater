@@ -1,11 +1,12 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.domain.Resource;
 import cn.nitrowater.resource.application.ResourceService;
+import cn.nitrowater.resource.application.dto.UploadPolicyCommand;
+import cn.nitrowater.resource.application.dto.UploadPolicyResult;
+import cn.nitrowater.resource.web.dto.ResourceMetaResp;
 import cn.nitrowater.resource.web.dto.UploadCallbackReq;
 import cn.nitrowater.resource.web.dto.UploadPolicyReq;
 import cn.nitrowater.resource.web.dto.UploadPolicyResp;
-import cn.nitrowater.resource.web.dto.ResourceMetaResp;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -29,34 +30,31 @@ import java.io.ByteArrayInputStream;
  *   <li>{@code POST /api/resource/upload/callback} — confirm a direct upload (validate + activate);</li>
  *   <li>{@code PUT  /api/resource/upload/{uuid}} — proxy upload for backends without presigning.</li>
  * </ul>
+ *
+ * <p>Thin by design: it binds the request, translates it into an application command and maps the
+ * returned application result into a wire response.</p>
  */
 @RestController
 @RequestMapping("/api/resource/upload")
-public class UploadController {
+public class ResourceUploadController {
 
     private final ResourceService resourceService;
 
-    public UploadController(ResourceService resourceService) {
+    public ResourceUploadController(ResourceService resourceService) {
         this.resourceService = resourceService;
     }
 
-    /**
-     * Registers a pending resource and returns a presigned PUT URL (or the proxy fallback).
-     * @param request   {@link UploadPolicyReq}
-     * @param jwt       {@link Jwt} of the authenticated user
-     * @return          {@link UploadPolicyResp} with the presigned URL and other metadata
-     */
+    /** Registers a pending resource and returns a presigned PUT URL (or the proxy fallback). */
     @PostMapping("/policy")
     public UploadPolicyResp policy(@Valid @RequestBody UploadPolicyReq request, @AuthenticationPrincipal Jwt jwt) {
-        ResourceService.UploadPolicyCommand command = new ResourceService.UploadPolicyCommand(
+        UploadPolicyCommand command = new UploadPolicyCommand(
                 request.app(),
                 request.fileName(),
                 request.contentType(),
                 request.sizeBytes(),
                 ResourceWebMapper.visibilityOf(request.visibility()),
                 ResourceWebMapper.backendOf(request.backend()));
-        ResourceService.UploadPolicyResult result =
-                resourceService.createUploadPolicy(command, ResourceWebMapper.uidOf(jwt));
+        UploadPolicyResult result = resourceService.createUploadPolicy(command, ResourceWebMapper.uidOf(jwt));
         return new UploadPolicyResp(
                 result.uuid(), result.uploadUrl(), result.method(),
                 result.backend().name(), result.expiresInSeconds());
@@ -65,16 +63,14 @@ public class UploadController {
     /** Confirms a finished direct upload and returns the activated resource metadata. */
     @PostMapping("/callback")
     public ResourceMetaResp callback(@Valid @RequestBody UploadCallbackReq request, @AuthenticationPrincipal Jwt jwt) {
-        Resource resource = resourceService.confirmUpload(request.uuid(), ResourceWebMapper.uidOf(jwt));
-        return ResourceWebMapper.toMeta(resource, resourceService.presignedGetUrl(resource));
+        return ResourceWebMapper.toResp(resourceService.confirmUpload(request.uuid(), ResourceWebMapper.uidOf(jwt)));
     }
 
     /** Proxy upload for backends without presigning; body is the raw file. */
     @PutMapping(path = "/{uuid}", consumes = MediaType.ALL_VALUE)
     public ResourceMetaResp proxyUpload(@PathVariable String uuid, @RequestBody byte[] body,
             @RequestHeader(HttpHeaders.CONTENT_TYPE) String contentType, @AuthenticationPrincipal Jwt jwt) {
-        Resource resource = resourceService.putBytes(uuid, ResourceWebMapper.uidOf(jwt),
-                new ByteArrayInputStream(body), body.length, contentType);
-        return ResourceWebMapper.toMeta(resource, resourceService.presignedGetUrl(resource));
+        return ResourceWebMapper.toResp(resourceService.putBytes(uuid, ResourceWebMapper.uidOf(jwt),
+                new ByteArrayInputStream(body), body.length, contentType));
     }
 }

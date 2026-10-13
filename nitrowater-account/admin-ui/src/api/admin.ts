@@ -34,6 +34,50 @@ export interface AdminSessionVO {
   roles: string[]
 }
 
+export interface ClientVO {
+  id: string
+  clientId: string
+  clientName: string
+  clientAuthenticationMethods: string[]
+  authorizationGrantTypes: string[]
+  redirectUris: string[]
+  postLogoutRedirectUris: string[]
+  scopes: string[]
+  requireProofKey: boolean
+  requireAuthorizationConsent: boolean
+  accessTokenTtlMinutes: number
+  refreshTokenTtlDays: number
+  clientIdIssuedAt: string
+  /** True when the client holds a secret (any non-`none` auth method). */
+  confidential: boolean
+  /** True for first-party clients that cannot be deleted. */
+  protectedClient: boolean
+}
+
+export interface ClientRegistrationVO {
+  client: ClientVO
+  /** Plaintext secret, non-null only when this operation minted a new one (create / reset). */
+  clientSecret: string | null
+}
+
+export interface ClientSecretVO {
+  clientSecret: string
+}
+
+export interface ClientForm {
+  clientId: string
+  clientName: string
+  clientAuthenticationMethods: string[]
+  authorizationGrantTypes: string[]
+  redirectUris: string[]
+  postLogoutRedirectUris: string[]
+  scopes: string[]
+  requireProofKey: boolean
+  requireAuthorizationConsent: boolean
+  accessTokenTtlMinutes: number
+  refreshTokenTtlDays: number
+}
+
 export interface RoleForm {
   code: string
   name: string
@@ -55,4 +99,11 @@ export const adminApi = {
     ),
   assignRoles: (uid: number, roleCodes: string[]) =>
     http.put<string[]>(`/api/admin/users/${uid}/roles`, { roleCodes }),
+
+  listClients: () => http.get<ClientVO[]>('/api/admin/clients'),
+  createClient: (body: ClientForm) => http.post<ClientRegistrationVO>('/api/admin/clients', body),
+  updateClient: (id: string, body: Omit<ClientForm, 'clientId'>) =>
+    http.put<ClientRegistrationVO>(`/api/admin/clients/${id}`, body),
+  resetClientSecret: (id: string) => http.post<ClientSecretVO>(`/api/admin/clients/${id}/secret`),
+  deleteClient: (id: string) => http.del<void>(`/api/admin/clients/${id}`),
 }

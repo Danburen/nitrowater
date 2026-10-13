@@ -160,7 +160,10 @@ public class SecurityConfig {
                 "https://nitrowater.cn", "https://*.nitrowater.cn"));
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
-        cfg.setAllowCredentials(true);
+        // Bearer-token API: the browser never attaches cookies here, so credentialed CORS is
+        // unnecessary and only widens exposure (a localhost/subdomain page could otherwise read
+        // authenticated responses). Kept off deliberately.
+        cfg.setAllowCredentials(false);
         cfg.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);

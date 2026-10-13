@@ -8,9 +8,13 @@ import tools.jackson.databind.exc.InvalidFormatException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -125,6 +130,30 @@ public class GlobalExceptionHandler {
         String detail = ex.getBody().getDetail() != null ? ex.getBody().getDetail() : ex.getMessage();
         return ResponseEntity.status(ex.getStatusCode())
                 .body(new ErrorResponse(String.valueOf(ex.getStatusCode().value()), detail, null, new Date()));
+    }
+
+    /**
+     * A missing route or static resource. Browsers (which ask for {@code text/html}) get the
+     * branded 404 page served from {@code static/error/404.html}; every other client keeps the
+     * standard {@link ErrorResponse} envelope, so the JSON API contract is unchanged. Being more
+     * specific than {@link #handleErrorResponse}, this handler wins for {@code NoResourceFoundException}.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<?> handleNotFound(NoResourceFoundException ex, HttpServletRequest request) {
+        if (prefersHtml(request)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .contentType(MediaType.TEXT_HTML)
+                    .body(new ClassPathResource("static/error/404.html"));
+        }
+        String detail = ex.getBody().getDetail() != null ? ex.getBody().getDetail() : ex.getMessage();
+        return ResponseEntity.status(ex.getStatusCode())
+                .body(new ErrorResponse(String.valueOf(ex.getStatusCode().value()), detail, null, new Date()));
+    }
+
+    /** True when the request's {@code Accept} header asks for HTML (i.e. a browser navigation). */
+    private static boolean prefersHtml(HttpServletRequest request) {
+        String accept = request.getHeader(HttpHeaders.ACCEPT);
+        return accept != null && accept.contains(MediaType.TEXT_HTML_VALUE);
     }
 
     /** Fallback: log and return a generic 500. */

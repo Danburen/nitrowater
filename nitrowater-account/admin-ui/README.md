@@ -36,8 +36,12 @@ Vue 3 + TypeScript + Vite 的单页应用，**同源托管**在 `nitrowater-acco
 
 ## 权限
 
-后端 `/api/admin/**` 仅 `ROLE_SUPER_ADMIN` 可访问（`SUPER_ADMIN` 自动蕴含 `ROLE_ADMIN`）；
-`/admin/**` 是 SPA 壳，匿名可加载，但所有数据接口仍受保护。未登录访问接口返回 401，
-前端 `src/api/http.ts` 会自动跳转 `/login`。
+后端 `/admin/**`（SPA 壳 + 资源）与 `/api/admin/**` 均需登录；其中数据面 `/api/admin/**` 另限
+`ROLE_SUPER_ADMIN`（`SUPER_ADMIN` 自动蕴含 `ROLE_ADMIN`）。匿名访问页面会由 Spring `302` 到
+`/login`（带 SavedRequest，登录后回到 `/admin/`）；接口 401 返回 JSON，前端 `src/api/http.ts` 兜底跳 `/login`。
+
+前端另有路由守卫（`src/router/index.ts` + `src/auth/session.ts`）：**除 `meta.public` 外一律私有**，
+首次导航前解析一次会话——**401 → 交 http 层跳登录**，**403（已登录但非超管）→ 跳 `/forbidden`**。
+今天没有任何 `meta.public` 路由（登录页由 account 服务出，不在 SPA 内）。
 
 > 冒烟：`..\..\.ai\testkit\smoke-admin.ps1`

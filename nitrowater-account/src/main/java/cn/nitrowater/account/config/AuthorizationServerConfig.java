@@ -14,7 +14,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
@@ -52,6 +56,11 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 import cn.nitrowater.account.security.SsoUserPrincipal;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -76,6 +85,14 @@ import java.util.function.Function;
  */
 @Configuration
 public class AuthorizationServerConfig {
+
+    /**
+     * Client id of the first-party BFF (the only browser-facing client).
+     *
+     * <p>Exposed so the admin console can protect this client from deletion
+     * ({@code RegisteredClientAdminService}).</p>
+     */
+    public static final String BFF_CLIENT_ID = "nitrowater-bff";
 
     /** Encodes the confidential client secret; SAS verifies with a delegating encoder. */
     private static final PasswordEncoder CLIENT_SECRET_ENCODER =
@@ -107,21 +124,37 @@ public class AuthorizationServerConfig {
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
             @Qualifier("corsConfigurationSource") CorsConfigurationSource cors)
             throws Exception {
+        CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
+        csrfRequestHandler.setCsrfRequestAttributeName("_csrf");
+
         http
                 .cors(c -> c.configurationSource(cors))
-                .csrf(AbstractHttpConfigurer::disable)
+                // CSRF: the admin console's data API (/api/admin/**) is cookie-authenticated, so it
+                // must present the token echoed from the readable XSRF-TOKEN cookie. The SSO pages
+                // (/login, /register, /api/auth/**, /auth/**) are exempt: they are same-origin
+                // form/JS flows that intentionally stay unprotected.
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(csrfRequestHandler)
+                        .ignoringRequestMatchers(
+                                "/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico"))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico")
                         .permitAll()
-                        // Admin console SPA shell (static files). Its data lives behind /api/admin/** below.
+                        // Admin console SPA shell (static files + hashed bundles). Requiring a
+                        // session here means an anonymous hit is 302'd to /login (SavedRequest),
+                        // so a successful login lands back on /admin/ instead of the account root.
+                        // The SPA's own router guard remains a dev/tab-refresh fallback.
                         .requestMatchers("/admin", "/admin/**")
-                        .permitAll()
+                        .authenticated()
                         // Role / permission management is reserved for the super admin (站长).
                         .requestMatchers("/api/admin/**")
                         .hasAuthority("ROLE_SUPER_ADMIN")
                         .anyRequest().authenticated())
                 .formLogin(form -> form.loginPage("/login").permitAll())
-                .logout(l -> l.logoutSuccessUrl("/"))
+                // Log out straight to the login page: going to "/" first would bounce through
+                // the root and seed a saved request that re-enters the console on next login.
+                .logout(l -> l.logoutSuccessUrl("/login"))
                 .exceptionHandling(ex -> ex
                         // XHR under /api/** gets a clean 401 JSON instead of a 302 to the HTML login page.
                         .defaultAuthenticationEntryPointFor(
@@ -132,8 +165,25 @@ public class AuthorizationServerConfig {
                             response.setContentType("application/json;charset=UTF-8");
                             response.getWriter().write(
                                     "{\"success\":false,\"code\":\"http.forbidden\",\"message\":\"forbidden\"}");
-                        }));
+                        }))
+                .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * Forces the deferred {@link CsrfToken} to be resolved so the readable {@code XSRF-TOKEN} cookie
+     * is written on the response; the admin SPA echoes it back in {@code X-XSRF-TOKEN}.
+     */
+    static final class CsrfCookieFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+                FilterChain filterChain) throws ServletException, IOException {
+            CsrfToken csrfToken = (CsrfToken) request.getAttribute("_csrf");
+            if (csrfToken != null) {
+                csrfToken.getToken();
+            }
+            filterChain.doFilter(request, response);
+        }
     }
 
     /**
@@ -195,7 +245,7 @@ public class AuthorizationServerConfig {
             @Value("${app.oidc.bff-client-secret}") String bffClientSecret,
             @Value("${app.oidc.bff-redirect-uris}") String bffRedirectUris,
             @Value("${app.oidc.bff-post-logout-redirect-uris}") String bffPostLogoutRedirectUris) {
-        return args -> upsertClient(registeredClientRepository, "nitrowater-bff",
+        return args -> upsertClient(registeredClientRepository, BFF_CLIENT_ID,
                 id -> nitrowaterBffClient(id, bffClientSecret, bffRedirectUris, bffPostLogoutRedirectUris));
     }
 
@@ -213,7 +263,7 @@ public class AuthorizationServerConfig {
     private static RegisteredClient nitrowaterBffClient(String id, String secret,
             String redirectUrisCsv, String postLogoutRedirectUrisCsv) {
         RegisteredClient.Builder builder = RegisteredClient.withId(id)
-                .clientId("nitrowater-bff")
+                .clientId(BFF_CLIENT_ID)
                 .clientSecret(CLIENT_SECRET_ENCODER.encode(secret))
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)

@@ -158,7 +158,15 @@ public enum BaseResponseCode implements ResponseCode {
     // Invite
     INVITE_CODE_NOT_FOUND("invite.code.not_found"),
     INVITE_CODE_INVALID("invite.code.invalid"),
-    INVITE_TYPE_NOT_SUPPORTED("invite.type.not_supported"),;
+    INVITE_TYPE_NOT_SUPPORTED("invite.type.not_supported"),
+
+    // OIDC applications (admin console: register / manage OAuth2 clients)
+    CLIENT_NOT_FOUND("admin.client.not_found"),
+    CLIENT_NOT_FOUND_WITH_ARGS("admin.client.not_found.args"),
+    CLIENT_ALREADY_EXISTS("admin.client.already_exists"),
+    CLIENT_ALREADY_EXISTS_WITH_ARGS("admin.client.already_exists.args"),
+    CAN_NOT_DELETE_BUILTIN_CLIENT("admin.client.built_in_protected"),
+    CLIENT_NOT_CONFIDENTIAL("admin.client.not_confidential"),;
     private final String code;
     // private final String defaultMessage;
 

@@ -1,14 +1,12 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.config.ResourceProperties;
-import cn.nitrowater.resource.domain.Resource;
-import cn.nitrowater.resource.domain.ResourceVisibility;
 import cn.nitrowater.resource.application.ResourceService;
+import cn.nitrowater.resource.application.dto.ResourceReadResult;
 import cn.nitrowater.resource.web.dto.ResourceMetaResp;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -18,9 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.InputStream;
 import java.net.URI;
-import java.time.Duration;
 
 /**
  * Read + lifecycle endpoints.
@@ -28,49 +24,48 @@ import java.time.Duration;
  * <ul>
  *   <li>{@code GET /api/public/resource/{uuid}} — anonymous read, PUBLIC resources only;</li>
  *   <li>{@code GET /api/public/resource/{uuid}/meta} — anonymous metadata, PUBLIC resources only;</li>
- *   <li>{@code GET /api/resource/{uuid}} — authenticated read;</li>
- *   <li>{@code GET /api/resource/{uuid}/meta} — authenticated metadata;</li>
+ *   <li>{@code GET /api/resource/{uuid}} — authenticated read (owner, or any PUBLIC resource);</li>
+ *   <li>{@code GET /api/resource/{uuid}/meta} — authenticated metadata (owner, or any PUBLIC resource);</li>
  *   <li>{@code DELETE /api/resource/{uuid}} — owner deletes a resource (bytes + metadata).</li>
  * </ul>
  *
- * <p>When the backend supports presigning the response is a 302 to a presigned GET URL (Redis-cached
- * by {@code PresignedUrlCache}); otherwise the bytes are streamed through this service. Responses
- * carry a {@code Cache-Control} so browsers may reuse the redirect/bytes within the signature window.</p>
+ * <p>This controller is deliberately thin: it only binds request parameters, delegates to
+ * {@link ResourceService} and renders the returned application result. The read policy (presigned
+ * redirect vs. proxied stream, media type, download disposition, cache directives) lives in the
+ * service; here the outcome is merely translated into a transport response.</p>
  */
 @RestController
 @RequestMapping("/api")
 public class ResourceReadController {
 
     private final ResourceService resourceService;
-    private final ResourceProperties properties;
 
-    public ResourceReadController(ResourceService resourceService, ResourceProperties properties) {
+    public ResourceReadController(ResourceService resourceService) {
         this.resourceService = resourceService;
-        this.properties = properties;
     }
 
     /** Anonymous read of a PUBLIC resource. */
     @GetMapping("/public/resource/{uuid}")
     public ResponseEntity<?> publicRead(@PathVariable String uuid) {
-        return read(uuid, true);
+        return respond(resourceService.read(uuid, null));
     }
 
     /** Anonymous metadata of a PUBLIC resource. */
     @GetMapping("/public/resource/{uuid}/meta")
     public ResourceMetaResp publicMeta(@PathVariable String uuid) {
-        return meta(uuid, true);
+        return ResourceWebMapper.toResp(resourceService.meta(uuid, null));
     }
 
-    /** Authenticated read of any active resource. */
+    /** Authenticated read of a resource the caller owns, or of any PUBLIC resource. */
     @GetMapping("/resource/{uuid}")
-    public ResponseEntity<?> privateRead(@PathVariable String uuid) {
-        return read(uuid, false);
+    public ResponseEntity<?> privateRead(@PathVariable String uuid, @AuthenticationPrincipal Jwt jwt) {
+        return respond(resourceService.read(uuid, ResourceWebMapper.uidOf(jwt)));
     }
 
-    /** Authenticated metadata for a resource. */
+    /** Authenticated metadata for a resource the caller owns, or for any PUBLIC resource. */
     @GetMapping("/resource/{uuid}/meta")
-    public ResourceMetaResp privateMeta(@PathVariable String uuid) {
-        return meta(uuid, false);
+    public ResourceMetaResp privateMeta(@PathVariable String uuid, @AuthenticationPrincipal Jwt jwt) {
+        return ResourceWebMapper.toResp(resourceService.meta(uuid, ResourceWebMapper.uidOf(jwt)));
     }
 
     /** Owner deletes a resource (bytes + metadata); idempotent. */
@@ -80,36 +75,24 @@ public class ResourceReadController {
         return ResponseEntity.noContent().build();
     }
 
-    private ResourceMetaResp meta(String uuid, boolean anonymous) {
-        Resource resource = resourceService.requireReadable(uuid, anonymous);
-        return ResourceWebMapper.toMeta(resource, resourceService.presignedGetUrl(resource));
-    }
-
-    private ResponseEntity<?> read(String uuid, boolean anonymous) {
-        Resource resource = resourceService.requireReadable(uuid, anonymous);
-        CacheControl cacheControl = cacheControl(resource);
-        String url = resourceService.presignedGetUrl(resource);
-        if (url != null) {
-            return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).cacheControl(cacheControl).build();
+    /** Renders a service read outcome as an HTTP response (the only mapping this layer owns). */
+    private static ResponseEntity<?> respond(ResourceReadResult result) {
+        CacheControl cacheControl = result.cacheControl();
+        if (result.redirectUrl() != null) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(result.redirectUrl()))
+                    .cacheControl(cacheControl)
+                    .build();
         }
-        InputStream stream = resourceService.openStream(resource);
-        MediaType mediaType = resource.getMimeType() == null
-                ? MediaType.APPLICATION_OCTET_STREAM
-                : MediaType.parseMediaType(resource.getMimeType());
-        long contentLength = resource.getSizeBytes() == null ? -1 : resource.getSizeBytes();
-        return ResponseEntity.ok()
-                .contentType(mediaType)
-                .contentLength(contentLength)
-                .cacheControl(cacheControl)
-                .body(new InputStreamResource(stream));
-    }
-
-    /** Browsers may cache the result for as long as the signed URL / service URL stays valid. */
-    private CacheControl cacheControl(Resource resource) {
-        long ttl = Math.max(1, properties.presignExpirySeconds() - properties.effectiveCacheSafetyMarginSeconds());
-        CacheControl control = CacheControl.maxAge(Duration.ofSeconds(ttl));
-        return resource.getVisibility() == ResourceVisibility.PUBLIC
-                ? control.cachePublic()
-                : control.cachePrivate();
+        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
+                .contentType(result.contentType())
+                .contentLength(result.contentLength())
+                .cacheControl(cacheControl);
+        if (result.attachment()) {
+            // Force a download: a stored file (e.g. an SVG declaring HTML) must never render in the
+            // browser, which would turn the shared resource origin into a stored-XSS sink.
+            builder.header(HttpHeaders.CONTENT_DISPOSITION, "attachment");
+        }
+        return builder.body(new InputStreamResource(result.stream()));
     }
 }
