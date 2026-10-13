@@ -77,3 +77,40 @@ tasks.named('bootRun') {
 tasks.named('bootJar') {
     archiveFileName = 'app.jar'
 }
+
+// ============================================================
+// admin-ui（Vue 3 SPA）构建接线
+//  - `./gradlew build` 一次产出含管理台的完整 jar
+//  - SPA 用 npm 构建，直接输出到 src/main/resources/static/admin（已 gitignore），
+//    由 processResources 一并打包
+//  - -PskipAdminUi：跳过（CI/Docker 里 SPA 已由独立的 node stage 构建完成）
+// ============================================================
+def adminUiDir = file('admin-ui')
+def skipAdminUi = project.hasProperty('skipAdminUi')
+def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
+
+// Windows 下 .cmd 需经 cmd /c 调用，Linux/macOS 直接用 npm。
+def npmCommand = { List<String> args ->
+    (isWindows ? ['cmd', '/c', 'npm'] : ['npm']) + args
+}
+
+tasks.register('adminUiInstall', Exec) {
+    group = 'build'
+    description = 'Install admin-ui dependencies (skipped when node_modules already exists).'
+    workingDir = adminUiDir
+    commandLine npmCommand(['install'])
+    onlyIf { !skipAdminUi && !new File(adminUiDir, 'node_modules').exists() }
+}
+
+tasks.register('adminUiBuild', Exec) {
+    group = 'build'
+    description = 'Build the admin-ui SPA into src/main/resources/static/admin.'
+    dependsOn 'adminUiInstall'
+    workingDir = adminUiDir
+    commandLine npmCommand(['run', 'build'])
+    onlyIf { !skipAdminUi }
+}
+
+tasks.named('processResources') {
+    dependsOn 'adminUiBuild'
+}

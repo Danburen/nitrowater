@@ -14,6 +14,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -111,12 +112,17 @@ public class SsoUserPrincipal implements UserDetails {
      */
     @JsonIgnore
     public List<String> getRoles() {
-        List<String> roles = roleCodes.isEmpty()
+        List<String> prefixed = roleCodes.isEmpty()
                 ? List.of("ROLE_USER")
                 : roleCodes.stream()
                         .map(code -> code.startsWith("ROLE_") ? code : "ROLE_" + code)
-                        .distinct()
                         .toList();
+        LinkedHashSet<String> roles = new LinkedHashSet<>(prefixed);
+        // SUPER_ADMIN (super admin / 站长) implicitly holds ADMIN, so every existing
+        // hasAuthority('ROLE_ADMIN') guard keeps passing for a super admin without changes.
+        if (roles.contains("ROLE_SUPER_ADMIN")) {
+            roles.add("ROLE_ADMIN");
+        }
         return new ArrayList<>(roles);
     }
 

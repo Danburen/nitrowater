@@ -11,6 +11,16 @@
 #   docker build --target bff      -t nitrowater-bff:local      .
 # CI（docker/build-push-action）用 target 分别构建各镜像。
 # ============================================================
+# ==================== admin-ui (Vue SPA) ====================
+# Build the account admin console in a node stage; its vite build emits straight to
+# nitrowater-account/src/main/resources/static/admin (same relative layout), which the
+# build stage copies in. The gradle run then uses -PskipAdminUi so it never shells to npm.
+FROM node:22-alpine AS admin-ui
+WORKDIR /build/nitrowater-account/admin-ui
+COPY nitrowater-account/admin-ui/ ./
+RUN npm ci && npm run build
+
+# ==================== build (gradle, all modules) ====================
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 
@@ -23,7 +33,10 @@ COPY nitrowater-bff/ nitrowater-bff/
 COPY nitrowater-server/ nitrowater-server/
 COPY nitrowater-resource/ nitrowater-resource/
 
-RUN chmod +x gradlew && ./gradlew --no-daemon -x test \
+# Overlay the freshly built SPA (context excludes any stale local copy via .dockerignore).
+COPY --from=admin-ui /build/nitrowater-account/src/main/resources/static/admin nitrowater-account/src/main/resources/static/admin
+
+RUN chmod +x gradlew && ./gradlew --no-daemon -x test -PskipAdminUi \
       :nitrowater-account:bootJar :nitrowater-bff:bootJar \
       :nitrowater-server:bootJar :nitrowater-resource:bootJar
 

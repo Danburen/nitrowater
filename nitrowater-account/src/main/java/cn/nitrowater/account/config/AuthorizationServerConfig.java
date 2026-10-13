@@ -1,5 +1,6 @@
 package cn.nitrowater.account.config;
 
+import cn.nitrowater.lib.utils.StringUtil;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -43,6 +45,7 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -110,9 +113,26 @@ public class AuthorizationServerConfig {
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico")
                         .permitAll()
+                        // Admin console SPA shell (static files). Its data lives behind /api/admin/** below.
+                        .requestMatchers("/admin", "/admin/**")
+                        .permitAll()
+                        // Role / permission management is reserved for the super admin (站长).
+                        .requestMatchers("/api/admin/**")
+                        .hasAuthority("ROLE_SUPER_ADMIN")
                         .anyRequest().authenticated())
                 .formLogin(form -> form.loginPage("/login").permitAll())
-                .logout(l -> l.logoutSuccessUrl("/"));
+                .logout(l -> l.logoutSuccessUrl("/"))
+                .exceptionHandling(ex -> ex
+                        // XHR under /api/** gets a clean 401 JSON instead of a 302 to the HTML login page.
+                        .defaultAuthenticationEntryPointFor(
+                                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                                request -> request.getServletPath().startsWith("/api/"))
+                        .accessDeniedHandler((request, response, denied) -> {
+                            response.setStatus(HttpStatus.FORBIDDEN.value());
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write(
+                                    "{\"success\":false,\"code\":\"http.forbidden\",\"message\":\"forbidden\"}");
+                        }));
         return http.build();
     }
 
@@ -286,7 +306,7 @@ public class AuthorizationServerConfig {
                 // OIDC standard `picture`: a STABLE URL (the resource service read path), derived from
                 // the avatar's resource uuid — never a stored/presigned URL, so it cannot expire.
                 if (principal.getAvatarUuid() != null && !principal.getAvatarUuid().isBlank()
-                        && pictureBaseUrl != null && !pictureBaseUrl.isBlank()) {
+                        && StringUtil.isBlank(pictureBaseUrl)) {
                     claims.claim("picture", trimTrailingSlash(pictureBaseUrl)
                             + "/api/public/resource/" + principal.getAvatarUuid());
                 }

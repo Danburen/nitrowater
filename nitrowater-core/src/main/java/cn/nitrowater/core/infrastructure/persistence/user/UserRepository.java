@@ -1,5 +1,7 @@
 package cn.nitrowater.core.infrastructure.persistence.user;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -37,4 +39,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("SELECT u.createdAt FROM User u WHERE u.uid = :uid")
     Instant getUserCreatedAtByUid(@Param("uid") Long uid);
+
+    /**
+     * Paged account search by username or nickname (case-insensitive, substring).
+     * A {@code null}/blank keyword matches every account (admin console listing).
+     */
+    @Query("SELECT u FROM User u WHERE (:kw IS NULL OR :kw = '' "
+            + "OR LOWER(u.username) LIKE LOWER(CONCAT('%', :kw, '%')) "
+            + "OR LOWER(u.nickname) LIKE LOWER(CONCAT('%', :kw, '%')))")
+    Page<User> searchByKeyword(@Param("kw") String kw, Pageable pageable);
 }
