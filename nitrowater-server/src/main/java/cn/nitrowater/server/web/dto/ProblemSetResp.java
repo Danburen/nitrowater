@@ -1,10 +1,12 @@
 package cn.nitrowater.server.web.dto;
 
+import cn.nitrowater.server.infra.enums.ProblemSetVisibility;
+
 /**
  * A full problem-set ("题单") view (admin + public listing).
  *
  * @param id set id
- * @param slug stable set slug
+ * @param slug stable set slug (null for user-owned sets)
  * @param name Chinese name
  * @param nameEn English name (nullable; display falls back to {@code name})
  * @param description Chinese description (nullable)
@@ -13,6 +15,8 @@ package cn.nitrowater.server.web.dto;
  * @param sortOrder display order (ascending)
  * @param enabled whether shown to users
  * @param problemCount number of problems in the set
+ * @param ownerUid owner uid (null for curated/official sets)
+ * @param visibility PRIVATE / PUBLIC (only meaningful for user-owned sets)
  */
 public record ProblemSetResp(
         Long id,
@@ -24,5 +28,7 @@ public record ProblemSetResp(
         String color,
         Integer sortOrder,
         Boolean enabled,
-        Integer problemCount) {
+        Integer problemCount,
+        Long ownerUid,
+        ProblemSetVisibility visibility) {
 }

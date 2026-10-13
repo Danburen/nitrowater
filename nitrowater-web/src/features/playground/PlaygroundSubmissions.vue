@@ -12,7 +12,7 @@ import { useAuth } from '../../auth/useAuth'
 import { RUNNER_LANGUAGES } from '../tools/code-runner/langCatalog'
 import { listProblems, listSubmissions, type ProblemSummary, type Submission } from './api'
 import { statusLabel, verdictMeta } from './labels'
-import PlaygroundShell from './PlaygroundShell.vue'
+import PageShell from '../../shared/ui/PageShell.vue'
 
 const router = useRouter()
 const { login } = useAuth()
@@ -73,10 +73,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <PlaygroundShell
+  <PageShell
     title="我的提交"
-    back-to="/playground"
-    back-label="题目列表"
     desc="当前账号的判题记录（最新在前）；点击某行可展开每个测试用例的结果。"
   >
     <div class="min-h-0 flex-1 overflow-y-auto">
@@ -302,5 +300,5 @@ onMounted(() => {
         </table>
       </div>
     </div>
-  </PlaygroundShell>
+  </PageShell>
 </template>

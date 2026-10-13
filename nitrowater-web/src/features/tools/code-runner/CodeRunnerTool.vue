@@ -24,7 +24,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '../../../auth/useAuth'
 import { apiFetch } from '../../../auth/bff'
 import { toast } from '../../../shared/ui/toast'
-import ToolShell from '../ToolShell.vue'
+import PageShell from '../../../shared/ui/PageShell.vue'
 import CodeEditor from './CodeEditor.vue'
 import {
   DEFAULT_LANGUAGE_ID,
@@ -203,7 +203,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
 </script>
 
 <template>
-  <ToolShell
+  <PageShell
     fill
     title="在线代码运行器"
     desc="匿名时 Python / JavaScript / TypeScript / Lua 于浏览器本地运行（代码不上传）；登录后全部语言改为在服务端沙箱运行。Java / C / C++ 需登录。"
@@ -364,5 +364,5 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
         <!-- eslint-enable vue/no-v-html -->
       </section>
     </div>
-  </ToolShell>
+  </PageShell>
 </template>

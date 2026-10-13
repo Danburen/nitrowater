@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>演练场 · 题单</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --sidebar: #13161d;
+    --panel: #171b23;
+    --card: #1a1e28;
+    --border: #262b36;
+    --text: #e8eaed;
+    --dim: #8b919e;
+    --accent: #5b8cff;
+    --accent-soft: rgba(91,140,255,0.12);
+    --green: #5bc47c;
+    --orange: #e8a54b;
+    --red: #e05c5c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.5; height: 100vh; overflow: hidden;
+  }
+
+  .app { display: flex; height: 100vh; }
+
+  /* ===== 左侧导航（可折叠） ===== */
+  .sidebar {
+    width: 220px; background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0;
+    transition: width 0.2s ease; overflow: hidden;
+  }
+  .sidebar.collapsed { width: 56px; }
+
+  .sidebar-head {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 9px; min-height: 56px;
+  }
+  .logo-mark {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, #5b8cff, #9b6bff); flex-shrink: 0;
+  }
+  .sidebar-head .title {
+    font-weight: 650; font-size: 14px; white-space: nowrap;
+    opacity: 1; transition: opacity 0.15s;
+  }
+  .sidebar.collapsed .sidebar-head .title { opacity: 0; }
+
+  .sidebar-nav { flex: 1; padding: 10px 8px; overflow-y: auto; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 11px; border-radius: 8px; font-size: 13.5px;
+    color: var(--dim); cursor: pointer; transition: 0.15s;
+    margin-bottom: 2px; white-space: nowrap;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+  .nav-item .icon { width: 20px; text-align: center; font-size: 15px; flex-shrink: 0; }
+  .nav-item .label { opacity: 1; transition: opacity 0.15s; }
+  .sidebar.collapsed .nav-item .label { opacity: 0; }
+
+  .sidebar-foot {
+    padding: 10px 8px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: var(--dim); white-space: nowrap; cursor: pointer;
+  }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, #5b8cff, #9b6bff);
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: #fff; font-weight: 600;
+  }
+  .sidebar-foot .uname { opacity: 1; transition: opacity 0.15s; }
+  .sidebar.collapsed .sidebar-foot .uname { opacity: 0; }
+
+  /* ===== 主区 ===== */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+  .topbar {
+    height: 56px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; flex-shrink: 0;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .collapse-btn {
+    width: 30px; height: 30px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--card);
+    color: var(--dim); cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: 0.15s; flex-shrink: 0;
+  }
+  .collapse-btn:hover { color: var(--text); border-color: #3a4150; }
+  .topbar-left h1 { font-size: 16px; font-weight: 650; white-space: nowrap; }
+  .topbar-right { display: flex; gap: 10px; flex-shrink: 0; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 13px; border-radius: 7px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--card);
+    color: var(--text); cursor: pointer; transition: 0.15s;
+  }
+  .btn:hover { border-color: #3a4150; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #4a7bf0; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  /* ===== 内容区 ===== */
+  .content { flex: 1; overflow-y: auto; padding: 24px 28px 40px; }
+
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px; margin-top: 4px;
+  }
+  .section-head h2 { font-size: 15px; font-weight: 650; }
+  .section-head .more { font-size: 13px; color: var(--accent); cursor: pointer; }
+
+  /* 卡片网格 */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px; margin-bottom: 32px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; transition: 0.15s;
+    cursor: pointer; display: flex; flex-direction: column; gap: 8px;
+  }
+  .card:hover { border-color: #3a4150; }
+  .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card-top h3 { font-size: 14px; font-weight: 600; }
+  .count {
+    font-size: 11px; color: var(--dim);
+    background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 5px;
+  }
+  .card .desc { font-size: 12.5px; color: var(--dim); line-height: 1.5; }
+  .card-actions {
+    display: flex; gap: 8px; margin-top: 4px;
+    padding-top: 12px; border-top: 1px solid var(--border);
+  }
+  .card-actions .btn { flex: 1; justify-content: center; }
+
+  /* 题目表格 */
+  .table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .table th {
+    text-align: left; padding: 11px 16px; font-size: 12px;
+    color: var(--dim); font-weight: 600; border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .table td {
+    padding: 11px 16px; border-bottom: 1px solid var(--border);
+  }
+  .table tr:last-child td { border-bottom: none; }
+  .table tr:hover td { background: rgba(255,255,255,0.02); cursor: pointer; }
+  .table .pid { color: #5a6170; font-family: monospace; font-size: 12px; }
+  .diff-dot {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; margin-right: 6px; vertical-align: middle;
+  }
+  .diff-dot.easy { background: var(--green); }
+  .diff-dot.medium { background: var(--orange); }
+  .diff-dot.hard { background: var(--red); }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #262b36; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ===== 左侧导航 ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="logo-mark"></div>
+      <span class="title">演练场</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showPanel('mine', this)">
+        <span class="icon">▤</span><span class="label">我的题单</span>
+      </div>
+      <div class="nav-item" onclick="showPanel('square', this)">
+        <span class="icon">▦</span><span class="label">题单广场</span>
+      </div>
+      <div class="nav-item" onclick="showPanel('all', this)">
+        <span class="icon">▥</span><span class="label">题目大全</span>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="avatar">U</div>
+      <span class="uname">用户名</span>
+    </div>
+  </aside>
+
+  <!-- ===== 主区 ===== -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="collapse-btn" onclick="toggleSidebar()">☰</button>
+        <h1 id="pageTitle">我的题单</h1>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-sm">+ 新建题单</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- 我的题单 -->
+      <div id="panel-mine">
+        <div class="section-head">
+          <h2>我创建的题单</h2>
+        </div>
+        <div class="grid">
+          <div class="card" onclick="location.href='#playlist/1'">
+            <div class="card-top"><h3>面试高频</h3><span class="count">12 题</span></div>
+            <div class="desc">高频面试算法题，覆盖数组、链表、树、动态规划。</div>
+            <div class="card-actions">
+              <button class="btn btn-sm" onclick="event.stopPropagation()">开始刷题</button>
+              <button class="btn btn-sm" onclick="event.stopPropagation()">编辑</button>
+            </div>
+          </div>
+          <div class="card" onclick="location.href='#playlist/2'">
+            <div class="card-top"><h3>动态规划专项</h3><span class="count">8 题</span></div>
+            <div class="desc">从爬楼梯到编辑距离，系统梳理 DP 状态转移。</div>
+            <div class="card-actions">
+              <button class="btn btn-sm" onclick="event.stopPropagation()">开始刷题</button>
+              <button class="btn btn-sm" onclick="event.stopPropagation()">编辑</button>
+            </div>
+          </div>
+          <div class="card" onclick="location.href='#playlist/3'">
+            <div class="card-top"><h3>寒假刷题</h3><span class="count">20 题</span></div>
+            <div class="desc">寒假每日一题合集，难度梯度递进。</div>
+            <div class="card-actions">
+              <button class="btn btn-sm" onclick="event.stopPropagation()">开始刷题</button>
+              <button class="btn btn-sm" onclick="event.stopPropagation()">编辑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 题单广场 -->
+      <div id="panel-square" style="display:none;">
+        <div class="section-head">
+          <h2>推荐题单</h2>
+          <span class="more">换一批 ↻</span>
+        </div>
+        <div class="grid">
+          <div class="card" onclick="location.href='#playlist/101'">
+            <div class="card-top"><h3>新手入门</h3><span class="count">10 题</span></div>
+            <div class="desc">刚接触算法？从这些最基础的题目开始。</div>
+          </div>
+          <div class="card" onclick="location.href='#playlist/102'">
+            <div class="card-top"><h3>面试冲刺</h3><span class="count">15 题</span></div>
+            <div class="desc">高频考点浓缩，适合面试前两周突击。</div>
+          </div>
+          <div class="card" onclick="location.href='#playlist/103'">
+            <div class="card-top"><h3>算法精讲</h3><span class="count">12 题</span></div>
+            <div class="desc">排序、二分、图论、字符串，覆盖经典算法。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 题目大全 -->
+      <div id="panel-all" style="display:none;">
+        <div class="section-head">
+          <h2>全部题目</h2>
+          <span class="more">共 47 题</span>
+        </div>
+        <table class="table">
+          <thead>
+            <tr><th>编号</th><th>题目</th><th>难度</th><th>通过率</th></tr>
+          </thead>
+          <tbody>
+            <tr onclick="location.href='#problem/1'"><td class="pid">01</td><td>两数之和</td><td><span class="diff-dot easy"></span>简单</td><td>48.5%</td></tr>
+            <tr onclick="location.href='#problem/2'"><td class="pid">02</td><td>链表反转</td><td><span class="diff-dot easy"></span>简单</td><td>52.1%</td></tr>
+            <tr onclick="location.href='#problem/3'"><td class="pid">03</td><td>最大子数组和</td><td><span class="diff-dot medium"></span>中等</td><td>41.2%</td></tr>
+            <tr onclick="location.href='#problem/4'"><td class="pid">04</td><td>三数之和</td><td><span class="diff-dot medium"></span>中等</td><td>35.8%</td></tr>
+            <tr onclick="location.href='#problem/5'"><td class="pid">05</td><td>二叉树层序遍历</td><td><span class="diff-dot medium"></span>中等</td><td>63.4%</td></tr>
+            <tr onclick="location.href='#problem/6'"><td class="pid">06</td><td>合并K个升序链表</td><td><span class="diff-dot hard"></span>困难</td><td>28.7%</td></tr>
+            <tr onclick="location.href='#problem/7'"><td class="pid">07</td><td>LRU 缓存</td><td><span class="diff-dot medium"></span>中等</td><td>44.0%</td></tr>
+            <tr onclick="location.href='#problem/8'"><td class="pid">08</td><td>接雨水</td><td><span class="diff-dot hard"></span>困难</td><td>31.5%</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('collapsed');
+  }
+
+  function showPanel(name, el) {
+    ['mine', 'square', 'all'].forEach(n => {
+      document.getElementById('panel-' + n).style.display = (n === name) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    el.classList.add('active');
+    const titles = { mine: '我的题单', square: '题单广场', all: '题目大全' };
+    document.getElementById('pageTitle').textContent = titles[name];
+  }
+</script>
+</body>
+</html>

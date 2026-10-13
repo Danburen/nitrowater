@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import { saveAs } from 'file-saver'
 import { toast } from '../../../shared/ui/toast'
-import ToolShell from '../ToolShell.vue'
+import PageShell from '../../../shared/ui/PageShell.vue'
 import { SAMPLE_MARKDOWN } from './lib/sample'
 
 const markdown = ref('')
@@ -59,7 +59,7 @@ async function doConvert(): Promise<void> {
 </script>
 
 <template>
-  <ToolShell
+  <PageShell
     title="Markdown 转 Word"
     desc="将 Markdown 转换为 .docx Word 文档（标题 / 列表 / 引用 / 代码块 / 表格 / 链接）。全部在浏览器本地完成，内容不会上传。"
   >
@@ -114,5 +114,5 @@ async function doConvert(): Promise<void> {
         <span class="text-xs text-faint">支持标题、列表、引用、代码块、表格、粗体/斜体、链接</span>
       </section>
     </div>
-  </ToolShell>
+  </PageShell>
 </template>

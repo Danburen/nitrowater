@@ -6,7 +6,7 @@
 import { CopyDocument, Delete } from '@element-plus/icons-vue'
 import { ref } from 'vue'
 import { toast } from '../../../shared/ui/toast'
-import ToolShell from '../ToolShell.vue'
+import PageShell from '../../../shared/ui/PageShell.vue'
 
 const javaCode = ref('')
 const tsCode = ref('')
@@ -237,7 +237,7 @@ async function copy(text: string, okMsg: string): Promise<void> {
 </script>
 
 <template>
-  <ToolShell
+  <PageShell
     title="Java DTO 转 TypeScript"
     desc="解析 Java DTO / VO，生成 TypeScript 接口；可选默认值与 Element Plus 表单校验规则。"
   >
@@ -328,5 +328,5 @@ async function copy(text: string, okMsg: string): Promise<void> {
         />
       </section>
     </div>
-  </ToolShell>
+  </PageShell>
 </template>

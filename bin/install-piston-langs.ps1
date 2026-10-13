@@ -85,6 +85,7 @@ try {
                 -e PISTON_RUN_TIMEOUT=10000 -e PISTON_COMPILE_TIMEOUT=20000 `
                 -e PISTON_RUN_MEMORY_LIMIT=268435456 -e PISTON_COMPILE_MEMORY_LIMIT=536870912 `
                 -e PISTON_OUTPUT_MAX_SIZE=1048576 -e PISTON_MAX_CONCURRENT_JOBS=8 `
+                -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 `
                 ghcr.io/engineer-man/piston | Out-Null
         }
     } else {
@@ -93,6 +94,7 @@ try {
             -e PISTON_RUN_TIMEOUT=10000 -e PISTON_COMPILE_TIMEOUT=20000 `
             -e PISTON_RUN_MEMORY_LIMIT=268435456 -e PISTON_COMPILE_MEMORY_LIMIT=536870912 `
             -e PISTON_OUTPUT_MAX_SIZE=1048576 -e PISTON_MAX_CONCURRENT_JOBS=8 `
+            -e LANG=en_US.UTF-8 -e LC_ALL=en_US.UTF-8 `
             ghcr.io/engineer-man/piston | Out-Null
     }
 
@@ -115,6 +117,36 @@ try {
         Invoke-RestMethod "$PistonApi/api/v2/packages" -Method Post -ContentType 'application/json' `
             -Body $body -TimeoutSec 1800 | Out-Null
         Write-Step "installed: $pkg $ver"
+    }
+
+    # Java: the isolate sandbox clears the container env, so the JVM never sees LANG/LC_ALL and the
+    # single-file source launcher (`java Main.java`) falls back to the platform default charset
+    # (ANSI_X3.4-1968): CJK source is read as U+FFFD and CJK output is written as '?'. Patch the
+    # package `run` script (executed INSIDE the sandbox) to re-export a UTF-8 locale + force the
+    # JVM encodings. Re-applied on every run so a (re)install can't silently drop it.
+    if ($Packages -contains 'java') {
+        $javaVer = $Versions['java']
+        Write-Step "Patching java $javaVer run script for UTF-8 (CJK source/output) ..."
+        $javaRun = @'
+#!/usr/bin/env bash
+
+# Put instructions to run the runtime
+# NitroWater: the isolate sandbox clears the container env, so re-export a UTF-8 locale here
+# (en_US.utf8 ships with the image) and force the JVM encodings; otherwise CJK source/output
+# is read/written as ASCII and becomes U+FFFD / '?'.
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+mv $1 $1.java
+filename=$1.java
+shift
+java -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 "$filename" "$@"
+'@
+        $javaRun = $javaRun -replace "`r`n", "`n"
+        $javaRunPath = Join-Path $env:TEMP 'piston-java-run.sh'
+        [IO.File]::WriteAllText($javaRunPath, $javaRun, (New-Object System.Text.UTF8Encoding($false)))
+        docker cp $javaRunPath "${Container}:/piston/packages/java/$javaVer/run" | Out-Null
+        docker exec $Container chmod +x "/piston/packages/java/$javaVer/run" | Out-Null
+        Write-Step "java run script UTF-8 patch applied."
     }
 
     # TypeScript: Piston's package ships no Node typings, so require/process/Buffer fail with TS2580.

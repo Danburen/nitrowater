@@ -29,10 +29,16 @@ public class ProblemSetController {
         this.problemSetService = problemSetService;
     }
 
-    /** Anonymous: list enabled problem sets. */
+    /** Anonymous: list enabled official problem sets. */
     @GetMapping("/api/public/problem-sets")
     public List<ProblemSetResp> listPublic() {
         return problemSetService.listEnabled();
+    }
+
+    /** Anonymous: public user-owned problem sets (题单广场). */
+    @GetMapping("/api/public/problem-sets/square")
+    public List<ProblemSetResp> listSquare() {
+        return problemSetService.listPublicUserSets();
     }
 
     /** Anonymous: one enabled problem set. */

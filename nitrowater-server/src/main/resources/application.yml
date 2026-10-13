@@ -64,7 +64,9 @@ app:
     compile-timeout-ms: 20000
     per-ip-per-minute: 30           # 登录用户 per-IP 限流
     run-timeout-ms: 10000
-    memory-limit-bytes: 536870912   # 512MB（单位 bytes）
+    # MUST be <= the Piston container's PISTON_RUN_MEMORY_LIMIT, else Piston rejects the
+    # request with 400 ("run_memory_limit cannot exceed the configured limit of ...").
+    memory-limit-bytes: 268435456   # 256MB（单位 bytes），与 Piston 上限 / problem 默认 262144KB 对齐
 
 
 logging:

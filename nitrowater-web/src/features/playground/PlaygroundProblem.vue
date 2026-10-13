@@ -15,7 +15,7 @@ import { RUNNER_LANGUAGES, isRunnerLanguage, type RunnerLanguageId } from '../to
 import CodeEditor from '../tools/code-runner/CodeEditor.vue'
 import { createSubmission, getProblem, getSubmission, type ProblemDetail, type Submission } from './api'
 import { difficultyMeta, statusLabel, verdictMeta } from './labels'
-import PlaygroundShell from './PlaygroundShell.vue'
+import PageShell from '../../shared/ui/PageShell.vue'
 
 const route = useRoute()
 const { session, login } = useAuth()
@@ -123,10 +123,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <PlaygroundShell
+  <PageShell
+    fill
     :title="title"
-    back-to="/playground"
-    back-label="题目列表"
     desc="ACM 模式在线判题：右侧写代码、提交评测，左侧查看题目与样例。三个面板均可收起/展开。"
   >
     <div
@@ -435,7 +434,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-  </PlaygroundShell>
+  </PageShell>
 </template>
 
 <style>

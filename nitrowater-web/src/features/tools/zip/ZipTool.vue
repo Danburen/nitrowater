@@ -7,7 +7,7 @@ import { Delete, Download, FolderOpened } from '@element-plus/icons-vue'
 import { computed, ref } from 'vue'
 import { saveAs } from 'file-saver'
 import { toast } from '../../../shared/ui/toast'
-import ToolShell from '../ToolShell.vue'
+import PageShell from '../../../shared/ui/PageShell.vue'
 import { ARCHIVE_EXTENSIONS, decompressArchive } from '../lib/archive/libarchive'
 import { compressZip, decompressZip } from '../lib/archive/zip'
 
@@ -129,7 +129,7 @@ function downloadExtracted(file: ExtractedFile): void {
 </script>
 
 <template>
-  <ToolShell
+  <PageShell
     title="压缩 / 解压"
     desc="ZIP 打包下载；ZIP / RAR / 7z / TAR / GZ / XZ / BZ2 解压。全部在浏览器本地完成，文件不会上传。"
   >
@@ -337,5 +337,5 @@ function downloadExtracted(file: ExtractedFile): void {
         </table>
       </div>
     </section>
-  </ToolShell>
+  </PageShell>
 </template>

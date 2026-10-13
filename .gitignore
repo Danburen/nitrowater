@@ -88,3 +88,5 @@ deploy/config/common-dev-secrets.yml
 !/bin/**
 !deploy/bin/
 !deploy/bin/**
+# Runtime state written by the launch scripts (window PIDs) - never tracked.
+bin/.run/

@@ -8,7 +8,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { saveAs } from 'file-saver'
 import type { FFmpeg, LogEvent, ProgressEvent } from '@ffmpeg/ffmpeg'
 import { toast } from '../../../shared/ui/toast'
-import ToolShell from '../ToolShell.vue'
+import PageShell from '../../../shared/ui/PageShell.vue'
 import type { FfmpegState } from './lib/ffmpeg/ffmpegManager'
 import { getFFmpeg, loadFFmpeg, resetFFmpeg } from './lib/ffmpeg/ffmpegManager'
 
@@ -306,7 +306,7 @@ function formatSize(bytes: number): string {
 </script>
 
 <template>
-  <ToolShell
+  <PageShell
     title="MP4 转 GIF"
     desc="基于 ffmpeg.wasm 两遍调色板量化，将 MP4 / WebM / MOV / AVI 转为 GIF。全部在浏览器本地完成，视频不会上传。首次需从 CDN 下载约 24MB 的 WASM 核心。"
   >
@@ -636,7 +636,7 @@ function formatSize(bytes: number): string {
         </section>
       </template>
     </div>
-  </ToolShell>
+  </PageShell>
 </template>
 
 <style scoped>

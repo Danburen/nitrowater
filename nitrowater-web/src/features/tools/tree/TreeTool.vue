@@ -9,7 +9,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EChartsOption, EChartsType } from 'echarts'
 import { toast } from '../../../shared/ui/toast'
 import { useTheme } from '../../../shared/theme/useTheme'
-import ToolShell from '../ToolShell.vue'
+import PageShell from '../../../shared/ui/PageShell.vue'
 import { countNodes, parseTreeJson } from '../lib/tree/buildTree'
 import type { TreeNode } from '../lib/tree/buildTree'
 import { chartPalette } from '../lib/tree/chartPalette'
@@ -338,7 +338,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <ToolShell
+  <PageShell
     title="树形结构可视化"
     desc="将 JSON 数据渲染为 ECharts 可交互树形图；支持字段映射、4 种布局方向与节点形状，可导出 PNG。"
   >
@@ -546,5 +546,5 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-  </ToolShell>
+  </PageShell>
 </template>

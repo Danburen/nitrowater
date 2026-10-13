@@ -93,10 +93,15 @@ CREATE TABLE problem_tag (
   CONSTRAINT fk_pt_tag     FOREIGN KEY (tag_id)     REFERENCES tag(id)     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题目-标签 映射';
 
--- ---------- 题单（problem set：把题目归档到多个题单，如 热门题目/面试经典/数据结构）----------
+-- ---------- 题单（problem set：官方 curated + 用户自建“我的题单”）----------
+-- 归属：owner_uid NULL = 官方/curated；非空 = 用户 uid（跨库逻辑键，不建 FK）。
+-- 可见性 visibility：0=PRIVATE 1=PUBLIC（仅对用户题单有意义）。
+-- 官方题单需稳定 slug（唯一）；用户题单 slug 为 NULL（唯一索引允许多个 NULL）。
 CREATE TABLE problem_set (
   id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  slug           VARCHAR(64)  NOT NULL                       COMMENT '稳定键，如 hot-100 / interview-150',
+  slug           VARCHAR(64)  NULL                           COMMENT '稳定键，如 hot-100 / interview-150（仅官方题单；用户题单为 NULL）',
+  owner_uid      BIGINT UNSIGNED NULL                        COMMENT '题单归属 uid（NULL=官方；跨库逻辑键，无 FK）',
+  visibility     TINYINT UNSIGNED NOT NULL DEFAULT 0         COMMENT '可见性：0=PRIVATE 1=PUBLIC（仅对用户题单有意义）',
   name           VARCHAR(100) NOT NULL                       COMMENT '中文名，如 热门题目',
   name_en        VARCHAR(100) NULL                           COMMENT '英文名（缺省回退中文）',
   description    VARCHAR(500) NULL                           COMMENT '中文简介',
@@ -108,8 +113,9 @@ CREATE TABLE problem_set (
   updated_at     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   UNIQUE KEY uk_problem_set_slug (slug),
-  KEY idx_problem_set_enabled (enabled)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题单/problem set（一道题可属于多个题单）';
+  KEY idx_problem_set_enabled (enabled),
+  KEY idx_problem_set_owner (owner_uid, visibility)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题单/problem set（owner_uid NULL=官方；非空=用户题单；一道题可属于多个题单）';
 
 CREATE TABLE problem_set_item (
   problem_id BIGINT UNSIGNED NOT NULL,

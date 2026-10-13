@@ -9,7 +9,10 @@ const route = useRoute()
 const router = useRouter()
 const { session, consumePostLogin } = useAuth()
 /** The tools and admin areas render their own shells — no global header there. */
-const showHeader = computed(() => route.meta.layout !== 'tools' && route.meta.layout !== 'admin')
+const showHeader = computed(() => {
+  const layout = route.meta.layout
+  return layout !== 'tools' && layout !== 'admin' && layout !== 'playground'
+})
 
 // Resume the page the user intended before logging in (e.g. from home's "进入演练场").
 watch(

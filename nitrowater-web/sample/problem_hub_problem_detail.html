@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>演练场 · 编程</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --sidebar: #13161d;
+    --panel: #171b23;
+    --card: #1a1e28;
+    --border: #262b36;
+    --text: #e8eaed;
+    --dim: #8b919e;
+    --accent: #5b8cff;
+    --accent-soft: rgba(91,140,255,0.12);
+    --green: #5bc47c;
+    --orange: #e8a54b;
+    --red: #e05c5c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.5; height: 100vh; overflow: hidden;
+  }
+
+  .app { display: flex; height: 100vh; }
+
+  /* ===== 左侧导航（编程页默认收起） ===== */
+  .sidebar {
+    width: 56px; background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0;
+    transition: width 0.2s ease; overflow: hidden;
+  }
+  .sidebar.expanded { width: 200px; }
+
+  .sidebar-head {
+    padding: 14px 15px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 9px; min-height: 56px;
+  }
+  .logo-mark {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, #5b8cff, #9b6bff); flex-shrink: 0;
+  }
+  .sidebar-head .title {
+    font-weight: 650; font-size: 14px; white-space: nowrap;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .sidebar.expanded .sidebar-head .title { opacity: 1; }
+
+  .sidebar-nav { flex: 1; padding: 10px 8px; overflow-y: auto; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 11px; border-radius: 8px; font-size: 13.5px;
+    color: var(--dim); cursor: pointer; transition: 0.15s;
+    margin-bottom: 2px; white-space: nowrap;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+  .nav-item .icon { width: 20px; text-align: center; font-size: 15px; flex-shrink: 0; }
+  .nav-item .label { opacity: 0; transition: opacity 0.15s; }
+  .sidebar.expanded .nav-item .label { opacity: 1; }
+
+  .sidebar-foot {
+    padding: 10px 8px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: var(--dim); white-space: nowrap; cursor: pointer;
+  }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, #5b8cff, #9b6bff);
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: #fff; font-weight: 600;
+  }
+  .sidebar-foot .uname { opacity: 0; transition: opacity 0.15s; }
+  .sidebar.expanded .sidebar-foot .uname { opacity: 1; }
+
+  /* ===== 主区 ===== */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+  /* 顶栏：可下拉的题单切换 */
+  .topbar {
+    height: 52px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; flex-shrink: 0; position: relative; z-index: 20;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .collapse-btn {
+    width: 30px; height: 30px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--card);
+    color: var(--dim); cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .collapse-btn:hover { color: var(--text); border-color: #3a4150; }
+
+  /* 题单下拉 */
+  .playlist-select {
+    position: relative; flex-shrink: 0;
+  }
+  .playlist-trigger {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--card);
+    color: var(--text); cursor: pointer; font-size: 13px;
+    transition: 0.15s;
+  }
+  .playlist-trigger:hover { border-color: #3a4150; }
+  .playlist-trigger .arrow { font-size: 10px; color: var(--dim); }
+  .playlist-trigger .name { font-weight: 500; }
+  .playlist-trigger .cnt { font-size: 11px; color: var(--dim); }
+
+  .playlist-dropdown {
+    position: absolute; top: calc(100% + 6px); left: 0;
+    width: 260px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    display: none; overflow: hidden;
+  }
+  .playlist-dropdown.open { display: block; }
+
+  .dd-group {
+    padding: 8px 12px 4px; font-size: 11px; color: #5a6170;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .dd-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; font-size: 13px; color: var(--dim);
+    cursor: pointer; transition: 0.1s;
+  }
+  .dd-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .dd-item.current { color: var(--accent); background: var(--accent-soft); }
+  .dd-item .pid { font-size: 11px; color: #5a6170; font-family: monospace; min-width: 24px; }
+  .dd-item .ptitle { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-item .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .dot.easy { background: var(--green); }
+  .dot.medium { background: var(--orange); }
+  .dot.hard { background: var(--red); }
+
+  .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 13px; border-radius: 7px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--card);
+    color: var(--text); cursor: pointer; transition: 0.15s;
+  }
+  .btn:hover { border-color: #3a4150; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #4a7bf0; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  /* ===== 工作区：题面 + 编辑器 ===== */
+  .workspace { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+  .problem-pane {
+    width: 44%; min-width: 300px;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .problem-pane.collapsed { display: none; }
+
+  .pane-head {
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .pane-head h2 { font-size: 15px; font-weight: 650; }
+  .pane-head .meta {
+    font-size: 12px; color: var(--dim); display: flex; gap: 12px;
+    margin-top: 5px; flex-wrap: wrap;
+  }
+  .pane-body { flex: 1; overflow-y: auto; padding: 20px; }
+  .problem-body { font-size: 14px; color: #c4c8d0; line-height: 1.85; }
+  .problem-body code {
+    background: rgba(255,255,255,0.06); padding: 2px 6px;
+    border-radius: 4px; font-size: 13px; font-family: monospace;
+  }
+  .problem-body h4 { font-size: 13.5px; color: var(--text); margin: 18px 0 8px; }
+  .problem-body pre {
+    background: #0a0c10; border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px; margin: 8px 0;
+    font-size: 12.5px; font-family: monospace; overflow-x: auto;
+  }
+
+  .editor-pane {
+    flex: 1; display: flex; flex-direction: column;
+    background: #0a0c10; min-width: 0;
+  }
+  .editor-head {
+    height: 44px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; flex-shrink: 0; background: var(--panel);
+  }
+  .editor-head-right { display: flex; gap: 8px; }
+  .lang-select {
+    padding: 5px 10px; border-radius: 7px; font-size: 12.5px;
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); outline: none; cursor: pointer;
+  }
+  .editor-body {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: #3a4150; font-size: 13px; font-family: monospace;
+  }
+
+  .output-pane {
+    height: 170px; border-top: 1px solid var(--border);
+    background: var(--panel); display: flex; flex-direction: column;
+    flex-shrink: 0;
+  }
+  .output-head {
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 20px; font-size: 12.5px; color: var(--dim);
+    flex-shrink: 0;
+  }
+  .output-head span { cursor: pointer; padding: 3px 0; }
+  .output-head span.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+  .output-body {
+    flex: 1; padding: 12px 16px; font-size: 12.5px;
+    font-family: monospace; color: var(--dim); overflow-y: auto;
+  }
+
+  .action-bar {
+    height: 52px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; flex-shrink: 0; background: var(--sidebar);
+  }
+  .action-bar-left { display: flex; gap: 8px; }
+  .action-bar-right { display: flex; gap: 8px; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #262b36; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ===== 左侧导航 ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="logo-mark"></div>
+      <span class="title">演练场</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active">
+        <span class="icon">▤</span><span class="label">题目</span>
+      </div>
+      <div class="nav-item">
+        <span class="icon">▷</span><span class="label">提交记录</span>
+      </div>
+      <div class="nav-item">
+        <span class="icon">▥</span><span class="label">题解</span>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="avatar">U</div>
+      <span class="uname">用户名</span>
+    </div>
+  </aside>
+
+  <!-- ===== 主区 ===== -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="collapse-btn" onclick="toggleSidebar()">☰</button>
+
+        <!-- 题单下拉 -->
+        <div class="playlist-select" id="playlistSelect">
+          <div class="playlist-trigger" onclick="toggleDropdown(event)">
+            <span class="name" id="currentPlaylist">面试高频</span>
+            <span class="cnt" id="currentCount">12 题</span>
+            <span class="arrow">▼</span>
+          </div>
+
+          <div class="playlist-dropdown" id="playlistDropdown">
+            <div class="dd-group">面试高频</div>
+            <div class="dd-item current" onclick="pickProblem(this, '01', '两数之和', 'easy')">
+              <span class="pid">01</span><span class="ptitle">两数之和</span><span class="dot easy"></span>
+            </div>
+            <div class="dd-item" onclick="pickProblem(this, '02', '链表反转', 'easy')">
+              <span class="pid">02</span><span class="ptitle">链表反转</span><span class="dot easy"></span>
+            </div>
+            <div class="dd-item" onclick="pickProblem(this, '03', '最大子数组和', 'medium')">
+              <span class="pid">03</span><span class="ptitle">最大子数组和</span><span class="dot medium"></span>
+            </div>
+            <div class="dd-item" onclick="pickProblem(this, '04', '三数之和', 'medium')">
+              <span class="pid">04</span><span class="ptitle">三数之和</span><span class="dot medium"></span>
+            </div>
+            <div class="dd-item" onclick="pickProblem(this, '05', '二叉树层序遍历', 'medium')">
+              <span class="pid">05</span><span class="ptitle">二叉树层序遍历</span><span class="dot medium"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <button class="btn btn-sm" onclick="togglePane()">折叠题面</button>
+        <button class="btn btn-sm">上一题</button>
+        <button class="btn btn-sm">下一题</button>
+      </div>
+    </div>
+
+    <div class="workspace">
+
+      <!-- 左：题面 -->
+      <div class="problem-pane" id="problemPane">
+        <div class="pane-head">
+          <h2 id="problemTitle">01. 两数之和</h2>
+          <div class="meta">
+            <span>通过率 48.5%</span>
+            <span>数组 / 哈希表</span>
+          </div>
+        </div>
+        <div class="pane-body">
+          <div class="problem-body">
+            <p>给定一个整数数组 <code>nums</code> 和一个整数目标值 <code>target</code>，请你在该数组中找出和为目标值 <code>target</code> 的那两个整数，并返回它们的数组下标。</p>
+            <p style="margin-top:12px;">你可以假设每种输入只会对应一个答案，但是数组中同一个元素在答案里不能重复出现。</p>
+
+            <h4>示例 1</h4>
+            <pre>输入：nums = [2,7,11,15], target = 9
+输出：[0,1]</pre>
+
+            <h4>示例 2</h4>
+            <pre>输入：nums = [3,2,4], target = 6
+输出：[1,2]</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：编辑器 + 输出 -->
+      <div class="editor-pane">
+        <div class="editor-head">
+          <select class="lang-select">
+            <option>C++</option>
+            <option>Python</option>
+            <option>Java</option>
+          </select>
+          <div class="editor-head-right">
+            <button class="btn btn-sm">格式化</button>
+            <button class="btn btn-sm">重置</button>
+          </div>
+        </div>
+        <div class="editor-body">
+          // 代码编辑器占位 · 接入 Monaco / CodeMirror
+        </div>
+        <div class="output-pane">
+          <div class="output-head">
+            <span class="active">测试结果</span>
+            <span>运行输出</span>
+          </div>
+          <div class="output-body">点击「运行」或「提交」后，这里会显示判题结果。</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="action-bar">
+      <div class="action-bar-left">
+        <button class="btn btn-sm">自定义测试</button>
+      </div>
+      <div class="action-bar-right">
+        <button class="btn btn-sm">运行</button>
+        <button class="btn btn-primary btn-sm">提交</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('expanded');
+  }
+  function togglePane() {
+    document.getElementById('problemPane').classList.toggle('collapsed');
+  }
+  function toggleDropdown(e) {
+    e.stopPropagation();
+    document.getElementById('playlistDropdown').classList.toggle('open');
+  }
+  function pickProblem(el, pid, title, diff) {
+    document.querySelectorAll('.dd-item').forEach(i => i.classList.remove('current'));
+    el.classList.add('current');
+    document.getElementById('problemTitle').textContent = pid + '. ' + title;
+    document.getElementById('playlistDropdown').classList.remove('open');
+  }
+  // 点击外部关闭下拉
+  document.addEventListener('click', () => {
+    document.getElementById('playlistDropdown').classList.remove('open');
+  });
+</script>
+</body>
+</html>

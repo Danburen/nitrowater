@@ -13,10 +13,20 @@ const router = createRouter({
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
     // The coding playground is a standalone top-level page (global header, no tools sidebar):
     // browse problems and submit for judging, gated by login on the backend.
-    { path: '/playground', name: 'playground', component: () => import('../features/playground/PlaygroundProblems.vue') },
-    // Must precede `/playground/:id` so the literal path is not captured as an id.
-    { path: '/playground/submissions', name: 'playground-submissions', component: () => import('../features/playground/PlaygroundSubmissions.vue') },
-    { path: '/playground/:id', name: 'playground-problem', component: () => import('../features/playground/PlaygroundProblem.vue') },
+    {
+      path: '/playground',
+      component: () => import('../features/playground/PlaygroundLayout.vue'),
+      meta: { layout: 'playground' },
+      children: [
+        { path: '', name: 'playground', component: () => import('../features/playground/PlaygroundProblems.vue') },
+        // Literal paths must precede `:id` so they are not captured as a problem id.
+        { path: 'sets', name: 'playground-sets', component: () => import('../features/playground/PlaygroundSets.vue') },
+        { path: 'sets/:id', name: 'playground-set-detail', component: () => import('../features/playground/PlaygroundSetDetail.vue') },
+        { path: 'square', name: 'playground-square', component: () => import('../features/playground/PlaygroundSquare.vue') },
+        { path: 'submissions', name: 'playground-submissions', component: () => import('../features/playground/PlaygroundSubmissions.vue') },
+        { path: ':id', name: 'playground-problem', component: () => import('../features/playground/PlaygroundProblem.vue') },
+      ],
+    },
     // Admin console: nested layout with its own sidebar (global header hidden). Access is
     // gated by role inside AdminLayout; the resource server enforces ROLE_ADMIN anyway.
     {

@@ -9,7 +9,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { saveAs } from 'file-saver'
 import { useRouter } from 'vue-router'
 import { toast } from '../../../shared/ui/toast'
-import ToolShell from '../ToolShell.vue'
+import PageShell from '../../../shared/ui/PageShell.vue'
 import { getFileIconSVG } from '../lib/fileIcons'
 import {
   countTotalNodes,
@@ -290,7 +290,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <ToolShell
+  <PageShell
     title="列表树可视化"
     desc="将 ├─ └─ │ 缩进树文本渲染为可折叠的 D3 列表，自动识别文件图标与内联注释，可导出 JSON / PNG。"
   >
@@ -460,7 +460,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-  </ToolShell>
+  </PageShell>
 </template>
 
 <style scoped>

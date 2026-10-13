@@ -1,5 +1,6 @@
 package cn.nitrowater.server.infra.entity;
 
+import cn.nitrowater.server.infra.enums.ProblemSetVisibility;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -28,9 +29,17 @@ public class ProblemSet {
     @Column(name = "id", nullable = false)
     private Long id;
 
-    /** Stable key, e.g. {@code hot-100} / {@code interview-150}. */
-    @Column(name = "slug", nullable = false, length = 64)
+    /** Stable key (curated sets only), e.g. {@code hot-100}; {@code null} for user-owned sets. */
+    @Column(name = "slug", length = 64)
     private String slug;
+
+    /** Owner uid for user-owned sets; {@code null} for curated sets (cross-DB logical key, no FK). */
+    @Column(name = "owner_uid")
+    private Long ownerUid;
+
+    /** Visibility; only meaningful for user-owned sets. */
+    @Column(name = "visibility", nullable = false, columnDefinition = "tinyint UNSIGNED")
+    private ProblemSetVisibility visibility = ProblemSetVisibility.PRIVATE;
 
     @Column(name = "name", nullable = false, length = 100)
     private String name;

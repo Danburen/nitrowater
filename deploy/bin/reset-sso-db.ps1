@@ -5,19 +5,30 @@
 # 用法:
 #   .\deploy\bin\reset-sso-db.ps1
 #   .\deploy\bin\reset-sso-db.ps1 -DbPass "yourpass"
+#   .\deploy\bin\reset-sso-db.ps1 -Force        # 跳过 YES 确认（危险！防止误跑）
 # ============================================================
 param(
     [string]$DbHost   = '127.0.0.1',
     [string]$DbName   = 'nitrowater_account',
     [string]$DbUser   = 'root',
     [string]$DbPass   = '123456',
-    [string]$MysqlExe = 'E:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe'
+    [string]$MysqlExe = 'E:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe',
+    [switch]$Force
 )
 
 if (-not (Test-Path -LiteralPath $MysqlExe)) {
     Write-Host "[ERROR] mysql.exe not found: $MysqlExe"
     Write-Host "        pass -MysqlExe <path>"
     exit 1
+}
+
+if (-not $Force) {
+    Write-Host "=== target ===" -ForegroundColor Cyan
+    Write-Host ("  mysql : {0}" -f $MysqlExe)
+    Write-Host ("  db    : {0}  @ {1}  user {2}" -f $DbName, $DbHost, $DbUser)
+    $ans = Read-Host "This DROPS ALL tables in '$DbName' (data loss!). Type YES to continue"
+    if ($ans -ne 'YES') { Write-Host '[ABORT] cancelled. (use -Force to skip this prompt)' -ForegroundColor Yellow; exit 1 }
+    Write-Host ("  confirmed, dropping tables in '{0}' ..." -f $DbName)
 }
 
 $env:MYSQL_PWD = $DbPass
@@ -31,4 +42,4 @@ SET FOREIGN_KEY_CHECKS=1;
 if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] drop failed"; exit 1 }
 
 Write-Host "[OK] SSO tables dropped from '$DbName'."
-Write-Host "     Restart account (IDEA / start-account.bat) -> Flyway rebuilds from V1."
+Write-Host "     Restart account (IDEA / bin\start-account.ps1) -> Flyway rebuilds from V1."

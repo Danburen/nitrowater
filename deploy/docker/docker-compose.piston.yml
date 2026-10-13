@@ -19,6 +19,14 @@ services:
       - "/tmp"                     # 匿名卷（isolate 需要可执行 /tmp）
       - nitrowater-piston:/piston  # 语言包持久化
     environment:
+      # NOTE: container-level LANG/LC_ALL are NOT sufficient by themselves - Piston runs each job
+      # inside an `isolate` sandbox that CLEARS the environment, so the JVM never sees these and
+      # falls back to the ASCII platform charset (CJK source -> U+FFFD, output -> '?').
+      # The real fix is bin/install-piston-langs.ps1, which patches the java package's `run`
+      # script to export a UTF-8 locale + force the JVM encodings. Kept here only for any
+      # non-sandboxed use / to document intent.
+      LANG: "en_US.UTF-8"
+      LC_ALL: "en_US.UTF-8"
       PISTON_RUN_TIMEOUT: "10000"
       PISTON_COMPILE_TIMEOUT: "20000"
       PISTON_RUN_MEMORY_LIMIT: "268435456"
