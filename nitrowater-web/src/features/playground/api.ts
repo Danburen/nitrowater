@@ -129,3 +129,26 @@ export async function getSubmission(id: number): Promise<Submission> {
 export async function listSubmissions(): Promise<Submission[]> {
   return toJson<Submission[]>(await apiFetch('/api/submissions'))
 }
+
+/** Result of a one-off self-test run (`POST /api/sandbox/run`). */
+export interface RunResult {
+  stdout: string | null
+  stderr: string | null
+  /** {@code OK} on success, otherwise {@code CE}/{@code TO}/{@code OL}/{@code RE}/{@code SG}/{@code SE}. */
+  status: string
+  exitCode: number | null
+  wallTimeMs: number | null
+  memoryBytes: number | null
+  message: string | null
+}
+
+/** Runs code once on the backend sandbox (login required) — the "self-test before submit" path. */
+export async function runCode(language: string, code: string, stdin: string): Promise<RunResult> {
+  return toJson<RunResult>(
+    await apiFetch('/api/sandbox/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language, code, stdin }),
+    }),
+  )
+}

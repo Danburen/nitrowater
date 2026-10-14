@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Maps {@link SandboxException} to a JSON error body with the intended HTTP status. */
-@RestControllerAdvice(basePackages = "cn.nitrowater.server.sandbox")
+@RestControllerAdvice(basePackages = "cn.nitrowater.server.web")
 public class SandboxExceptionHandler {
 
     /**

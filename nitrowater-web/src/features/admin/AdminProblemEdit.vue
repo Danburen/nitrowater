@@ -62,6 +62,81 @@ const templatesText = ref('')
 const judgeConfigText = ref('')
 const cases = ref<TestCaseUpsert[]>([])
 
+/** Types the Java function harness understands (keep in sync with JavaHarness.converter). */
+const PARAM_TYPES = [
+  'int',
+  'long',
+  'double',
+  'boolean',
+  'char',
+  'String',
+  'int[]',
+  'long[]',
+  'double[]',
+  'boolean[]',
+  'char[]',
+  'String[]',
+  'int[][]',
+  'List<Integer>',
+  'List<Long>',
+  'List<String>',
+  'List<List<Integer>>',
+  'ListNode',
+  'TreeNode',
+]
+const COMPARE_STRATEGIES = ['JSON', 'EXACT', 'TOKEN', 'LINES']
+
+const isLeetcode = computed(() => form.ioMode === 'LEETCODE')
+const signatureMethod = ref('')
+const signatureReturnType = ref('int[]')
+const signatureParams = ref<{ name: string; type: string }[]>([])
+const compareStrategy = ref('JSON')
+
+function addParam(): void {
+  signatureParams.value.push({ name: `arg${signatureParams.value.length}`, type: 'int' })
+}
+
+function removeParam(index: number): void {
+  signatureParams.value.splice(index, 1)
+}
+
+/** Populate the structured signature editor from the raw judgeConfig text. */
+function readSignatureFromConfig(): void {
+  const config = parseJsonObject<Record<string, unknown>>(judgeConfigText.value, '评测配置')
+  const signature = config?.signature as
+    | { method?: string; returnType?: string; params?: { name?: string; type?: string }[] }
+    | undefined
+  signatureMethod.value = signature?.method ?? ''
+  signatureReturnType.value = signature?.returnType ?? 'int[]'
+  signatureParams.value = (signature?.params ?? []).map((p) => ({
+    name: p.name ?? '',
+    type: p.type ?? 'int',
+  }))
+  compareStrategy.value = typeof config?.compare === 'string' ? config.compare : 'JSON'
+}
+
+/** Merge the structured signature editor into the raw judgeConfig text (LEETCODE mode only). */
+function writeSignatureToConfig(): void {
+  if (!isLeetcode.value) return
+  let config: Record<string, unknown>
+  try {
+    config = parseJsonObject<Record<string, unknown>>(judgeConfigText.value, '评测配置') ?? {}
+  } catch {
+    config = {}
+  }
+  config.compare = compareStrategy.value
+  if (signatureMethod.value.trim()) {
+    config.signature = {
+      method: signatureMethod.value.trim(),
+      returnType: signatureReturnType.value.trim() || 'void',
+      params: signatureParams.value
+        .filter((p) => p.type)
+        .map((p) => ({ name: p.name?.trim() || 'arg', type: p.type })),
+    }
+  }
+  judgeConfigText.value = JSON.stringify(config, null, 2)
+}
+
 function resetForm(): void {
   form.slug = ''
   form.title = ''
@@ -79,6 +154,10 @@ function resetForm(): void {
   templatesText.value = ''
   judgeConfigText.value = ''
   cases.value = []
+  signatureMethod.value = ''
+  signatureReturnType.value = 'int[]'
+  signatureParams.value = []
+  compareStrategy.value = 'JSON'
 }
 
 async function load(): Promise<void> {
@@ -107,6 +186,7 @@ async function load(): Promise<void> {
       selectedSetIds.value = detail.sets.map((s) => s.id)
       templatesText.value = detail.templates ? JSON.stringify(detail.templates, null, 2) : ''
       judgeConfigText.value = detail.judgeConfig ? JSON.stringify(detail.judgeConfig, null, 2) : ''
+      readSignatureFromConfig()
       cases.value = detail.testCases.map((c) => ({
         idx: c.idx,
         stdin: c.stdin ?? '',
@@ -222,6 +302,14 @@ async function saveCases(): Promise<void> {
     casesSaving.value = false
   }
 }
+
+watch(
+  [signatureMethod, signatureReturnType, signatureParams, compareStrategy],
+  () => {
+    writeSignatureToConfig()
+  },
+  { deep: true },
+)
 
 watch(problemId, () => {
   void load()
@@ -436,6 +524,108 @@ onMounted(() => {
                 class="text-[12px] text-faint"
               >暂无题单，请先在「题单」中创建。</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LeetCode function signature -->
+      <div
+        v-if="isLeetcode"
+        class="panel mb-4"
+      >
+        <div class="mb-2 text-sm font-medium text-ink">
+          函数签名（LeetCode 模式）
+        </div>
+        <p class="mb-3 text-[12px] text-faint">
+          用户默认实现 <code>class Solution</code>。「输入」填参数 JSON 对象（如
+          <code>{"nums":[2,7],"target":9}</code>），「期望输出」填返回值 JSON（如
+          <code>[0,1]</code>）。签名会自动写入评测配置。参数类型用于 <b>Java</b> 强类型绑定；
+          <b>Python</b> 按参数名取值（类型忽略）。目前支持 Java/Python 走函数模式，其余语言回退 ACM。
+        </p>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label class="flex flex-col gap-1">
+            <span class="text-[12px] text-dim">方法名 *</span>
+            <input
+              v-model="signatureMethod"
+              class="input"
+              placeholder="twoSum"
+            >
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-[12px] text-dim">返回类型</span>
+            <select
+              v-model="signatureReturnType"
+              class="select"
+            >
+              <option
+                v-for="t in PARAM_TYPES"
+                :key="t"
+                :value="t"
+              >
+                {{ t }}
+              </option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-[12px] text-dim">比较方式</span>
+            <select
+              v-model="compareStrategy"
+              class="select"
+            >
+              <option
+                v-for="c in COMPARE_STRATEGIES"
+                :key="c"
+                :value="c"
+              >
+                {{ c }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div class="mt-3">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-[12px] text-dim">参数（按顺序）</span>
+            <button
+              class="btn"
+              @click="addParam"
+            >
+              添加参数
+            </button>
+          </div>
+          <div
+            v-if="!signatureParams.length"
+            class="text-[12px] text-faint"
+          >
+            无参数（无参方法）。
+          </div>
+          <div
+            v-for="(p, i) in signatureParams"
+            :key="i"
+            class="mb-2 flex items-center gap-2"
+          >
+            <input
+              v-model="p.name"
+              class="input !w-[160px]"
+              placeholder="参数名"
+            >
+            <select
+              v-model="p.type"
+              class="select !w-[180px]"
+            >
+              <option
+                v-for="t in PARAM_TYPES"
+                :key="t"
+                :value="t"
+              >
+                {{ t }}
+              </option>
+            </select>
+            <button
+              class="text-danger hover:underline"
+              @click="removeParam(i)"
+            >
+              移除
+            </button>
           </div>
         </div>
       </div>

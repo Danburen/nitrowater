@@ -67,6 +67,9 @@ app:
     # MUST be <= the Piston container's PISTON_RUN_MEMORY_LIMIT, else Piston rejects the
     # request with 400 ("run_memory_limit cannot exceed the configured limit of ...").
     memory-limit-bytes: 268435456   # 256MB（单位 bytes），与 Piston 上限 / problem 默认 262144KB 对齐
+  # -------- 判题流水线（后台判题线程池）--------
+  judge:
+    workers: 4                      # 并发判题线程数 = 在途沙箱执行数上限（保护 Piston）
 
 
 logging:

@@ -38,6 +38,22 @@ export function statusLabel(status: string | null | undefined): string {
   return STATUSES[status] ?? status
 }
 
+const RUN_STATUSES: Record<string, VerdictMeta> = {
+  OK: { label: '运行成功', color: 'text-[#10b981]' },
+  CE: { label: '编译错误', color: 'text-[#f43f5e]' },
+  TO: { label: '超时', color: 'text-[#f59e0b]' },
+  OL: { label: '输出超限', color: 'text-[#f59e0b]' },
+  RE: { label: '运行错误', color: 'text-[#f43f5e]' },
+  SG: { label: '运行错误', color: 'text-[#f43f5e]' },
+  SE: { label: '系统错误', color: 'text-[#a855f7]' },
+}
+
+/** Maps a self-test run status (`RunResponse.status`) to display text/color. */
+export function runStatusMeta(status: string | null | undefined): VerdictMeta {
+  if (!status) return { label: '-', color: 'text-dim' }
+  return RUN_STATUSES[status] ?? { label: status, color: 'text-dim' }
+}
+
 const DIFFICULTIES: Record<string, { label: string; color: string }> = {
   EASY: { label: '简单', color: 'text-[#10b981]' },
   MEDIUM: { label: '中等', color: 'text-[#f59e0b]' },

@@ -18,6 +18,8 @@ import cn.nitrowater.server.infra.repository.SubmissionRepository;
 import cn.nitrowater.server.infra.repository.UserPointLogRepository;
 import cn.nitrowater.server.infra.repository.UserProblemStatusRepository;
 import cn.nitrowater.server.infra.third.PistonClient;
+import cn.nitrowater.server.service.judge.harness.JavaHarness;
+import cn.nitrowater.server.service.judge.harness.PythonHarness;
 import cn.nitrowater.server.service.shared.ExecResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -69,7 +71,7 @@ class JudgeServiceTest {
         SandboxProperties sandbox = new SandboxProperties(
                 "http://localhost:2000", 2000, 15000, 65536, 8, 20000, 60, 10000, 268435456L);
         return new JudgeService(submissions, problems, testCases, users, userProblemStatus,
-                pointLogs, pistonClient, sandbox, tx);
+                pointLogs, pistonClient, sandbox, List.of(new JavaHarness(), new PythonHarness()), tx);
     }
 
     /** A fresh queued submission whose score starts at zero (mirrors the pre-judge DB row). */

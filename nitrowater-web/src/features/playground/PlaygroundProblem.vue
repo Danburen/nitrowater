@@ -13,8 +13,8 @@ import { Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { useAuth } from '../../auth/useAuth'
 import { RUNNER_LANGUAGES, isRunnerLanguage, type RunnerLanguageId } from '../tools/code-runner/langCatalog'
 import CodeEditor from '../tools/code-runner/CodeEditor.vue'
-import { createSubmission, getProblem, getSubmission, type ProblemDetail, type Submission } from './api'
-import { difficultyMeta, statusLabel, verdictMeta } from './labels'
+import { createSubmission, getProblem, getSubmission, runCode, type ProblemDetail, type RunResult, type Submission } from './api'
+import { difficultyMeta, runStatusMeta, statusLabel, verdictMeta } from './labels'
 import PageShell from '../../shared/ui/PageShell.vue'
 
 const route = useRoute()
@@ -33,6 +33,11 @@ const submitting = ref(false)
 const submission = ref<Submission | null>(null)
 const submitError = ref('')
 
+/** Self-test run (against the first sample case) — the "run before submit" path. */
+const running = ref(false)
+const runResult = ref<RunResult | null>(null)
+const runError = ref('')
+
 /** Panel collapse state — collapsed panels shrink to their title bar and others absorb the space. */
 const showStatement = ref(true)
 const showCode = ref(true)
@@ -44,6 +49,9 @@ const title = computed(() => problem.value?.title || '题目')
 
 /** Rendered markdown statement (admin-authored). */
 const statementHtml = computed(() => (problem.value ? marked.parse(problem.value.description) : ''))
+
+/** The first sample case drives the self-test run. */
+const sampleCase = computed(() => problem.value?.sampleCases?.[0] ?? null)
 
 function resetCode(): void {
   code.value = defaultCodeFor(languageId.value)
@@ -90,6 +98,24 @@ async function submit(): Promise<void> {
   }
 }
 
+async function runSample(): Promise<void> {
+  if (running.value || !problem.value) return
+  if (!session.value?.authenticated) {
+    login(`/playground/${problem.value.id}`)
+    return
+  }
+  running.value = true
+  runError.value = ''
+  runResult.value = null
+  try {
+    runResult.value = await runCode(languageId.value, code.value, sampleCase.value?.stdin ?? '')
+  } catch (e) {
+    runError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    running.value = false
+  }
+}
+
 async function loadProblem(): Promise<void> {
   loadError.value = ''
   problem.value = null
@@ -107,6 +133,8 @@ watch(
   () => {
     submission.value = null
     submitError.value = ''
+    runResult.value = null
+    runError.value = ''
     void loadProblem()
   },
   { immediate: true },
@@ -284,16 +312,31 @@ onBeforeUnmount(() => {
                 />
               </el-tooltip>
               <el-button
+                size="small"
+                class="shrink-0"
+                :disabled="running || submitting"
+                @click="runSample"
+              >
+                {{ running ? '运行中…' : '运行样例' }}
+              </el-button>
+              <el-button
                 type="primary"
                 size="small"
                 class="shrink-0"
-                :disabled="submitting"
+                :disabled="submitting || running"
                 @click="submit"
               >
                 {{ submitting ? '评测中…' : '提交评测' }}
               </el-button>
             </template>
           </div>
+
+          <p
+            v-show="showCode"
+            class="mt-2 text-[11px] text-faint"
+          >
+            建议先「运行样例」确认输出无误，再「提交评测」；提交后仅展示评测结论，不展示用例详情。
+          </p>
 
           <div
             v-show="showCode"
@@ -303,6 +346,53 @@ onBeforeUnmount(() => {
               v-model="code"
               :language="languageId"
             />
+          </div>
+
+          <!-- Self-test run output (full detail — the submission path hides detail on purpose) -->
+          <div
+            v-if="showCode && (runResult || runError)"
+            class="mt-3 rounded-md border border-line bg-soft p-2"
+          >
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+              <span class="font-medium text-ink">运行样例</span>
+              <span
+                v-if="runError"
+                class="text-[#f43f5e]"
+              >{{ runError }}</span>
+              <template v-else-if="runResult">
+                <span :class="runStatusMeta(runResult.status).color">{{ runStatusMeta(runResult.status).label }}</span>
+                <span
+                  v-if="runResult.wallTimeMs != null"
+                  class="text-faint"
+                >{{ runResult.wallTimeMs }} ms</span>
+                <span
+                  v-if="sampleCase"
+                  class="ml-auto text-faint"
+                >期望输出：<span class="font-mono text-ink">{{ sampleCase.expectedOutput }}</span></span>
+              </template>
+            </div>
+            <template v-if="runResult">
+              <pre
+                v-if="runResult.stdout"
+                class="m-0 mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-ink"
+              >{{ runResult.stdout }}</pre>
+              <pre
+                v-if="runResult.stderr"
+                class="m-0 mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
+              >{{ runResult.stderr }}</pre>
+              <div
+                v-if="!runResult.stdout && !runResult.stderr"
+                class="mt-1 text-[11px] text-faint"
+              >
+                （无输出）
+              </div>
+              <div
+                v-if="runResult.message"
+                class="mt-1 text-[11px] text-faint"
+              >
+                {{ runResult.message }}
+              </div>
+            </template>
           </div>
         </div>
 
@@ -378,57 +468,6 @@ onBeforeUnmount(() => {
               >
                 {{ submission.compileMessage }}
               </div>
-
-              <table
-                v-if="submission.cases.length"
-                class="mt-2 w-full text-left"
-              >
-                <thead>
-                  <tr class="text-[11px] text-faint">
-                    <th class="py-1 pr-3 font-normal">
-                      #
-                    </th>
-                    <th class="py-1 pr-3 font-normal">
-                      结果
-                    </th>
-                    <th class="py-1 pr-3 font-normal">
-                      用时
-                    </th>
-                    <th class="py-1 pr-3 font-normal">
-                      内存
-                    </th>
-                    <th class="py-1 font-normal">
-                      备注
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="c in submission.cases"
-                    :key="c.index"
-                    class="border-t border-line text-[12px]"
-                  >
-                    <td class="py-1 pr-3 text-dim">
-                      {{ c.index + 1 }}
-                    </td>
-                    <td
-                      class="py-1 pr-3 font-medium"
-                      :class="verdictMeta(c.verdict)?.color"
-                    >
-                      {{ verdictMeta(c.verdict)?.label }}
-                    </td>
-                    <td class="py-1 pr-3 text-dim">
-                      {{ c.timeMs }} ms
-                    </td>
-                    <td class="py-1 pr-3 text-dim">
-                      {{ Math.round(c.memoryKb / 1024) }} MB
-                    </td>
-                    <td class="py-1 text-faint">
-                      {{ c.message || '-' }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
             </template>
           </div>
         </div>

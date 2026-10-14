@@ -5,8 +5,10 @@ import cn.nitrowater.server.infra.third.PistonClient;
 import cn.nitrowater.server.infra.exception.SandboxException;
 import cn.nitrowater.server.web.dto.RunRequest;
 import cn.nitrowater.server.web.dto.RunResponse;
+import cn.nitrowater.server.service.shared.CompileErrors;
 import cn.nitrowater.server.service.shared.ExecResult;
 import cn.nitrowater.server.service.shared.ExecSpec;
+import cn.nitrowater.server.service.shared.LanguagePrelude;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -49,11 +51,12 @@ public class SandboxService {
                     "Code exceeds the maximum size of " + properties.maxCodeBytes() + " bytes");
         }
 
+        // The prelude lets callers skip boilerplate imports (mirrors online judges).
         ExecSpec spec = new ExecSpec(
                 target.pistonLanguage(),
                 target.version(),
                 target.fileName(),
-                request.code(),
+                LanguagePrelude.wrap(target.pistonLanguage(), request.code()),
                 request.stdin() == null ? "" : request.stdin(),
                 properties.compileTimeoutMs(),
                 properties.runTimeoutMs(),
@@ -71,17 +74,26 @@ public class SandboxService {
                     ex.getResponseBodyAsString());
         }
 
-        return toResponse(result);
+        return toResponse(target.pistonLanguage(), result);
     }
 
-    /** Collapses the Piston compile/run stages into a single front-end response. */
-    private static RunResponse toResponse(ExecResult result) {
-        ExecResult.Stage compile = result.compile();
-        if (compile != null && compile.code() != null && compile.code() != 0) {
-            return new RunResponse(null, compile.stderr(), "CE", compile.code(),
-                    compile.wallTimeMs(), compile.memoryBytes(), compile.message());
+    /**
+     * Collapses the Piston compile/run stages into a single front-end response.
+     *
+     * <p>Compile failures are recognised through {@link CompileErrors} so languages without a
+     * dedicated compile stage (Java, Python) still surface {@code CE} with the compiler output,
+     * instead of masquerading as a runtime error.</p>
+     */
+    private static RunResponse toResponse(String pistonLanguage, ExecResult result) {
+        String diagnostic = CompileErrors.diagnostic(pistonLanguage, result);
+        if (diagnostic != null) {
+            ExecResult.Stage compile = result.compile() != null ? result.compile() : result.run();
+            Long wallTime = compile == null ? null : compile.wallTimeMs();
+            Long memory = compile == null ? null : compile.memoryBytes();
+            Integer exitCode = compile == null ? null : compile.code();
+            return new RunResponse(null, diagnostic, "CE", exitCode, wallTime, memory, "compilation failed");
         }
-        ExecResult.Stage run = result.run() != null ? result.run() : compile;
+        ExecResult.Stage run = result.run() != null ? result.run() : result.compile();
         if (run == null) {
             return new RunResponse(null, null, "SE", null, null, null, "No execution result returned");
         }
