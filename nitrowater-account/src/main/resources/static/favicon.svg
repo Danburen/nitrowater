@@ -1,0 +1,17 @@
+<svg width="60.00000000000001" height="60.00000000000001" xmlns="http://www.w3.org/2000/svg">
+ <defs>
+  <filter id="svg_2_blur">
+   <feGaussianBlur stdDeviation="0" in="SourceGraphic"/>
+  </filter>
+  <linearGradient spreadMethod="pad" y2="100%" x2="80%" y1="0%" x1="20%" id="svg_9">
+   <stop stop-opacity="0.98047" stop-color="#4fb5ff" offset="0.15234"/>
+   <stop stop-opacity="0.98047" stop-color="#4000b7" offset="0.84375"/>
+  </linearGradient>
+ </defs>
+ <!-- 更标准的水滴形 -->
+ <g>
+  <title>Layer 1</title>
+  <path stroke="null" id="svg_1" fill="url(#svg_9)" d="m30.15686,0c0,0 -28.98039,23.97481 -28.98039,38.35969c0,11.9874 12.93768,20.77817 28.98039,20.77817c16.04272,0 28.98039,-8.79076 28.98039,-20.77817c0,-14.38488 -28.98039,-38.35969 -28.98039,-38.35969z"/>
+  <text stroke-width="2" font-style="italic" font-weight="bold" filter="url(#svg_2_blur)" xml:space="preserve" text-anchor="start" font-family="'Open Sans'" font-size="44" id="svg_2" y="49.96078" x="7.52941" fill="#f2f2f2">N</text>
+ </g>
+</svg>

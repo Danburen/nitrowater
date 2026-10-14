@@ -40,12 +40,19 @@ const POST_LOGIN_KEY = 'nitrowater:post-login'
  * sessionStorage and consumed by {@link consumePostLogin} once the SPA sees an authenticated
  * session — no BFF protocol change needed.
  *
- * @param returnTo in-app path to navigate to after login (e.g. {@code /playground})
+ * <p>The key is ALWAYS (over)written: with no explicit {@code returnTo} we fall back to the page
+ * the user is currently on. Leaving a previous value in place would resume a stale destination —
+ * e.g. logging in from the code-runner after an earlier visit to {@code /admin} would land on the
+ * (unauthorized) admin console instead of coming back to the tool.</p>
+ *
+ * @param returnTo in-app path to navigate to after login (e.g. {@code /playground}); defaults to
+ *                 the current in-app location
  */
 export function login(returnTo?: string): void {
-  if (returnTo && returnTo.startsWith('/')) {
-    sessionStorage.setItem(POST_LOGIN_KEY, returnTo)
-  }
+  const target = returnTo && returnTo.startsWith('/')
+    ? returnTo
+    : window.location.pathname + window.location.search
+  sessionStorage.setItem(POST_LOGIN_KEY, target)
   window.location.assign('/oauth2/authorization/nitrowater')
 }
 

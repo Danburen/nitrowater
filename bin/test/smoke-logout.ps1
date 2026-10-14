@@ -11,7 +11,7 @@ and redirects back. Then it asserts:
   4. the upstream refresh token is revoked             -> refresh_token grant answered 400 (optional)
 
 Prereq:
-  - account (:8090) + bff (:8080) running; a test account exists (default smokeuser1 / Passw0rd!)
+  - account (:8090) + bff (:8080) running; a test account exists (default testuser1 / Passw0rd123)
   - captcha: pass -Captcha, or -RedisCli to read it from Redis automatically, else it is prompted.
 
 Usage:
@@ -22,8 +22,8 @@ Usage:
 param(
   [string]$Bff = 'http://localhost:8080',
   [string]$As = 'http://localhost:8090',
-  [string]$Username = 'smokeuser1',
-  [string]$Password = 'Passw0rd!',
+  [string]$Username = 'testuser1',
+  [string]$Password = 'Passw0rd123',
   [string]$DeviceFp = 'smokelogoutdev0001',
   [string]$Captcha,
   [string]$RedisCli,

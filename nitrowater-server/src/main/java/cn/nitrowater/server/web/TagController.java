@@ -1,6 +1,7 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.service.problem.TagService;
+import cn.nitrowater.server.web.admin.AdminTagController;
 import cn.nitrowater.server.web.dto.TagResp;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;

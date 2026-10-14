@@ -5,7 +5,9 @@ import globals from 'globals'
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', '**/*.d.ts'],
+    // `public/**` (favicons and other verbatim static assets) is copied into the build as-is;
+    // never lint it.
+    ignores: ['dist/**', 'node_modules/**', 'public/**', '**/*.d.ts'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

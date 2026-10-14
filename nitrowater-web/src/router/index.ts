@@ -10,6 +10,17 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    // Plugin center: nested layout with its own sidebar (plugin list + search box); the selected
+    // plugin's single-page 说明 renders in the content area (global header hidden there).
+    {
+      path: '/plugins',
+      component: () => import('../features/plugins/PluginsLayout.vue'),
+      meta: { layout: 'plugins' },
+      children: [
+        { path: '', name: 'plugins', component: () => import('../features/plugins/PluginsOverview.vue') },
+        { path: ':key', name: 'plugin-detail', component: () => import('../features/plugins/PluginDetailView.vue') },
+      ],
+    },
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
     // The coding playground is a standalone top-level page (global header, no tools sidebar):
     // browse problems and submit for judging, gated by login on the backend.

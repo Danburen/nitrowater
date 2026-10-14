@@ -6,7 +6,7 @@ Flow: OIDC login -> POST /api/resource/upload/policy -> upload bytes (presigned 
 
 Prereq:
   - account (:8090) + bff (:8080) + resource (:8093) + SeaweedFS (:8333) running;
-    a test account exists (default smokeuser1 / Passw0rd!).
+    a test account exists (default testuser1 / Passw0rd123).
   - captcha: pass -Captcha, or -RedisCli to read it from Redis automatically, else it is prompted.
 
 Usage:
@@ -16,8 +16,8 @@ Usage:
 param(
   [string]$Bff = 'http://localhost:8080',
   [string]$As = 'http://localhost:8090',
-  [string]$Username = 'smokeuser1',
-  [string]$Password = 'Passw0rd!',
+  [string]$Username = 'testuser1',
+  [string]$Password = 'Passw0rd123',
   [string]$DeviceFp = 'smokeresourcedev0001',
   [string]$Captcha,
   [string]$RedisCli,

@@ -29,8 +29,10 @@ const nav = computed<NavItem[]>(() => {
   const items: NavItem[] = [
     { to: '/tools', label: '工具箱' },
     { to: '/playground', label: '演练场' },
-    { id: 'docs', label: '文档' },
-    { id: 'servers', label: '服务器' },
+    { to: '/plugins', label: '插件中心' },
+    // 文档 / 服务器 入口暂缓：托管的文档后续再独立分开，入口统一走「插件中心」；服务器列表功能未开发。
+    // { id: 'docs', label: '文档' },
+    // { id: 'servers', label: '服务器' },
     { to: '/about', label: '关于' },
   ]
   if (isAdmin.value) items.push({ to: '/admin', label: '管理' })
@@ -58,7 +60,11 @@ async function onNav(item: NavItem): Promise<void> {
         to="/"
         class="flex shrink-0 items-center gap-2.5 text-base font-semibold text-ink"
       >
-        <span class="size-[26px] rounded-lg bg-gradient-to-br from-accent to-accent-2" />
+        <img
+          src="/favicon.svg"
+          alt=""
+          class="size-[26px] shrink-0"
+        >
         <span>NitroWater</span>
       </router-link>
 

@@ -77,6 +77,10 @@ export default defineConfig({
       '/oauth2': { target: 'http://localhost:8080' },
       '/login': { target: 'http://localhost:8080' },
       '/logout': { target: 'http://localhost:8080' },
+      // Plugin docs are served by the BFF from the deploy-owned dir (deploy/plugin-docs) under the
+      // /plugin/<name>/ namespace; proxy so /plugin/velochatx/ resolves in dev too. (In the built
+      // SPA the BFF serves it directly.)
+      '/plugin': { target: 'http://localhost:8080' },
     },
   },
 })

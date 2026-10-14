@@ -105,6 +105,11 @@ services:
       BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:-nitrowater-bff-secret}
     depends_on:
       - account
+    volumes:
+      # Plugin docs & download resources are independently built & published here
+      # (see deploy/plugin-docs/README.md); the BFF serves /plugin/<name>/** (e.g.
+      # /plugin/velochatx/docs/** and /plugin/velochatx/res/**) from this read-only mount.
+      - ../plugin-docs:/app/deploy/plugin-docs:ro
     mem_limit: 512m
     restart: unless-stopped
     networks:

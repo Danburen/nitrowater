@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
@@ -51,6 +52,8 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
+import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -102,7 +105,8 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
-            @Qualifier("corsConfigurationSource") CorsConfigurationSource cors)
+            @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
+            RequestCache requestCache)
             throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
                 new OAuth2AuthorizationServerConfigurer();
@@ -110,6 +114,7 @@ public class AuthorizationServerConfig {
         http
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
                 .with(authorizationServerConfigurer, (as) -> as.oidc(Customizer.withDefaults()))
+                .requestCache(c -> c.requestCache(requestCache))
                 .cors(c -> c.configurationSource(cors))
                 .csrf(csrf -> csrf.ignoringRequestMatchers(authorizationServerConfigurer.getEndpointsMatcher()))
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated())
@@ -122,12 +127,14 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
-            @Qualifier("corsConfigurationSource") CorsConfigurationSource cors)
+            @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
+            RequestCache requestCache)
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
         csrfRequestHandler.setCsrfRequestAttributeName("_csrf");
 
         http
+                .requestCache(c -> c.requestCache(requestCache))
                 .cors(c -> c.configurationSource(cors))
                 // CSRF: the admin console's data API (/api/admin/**) is cookie-authenticated, so it
                 // must present the token echoed from the readable XSRF-TOKEN cookie. The SSO pages
@@ -137,9 +144,13 @@ public class AuthorizationServerConfig {
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(csrfRequestHandler)
                         .ignoringRequestMatchers(
-                                "/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico"))
+                                "/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico",
+                                "/favicon.svg", "/admin/favicon.svg"))
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico")
+                        // Brand favicon is public everywhere: /favicon.svg (login/register/error pages)
+                        // and /admin/favicon.svg (the admin SPA, emitted under the /admin/ Vite base).
+                        .requestMatchers("/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico",
+                                "/favicon.svg", "/admin/favicon.svg")
                         .permitAll()
                         // Admin console SPA shell (static files + hashed bundles). Requiring a
                         // session here means an anonymous hit is 302'd to /login (SavedRequest),
@@ -168,6 +179,34 @@ public class AuthorizationServerConfig {
                         }))
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * Request cache backing the form-login "saved request" redirect (and therefore the
+     * {@code ?continue} resume the browser performs after login).
+     *
+     * <p>Only <em>top-level browser navigations</em> are cached — i.e. document requests whose
+     * {@code Accept} header asks for {@code text/html}. Sub-resources and background probes are not
+     * navigations, yet while anonymous they still run through {@code ExceptionTranslationFilter},
+     * which caches them as the pending request. Because the cache stores a single saved request,
+     * such a probe would OVERWRITE the pending OIDC {@code /oauth2/authorize} request: the success
+     * handler would then send the browser to the probe after login instead of resuming the
+     * authorization, leaving the user stuck on a {@code ...?continue} URL. A real offender is
+     * Chrome DevTools' automatic {@code /.well-known/appspecific/com.chrome.devtools.json} fetch
+     * (the login page's own favicon is now served publicly at {@code /favicon.svg}).</p>
+     *
+     * <p>This is required because the default {@link HttpSessionRequestCache} caches
+     * <em>every</em> unauthenticated request (its {@code matchingRequestParameterName} is the
+     * {@code continue} query the client sees).</p>
+     */
+    @Bean
+    public RequestCache requestCache() {
+        HttpSessionRequestCache requestCache = new HttpSessionRequestCache();
+        requestCache.setRequestMatcher(request -> {
+            String accept = request.getHeader(HttpHeaders.ACCEPT);
+            return accept != null && accept.contains(MediaType.TEXT_HTML_VALUE);
+        });
+        return requestCache;
     }
 
     /**

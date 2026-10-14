@@ -107,7 +107,11 @@ function active(to: string): boolean {
           title="返回门户"
           aria-label="返回门户"
         >
-          <span class="size-[26px] shrink-0 rounded-lg bg-gradient-to-br from-accent to-accent-2" />
+          <img
+            src="/favicon.svg"
+            alt=""
+            class="size-[26px] shrink-0"
+          >
           <span
             v-if="!collapsed"
             class="truncate text-sm font-semibold text-ink"
@@ -134,6 +138,14 @@ function active(to: string): boolean {
             <path :d="collapsed ? 'M9 5l7 7-7 7' : 'M15 5l-7 7 7 7'" />
           </svg>
         </button>
+      </div>
+
+      <!-- Optional per-section extra (e.g. the plugin center's search box); hidden when collapsed. -->
+      <div
+        v-if="!collapsed && $slots['sidebar-extra']"
+        class="shrink-0 px-3 pt-3"
+      >
+        <slot name="sidebar-extra" />
       </div>
 
       <nav class="min-h-0 flex-1 overflow-y-auto p-2">

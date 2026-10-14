@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../auth/useAuth'
+import { plugins } from '../features/plugins/catalog'
 import { readyTools } from '../features/tools/catalog'
 
 const router = useRouter()
@@ -16,19 +17,21 @@ const toolList = readyTools
 
 const playgroundLangs = ['C++', 'Python', 'Java']
 
-const docs = [
-  { key: 'arch', title: '项目工程文档', sub: '架构说明 · 部署指南 · API 参考' },
-  { key: 'plugin', title: '插件使用说明', sub: '安装 · 配置 · 常见问题' },
-  { key: 'notes', title: '开发笔记', sub: '更新日志 · 踩坑记录' },
-  { key: 'changelog', title: '更新日志', sub: '版本历史与变更说明' },
-]
+// 文档入口暂缓：托管的文档后续再独立分开，入口统一走「插件中心」。
+// const docs: { key: string; title: string; sub: string; to?: string; href?: string }[] = [
+//   { key: 'arch', title: '项目工程文档', sub: '架构说明 · 部署指南 · API 参考' },
+//   { key: 'plugin', title: '插件中心', sub: '插件说明 · 下载 · 提交', to: '/plugins' },
+//   { key: 'notes', title: '开发笔记', sub: '更新日志 · 踩坑记录' },
+//   { key: 'changelog', title: '更新日志', sub: '版本历史与变更说明' },
+// ]
 
-/** 服务器列表（示例数据，图片占位同源）。 */
+/* 服务器列表暂缓：功能尚未开发，先不展示（示例数据留待后续，解除注释即恢复）。
 const servers = [
   { key: 's1', name: '生存服 · 示例一', img: `${PICS}/nw-mc-survival/120/120`, meta: ['Java 1.20', '生存 / 建筑'], online: true, status: '在线 · 12 人' },
   { key: 's2', name: '模组服 · 示例二', img: `${PICS}/nw-mc-mod/120/120`, meta: ['Forge 1.19', '科技 / 冒险'], online: false, status: '离线' },
   { key: 's3', name: '小游戏服 · 示例三', img: `${PICS}/nw-mc-mini/120/120`, meta: ['Paper 1.20', '起床战争 / 空岛'], online: true, status: '在线 · 8 人' },
 ]
+*/
 
 const REPO = {
   github: 'https://github.com/danburen/nitrowater',
@@ -50,14 +53,14 @@ function enterPlayground(): void {
       <!-- ===== Hero ===== -->
       <section class="py-[72px] pb-12 text-center">
         <div class="mb-5 inline-block rounded-full border border-accent/25 bg-accent/10 px-3 py-[5px] text-[12.5px] text-accent">
-          匿名工具箱 · 在线演练场 · 插件文档 · 服务器列表
+          匿名工具箱 · 在线演练场 · 插件中心
         </div>
         <h1 class="mb-4 text-[40px] font-bold leading-tight tracking-tight">
           一个站点，装下你的<br>
-          <span class="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">工具、代码与服务器</span>
+          <span class="bg-gradient-to-br from-accent to-accent-2 bg-clip-text text-transparent">工具、代码与插件</span>
         </h1>
         <p class="mx-auto mb-7 max-w-[560px] text-base text-dim">
-          匿名即可使用在线工具箱；登录后进入 ACM 模式编程演练场；工程文档、插件说明与服务器列表集中在这里。
+          匿名即可使用在线工具箱；登录后进入 ACM 模式编程演练场；插件说明与下载统一在插件中心。
         </p>
         <div class="flex flex-wrap justify-center gap-3">
           <router-link
@@ -179,43 +182,74 @@ function enterPlayground(): void {
         </div>
       </section>
 
-      <!-- ===== 文档中心 ===== -->
+      <!-- ===== 插件中心 ===== -->
       <section
-        id="docs"
+        id="plugins"
         class="py-10"
       >
         <div class="section-head">
           <div>
             <h2 class="text-[21px] font-semibold tracking-tight">
-              文档中心
+              插件中心
             </h2>
             <p class="mt-1 text-[13.5px] text-dim">
-              工程文档与插件说明
+              插件说明 · 下载 · 提交
             </p>
           </div>
-          <a
-            href="#docs"
+          <router-link
+            to="/plugins"
             class="text-[13.5px] text-accent"
-          >全部文档 →</a>
+          >
+            进入插件中心 →
+          </router-link>
         </div>
 
-        <div class="grid gap-3 grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
-          <a
-            v-for="doc in docs"
-            :key="doc.key"
-            href="#docs"
-            class="flex items-center gap-3 rounded-[11px] border border-line bg-card px-4 py-3.5 transition hover:border-line-strong"
+        <div class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
+          <router-link
+            v-for="p in plugins"
+            :key="p.key"
+            :to="`/plugins/${p.key}`"
+            class="flex flex-col gap-2.5 rounded-[14px] border border-line bg-card p-[18px] transition hover:-translate-y-0.5 hover:border-line-strong"
           >
-            <span class="size-2 shrink-0 rounded-full bg-accent" />
-            <span>
-              <span class="block text-sm font-medium">{{ doc.title }}</span>
-              <span class="block text-[12.5px] text-dim">{{ doc.sub }}</span>
-            </span>
-          </a>
+            <div class="flex items-center gap-3">
+              <span class="grid size-[38px] shrink-0 place-items-center rounded-[10px] border border-accent/25 bg-gradient-to-br from-accent/15 to-accent-2/15 text-accent">
+                <svg
+                  class="size-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path :d="p.icon" />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <h3 class="truncate text-[15px] font-semibold">
+                  {{ p.name }}
+                </h3>
+                <p class="truncate text-[12.5px] text-dim">
+                  {{ p.tagline }}
+                </p>
+              </div>
+            </div>
+            <p class="text-[13px] leading-relaxed text-dim">
+              {{ p.desc }}
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <span
+                v-for="t in p.tags"
+                :key="t"
+                class="tag"
+              >{{ t }}</span>
+            </div>
+          </router-link>
         </div>
       </section>
 
-      <!-- ===== 服务器列表 ===== -->
+      <!-- 服务器列表暂缓：功能尚未开发，先不展示（解除注释即恢复）。
+      ===== 服务器列表 =====
       <section
         id="servers"
         class="py-10"
@@ -285,10 +319,11 @@ function enterPlayground(): void {
           >提交服务器</a>
         </div>
       </section>
+      -->
 
       <!-- ===== Footer ===== -->
       <footer class="mt-14 flex flex-wrap justify-between gap-3 border-t border-line py-7 text-[13px] text-dim">
-        <div>© 2026 NitroWater · 工具 / 演练场 / 文档 / 服务器</div>
+        <div>© 2026 NitroWater · 工具 / 演练场 / 插件</div>
         <div class="flex gap-[18px]">
           <router-link
             to="/about"

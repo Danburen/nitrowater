@@ -18,7 +18,7 @@ import cn.nitrowater.server.infra.repository.ProblemSetRepository;
 import cn.nitrowater.server.infra.repository.ProblemTagRepository;
 import cn.nitrowater.server.infra.repository.ProblemTestCaseRepository;
 import cn.nitrowater.server.infra.repository.TagRepository;
-import cn.nitrowater.server.web.dto.AdminProblemDetailResp;
+import cn.nitrowater.server.web.dto.admin.AdminProblemDetailResp;
 import cn.nitrowater.server.web.dto.ProblemDetailResp;
 import cn.nitrowater.server.web.dto.ProblemSetBriefResp;
 import cn.nitrowater.server.web.dto.ProblemSummaryResp;

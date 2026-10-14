@@ -90,3 +90,7 @@ deploy/config/common-dev-secrets.yml
 !deploy/bin/**
 # Runtime state written by the launch scripts (window PIDs) - never tracked.
 bin/.run/
+
+# Plugin docs are independently built & published artifacts (one sub-dir per plugin, synced by the
+# docs repo's pipeline) - not source. Keep deploy/plugin-docs/README.md (the mount<->base contract).
+/deploy/plugin-docs/*/

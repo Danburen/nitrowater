@@ -9,14 +9,14 @@
 #
 # 用法：
 #   .\bin\test\smoke-auth.ps1
-#   .\bin\test\smoke-auth.ps1 -Base http://localhost:8090 -Phone 13800000001 -Username smokeuser1
+#   .\bin\test\smoke-auth.ps1 -Base http://localhost:8090 -Phone 13800000001 -Username testuser1
 # ============================================================
 
 param(
     [string]$Base = 'http://localhost:8090',
     [string]$Phone = '13800000001',
-    [string]$Username = 'smokeuser1',
-    [string]$Password = 'Passw0rd!',
+    [string]$Username = 'testuser1',
+    [string]$Password = 'Passw0rd123',
     [string]$DeviceFp = 'smoketestdevice0001'
 )
 

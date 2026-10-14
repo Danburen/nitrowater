@@ -1,4 +1,4 @@
-package cn.nitrowater.server.web;
+package cn.nitrowater.server.web.admin;
 
 import cn.nitrowater.server.infra.enums.EditorialStatus;
 import cn.nitrowater.server.service.BizUserService;

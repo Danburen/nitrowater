@@ -1,4 +1,9 @@
-package cn.nitrowater.server.web.dto;
+package cn.nitrowater.server.web.dto.admin;
+
+import cn.nitrowater.server.web.dto.ProblemDetailResp;
+import cn.nitrowater.server.web.dto.ProblemSetBriefResp;
+import cn.nitrowater.server.web.dto.TagResp;
+import cn.nitrowater.server.web.dto.TestCaseResp;
 
 import java.util.List;
 import java.util.Map;

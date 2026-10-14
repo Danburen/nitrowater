@@ -8,10 +8,10 @@ import ToastHost from './shared/ui/ToastHost.vue'
 const route = useRoute()
 const router = useRouter()
 const { session, consumePostLogin } = useAuth()
-/** The tools and admin areas render their own shells — no global header there. */
+/** The tools / playground / admin / plugins areas render their own shells — no global header there. */
 const showHeader = computed(() => {
   const layout = route.meta.layout
-  return layout !== 'tools' && layout !== 'admin' && layout !== 'playground'
+  return layout !== 'tools' && layout !== 'admin' && layout !== 'playground' && layout !== 'plugins'
 })
 
 // Resume the page the user intended before logging in (e.g. from home's "进入演练场").

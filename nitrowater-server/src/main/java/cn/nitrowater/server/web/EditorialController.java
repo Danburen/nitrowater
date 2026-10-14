@@ -1,6 +1,7 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.service.problem.EditorialService;
+import cn.nitrowater.server.web.admin.AdminEditorialController;
 import cn.nitrowater.server.web.dto.EditorialDetailResp;
 import cn.nitrowater.server.web.dto.EditorialSummaryResp;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -57,7 +57,11 @@ function logout(): void {
     <!-- Sidebar (top bar on mobile) -->
     <aside class="flex shrink-0 flex-col border-b border-line bg-soft/40 md:h-full md:w-[220px] md:border-b-0 md:border-r">
       <div class="flex h-[52px] shrink-0 items-center gap-2 border-b border-line px-3">
-        <span class="size-[26px] shrink-0 rounded-lg bg-gradient-to-br from-accent to-accent-2" />
+        <img
+          src="/favicon.svg"
+          alt=""
+          class="size-[26px] shrink-0"
+        >
         <span class="truncate text-sm font-semibold text-ink">NitroWater 管理台</span>
         <span class="ml-auto shrink-0 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent">管理后台</span>
       </div>

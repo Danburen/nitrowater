@@ -1,6 +1,7 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.service.problem.ProblemService;
+import cn.nitrowater.server.web.admin.AdminProblemController;
 import cn.nitrowater.server.web.dto.ProblemDetailResp;
 import cn.nitrowater.server.web.dto.ProblemSummaryResp;
 import org.springframework.web.bind.annotation.GetMapping;

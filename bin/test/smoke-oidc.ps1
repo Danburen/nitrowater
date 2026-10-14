@@ -9,19 +9,19 @@ Authorization Server; this script asserts that, proving server-side silent refre
 Prereq:
   - account running at http://localhost:8090 (rebuilt, BFF client seeded)
   - MySQL / Redis up, deploy/keys present, WATERFUN_KEK set
-  - a test account exists (default smokeuser1 / Passw0rd!)
+  - a test account exists (default testuser1 / Passw0rd123)
 
 Usage (Windows PowerShell 5.1 or PowerShell 7):
   .\bin\test\smoke-oidc.ps1
-  .\bin\test\smoke-oidc.ps1 -Username smokeuser1 -Password 'Passw0rd!'
+  .\bin\test\smoke-oidc.ps1 -Username testuser1 -Password 'Passw0rd123'
 #>
 param(
     [string]$Base = 'http://localhost:8090',
     [string]$ClientId = 'nitrowater-bff',
     [string]$ClientSecret = 'nitrowater-bff-secret',
     [string]$Redirect = 'http://localhost:8080/login/oauth2/code/nitrowater',
-    [string]$Username = 'smokeuser1',
-    [string]$Password = 'Passw0rd!',
+    [string]$Username = 'testuser1',
+    [string]$Password = 'Passw0rd123',
     [string]$DeviceFp = 'smoketestdevice0001'
 )
 

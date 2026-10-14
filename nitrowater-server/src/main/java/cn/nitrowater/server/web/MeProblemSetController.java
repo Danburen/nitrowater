@@ -1,6 +1,7 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.service.problem.ProblemSetService;
+import cn.nitrowater.server.web.admin.AdminProblemSetController;
 import cn.nitrowater.server.web.dto.ProblemSetItemsReq;
 import cn.nitrowater.server.web.dto.ProblemSetResp;
 import cn.nitrowater.server.web.dto.UserProblemSetUpsertReq;

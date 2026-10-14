@@ -1,8 +1,8 @@
-package cn.nitrowater.server.web;
+package cn.nitrowater.server.web.admin;
 
 import cn.nitrowater.server.service.BizUserService;
 import cn.nitrowater.server.service.problem.ProblemService;
-import cn.nitrowater.server.web.dto.AdminProblemDetailResp;
+import cn.nitrowater.server.web.dto.admin.AdminProblemDetailResp;
 import cn.nitrowater.server.web.dto.ProblemSummaryResp;
 import cn.nitrowater.server.web.dto.ProblemUpsertReq;
 import cn.nitrowater.server.web.dto.TestCaseUpsertReq;
