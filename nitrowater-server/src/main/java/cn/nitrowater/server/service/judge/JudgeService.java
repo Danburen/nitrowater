@@ -21,8 +21,7 @@ import cn.nitrowater.server.infra.repository.SubmissionRepository;
 import cn.nitrowater.server.infra.repository.UserPointLogRepository;
 import cn.nitrowater.server.infra.repository.UserProblemStatusRepository;
 import cn.nitrowater.server.config.properties.SandboxProperties;
-import cn.nitrowater.server.service.judge.harness.FunctionHarness;
-import cn.nitrowater.server.service.judge.harness.GeneratedHarness;
+import cn.nitrowater.server.service.judge.harness.FunctionRunner;
 import cn.nitrowater.server.service.shared.CompileErrors;
 import cn.nitrowater.server.service.shared.ExecResult;
 import cn.nitrowater.server.service.shared.ExecSpec;
@@ -34,7 +33,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
@@ -57,13 +55,13 @@ public class JudgeService {
     private final UserPointLogRepository pointLogs;
     private final PistonClient pistonClient;
     private final SandboxProperties sandbox;
-    private final Map<Language, FunctionHarness> harnesses;
+    private final FunctionRunner functionRunner;
     private final TransactionTemplate tx;
 
     public JudgeService(SubmissionRepository submissions, ProblemRepository problems,
             ProblemTestCaseRepository testCases, BizUserRepository users,
             UserProblemStatusRepository userProblemStatus, UserPointLogRepository pointLogs,
-            PistonClient pistonClient, SandboxProperties sandbox, List<FunctionHarness> harnesses,
+            PistonClient pistonClient, SandboxProperties sandbox, FunctionRunner functionRunner,
             TransactionTemplate tx) {
         this.submissions = submissions;
         this.problems = problems;
@@ -73,11 +71,7 @@ public class JudgeService {
         this.pointLogs = pointLogs;
         this.pistonClient = pistonClient;
         this.sandbox = sandbox;
-        Map<Language, FunctionHarness> byLanguage = new EnumMap<>(Language.class);
-        for (FunctionHarness harness : harnesses) {
-            byLanguage.put(harness.language(), harness);
-        }
-        this.harnesses = Map.copyOf(byLanguage);
+        this.functionRunner = functionRunner;
         this.tx = tx;
     }
 
@@ -176,80 +170,23 @@ public class JudgeService {
      * with all cases bundled into a JSON array on stdin, then compares the harness's
      * one-JSON-line-per-case stdout against each case's expected output.
      *
-     * <p>The harness itself (single-file program + user-code line offset) comes from the language's
-     * {@link FunctionHarness}; everything else here is language-agnostic. Because a single process
-     * covers every case, the wall-clock limit is scaled by the case count; a run-level failure
-     * (TLE/OLE/RE/CE) applies to every case, since per-case output can no longer be trusted.</p>
+     * <p>Actual execution lives in {@link FunctionRunner} (shared with the playground self-test);
+     * this method only reshapes the result into the judge's per-case {@link CaseOutcome}.</p>
      */
     private List<CaseOutcome> runFunctionMode(Problem problem, Submission submission,
             List<ProblemTestCase> cases) {
         JudgeSignature signature = JudgeSignature.parse(judgeConfigOf(problem));
-        Language language = submission.getLanguage();
-        FunctionHarness harness = harnesses.get(language);
-        GeneratedHarness generated;
-        try {
-            generated = harness.generate(signature, submission.getCode());
-        } catch (IllegalArgumentException ex) {
-            return repeat(cases.size(), new CaseOutcome(Verdict.SE, null, null, ex.getMessage()));
+        List<FunctionRunner.Sample> samples = new ArrayList<>(cases.size());
+        for (ProblemTestCase testCase : cases) {
+            samples.add(new FunctionRunner.Sample(testCase.getStdin(), testCase.getExpectedOutput()));
         }
-
-        String pistonLanguage = language.getPistonName();
-        int timeoutMs = (int) Math.min(Integer.MAX_VALUE, (long) problem.getTimeLimitMs() * Math.max(1, cases.size()));
-        ExecSpec spec = new ExecSpec(
-                pistonLanguage,
-                "*",
-                fileNameFor(language),
-                generated.source(),
-                combinedStdin(cases),
-                sandbox.compileTimeoutMs(),
-                timeoutMs,
-                problem.getMemoryLimitKb() * 1024L,
-                problem.getMemoryLimitKb() * 1024L);
-
-        ExecResult result;
-        try {
-            result = pistonClient.execute(spec);
-        } catch (Exception ex) {
-            log.warn("Sandbox call failed for submission {}: {}", submission.getId(), ex.getMessage());
-            return repeat(cases.size(), new CaseOutcome(Verdict.SE, null, null, "sandbox unavailable"));
-        }
-
-        String diagnostic = CompileErrors.diagnostic(pistonLanguage, result, generated.userCodeLineOffset());
-        if (diagnostic != null) {
-            ExecResult.Stage stage = result.compile() != null ? result.compile() : result.run();
-            return repeat(cases.size(), new CaseOutcome(Verdict.CE,
-                    stage == null ? null : millis(stage.wallTimeMs()),
-                    stage == null ? null : kb(stage.memoryBytes()),
-                    CompileErrors.oneLine(diagnostic)));
-        }
-        ExecResult.Stage run = result.run() != null ? result.run() : result.compile();
-        if (run == null) {
-            return repeat(cases.size(), new CaseOutcome(Verdict.SE, null, null, "no execution result"));
-        }
-        Integer timeMs = millis(run.wallTimeMs());
-        Integer memoryKb = kb(run.memoryBytes());
-        String status = run.status();
-        if ("TO".equals(status)) {
-            return repeat(cases.size(), new CaseOutcome(Verdict.TLE, timeMs, memoryKb, "time limit exceeded"));
-        }
-        if ("OL".equals(status) || "EL".equals(status)) {
-            return repeat(cases.size(), new CaseOutcome(Verdict.OLE, timeMs, memoryKb, "output limit exceeded"));
-        }
-        if ("RE".equals(status) || "SG".equals(status) || (run.code() != null && run.code() != 0)) {
-            return repeat(cases.size(), new CaseOutcome(Verdict.RE, timeMs, memoryKb, "runtime error"));
-        }
-
-        String[] lines = (run.stdout() == null ? "" : run.stdout()).split("\n", -1);
-        List<CaseOutcome> outcomes = new ArrayList<>(cases.size());
-        for (int i = 0; i < cases.size(); i++) {
-            if (i >= lines.length || lines[i].isBlank()) {
-                outcomes.add(new CaseOutcome(Verdict.RE, timeMs, memoryKb, "no output for this case"));
-                continue;
-            }
-            boolean match = OutputComparator.matches(cases.get(i).getExpectedOutput(), lines[i],
-                    OutputComparator.Strategy.JSON);
-            outcomes.add(new CaseOutcome(match ? Verdict.AC : Verdict.WA, timeMs, memoryKb,
-                    match ? null : "wrong answer"));
+        FunctionRunner.HarnessRun run = functionRunner.run(problem, submission.getLanguage(),
+                submission.getCode(), samples, signature);
+        List<CaseOutcome> outcomes = new ArrayList<>(run.cases().size());
+        for (FunctionRunner.RunCase outcome : run.cases()) {
+            Verdict verdict = outcome.verdict() == null ? Verdict.WA : outcome.verdict();
+            outcomes.add(new CaseOutcome(verdict, outcome.timeMs(), outcome.memoryKb(),
+                    outcome.message()));
         }
         return outcomes;
     }
@@ -261,7 +198,7 @@ public class JudgeService {
         ExecSpec spec = new ExecSpec(
                 pistonLanguage,
                 "*",
-                fileNameFor(language),
+                language.fileName(),
                 LanguagePrelude.wrap(pistonLanguage, submission.getCode()),
                 testCase.getStdin() == null ? "" : testCase.getStdin(),
                 sandbox.compileTimeoutMs(),
@@ -309,29 +246,8 @@ public class JudgeService {
     /** True when the problem is LeetCode-mode, the language has a harness, and a signature is set. */
     private boolean useFunctionMode(Problem problem, Submission submission) {
         return problem.getIoMode() == IoMode.LEETCODE
-                && harnesses.containsKey(submission.getLanguage())
+                && functionRunner.supports(submission.getLanguage())
                 && JudgeSignature.parse(judgeConfigOf(problem)) != null;
-    }
-
-    /** Bundles every case's parameter JSON object into one JSON array for the single harness run. */
-    private static String combinedStdin(List<ProblemTestCase> cases) {
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < cases.size(); i++) {
-            if (i > 0) {
-                sb.append(',');
-            }
-            String stdin = cases.get(i).getStdin();
-            sb.append(stdin == null || stdin.isBlank() ? "null" : stdin.trim());
-        }
-        return sb.append(']').toString();
-    }
-
-    private static List<CaseOutcome> repeat(int count, CaseOutcome outcome) {
-        List<CaseOutcome> outcomes = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) {
-            outcomes.add(outcome);
-        }
-        return outcomes;
     }
 
     private static Map<String, Object> judgeConfigOf(Problem problem) {
@@ -444,21 +360,6 @@ public class JudgeService {
         Map<String, Object> config = judgeConfigOf(problem);
         Object compare = config == null ? null : config.get("compare");
         return OutputComparator.strategyOf(compare == null ? null : String.valueOf(compare));
-    }
-
-    /**
-     * Source file name handed to Piston. Compiled runtimes get a <b>bare</b> base name because
-     * Piston appends the runtime's own extension (passing {@code Main.java} yields
-     * {@code Main.java.java}); scripting runtimes keep their extension verbatim.
-     */
-    private static String fileNameFor(Language language) {
-        return switch (language) {
-            case JAVA -> "Main";
-            case C, CPP, TYPESCRIPT -> "main";
-            case PYTHON -> "main.py";
-            case JAVASCRIPT -> "main.js";
-            case LUA -> "main.lua";
-        };
     }
 
     private static Integer millis(Long value) {

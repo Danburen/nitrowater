@@ -1,7 +1,6 @@
 package cn.nitrowater.server.service.judge.harness;
 
 import cn.nitrowater.server.infra.enums.Language;
-import cn.nitrowater.server.service.judge.JudgeService;
 import cn.nitrowater.server.service.judge.JudgeSignature;
 
 /**
@@ -10,7 +9,7 @@ import cn.nitrowater.server.service.judge.JudgeSignature;
  *
  * <p>Only harness <b>generation</b> is language-specific — running the program once, recognising a
  * compile error, mapping time/memory/runtime failures, comparing each case's JSON line and
- * aggregating the verdict are all language-agnostic and live once in {@link JudgeService}.
+ * aggregating the verdict are all language-agnostic and live once in {@link FunctionRunner}.
  * Implementations are Spring beans discovered as a {@code List<FunctionHarness>}, so adding a
  * language means adding one component rather than editing a central switch.</p>
  */

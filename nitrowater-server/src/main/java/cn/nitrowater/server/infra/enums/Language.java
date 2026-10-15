@@ -59,4 +59,21 @@ public enum Language {
         }
         throw new IllegalArgumentException("Unknown language id: " + id);
     }
+
+    /**
+     * Source file name handed to Piston. Compiled runtimes get a <b>bare</b> base name because
+     * Piston appends the runtime's own extension (passing {@code Main.java} yields
+     * {@code Main.java.java}); scripting runtimes keep their extension verbatim.
+     *
+     * @return the file name to write the source as
+     */
+    public String fileName() {
+        return switch (this) {
+            case JAVA -> "Main";
+            case C, CPP, TYPESCRIPT -> "main";
+            case PYTHON -> "main.py";
+            case JAVASCRIPT -> "main.js";
+            case LUA -> "main.lua";
+        };
+    }
 }

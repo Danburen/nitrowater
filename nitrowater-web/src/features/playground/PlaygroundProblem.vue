@@ -13,8 +13,8 @@ import { Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { useAuth } from '../../auth/useAuth'
 import { RUNNER_LANGUAGES, isRunnerLanguage, type RunnerLanguageId } from '../tools/code-runner/langCatalog'
 import CodeEditor from '../tools/code-runner/CodeEditor.vue'
-import { createSubmission, getProblem, getSubmission, runCode, type ProblemDetail, type RunResult, type Submission } from './api'
-import { difficultyMeta, runStatusMeta, statusLabel, verdictMeta } from './labels'
+import { createSubmission, getProblem, getSubmission, runProblem, type ProblemDetail, type ProblemRunResult, type Submission } from './api'
+import { caseVerdictMeta, difficultyMeta, runStatusMeta, statusLabel, verdictMeta } from './labels'
 import PageShell from '../../shared/ui/PageShell.vue'
 
 const route = useRoute()
@@ -33,10 +33,35 @@ const submitting = ref(false)
 const submission = ref<Submission | null>(null)
 const submitError = ref('')
 
-/** Self-test run (against the first sample case) — the "run before submit" path. */
+/** Self-test samples the user can edit before running — the "run before submit" path. */
+interface EditableSample {
+  stdin: string
+  expected: string
+}
+
+const runSamples = ref<EditableSample[]>([])
 const running = ref(false)
-const runResult = ref<RunResult | null>(null)
+const runResult = ref<ProblemRunResult | null>(null)
 const runError = ref('')
+
+/** First non-AC case of the finished submission, or null while pending / all-passed. */
+const firstFailedCase = computed(() => submission.value?.cases?.find((c) => c.verdict !== 'AC') ?? null)
+
+/** e.g. "答案错误：第 3 个用例未通过（通过 2/5）"; null for AC/CE/pending. */
+const failureSummary = computed(() => {
+  const s = submission.value
+  if (!s || s.verdict == null || s.verdict === 'CE') return null
+  const failed = firstFailedCase.value
+  if (!failed) return null
+  return `${verdictMeta(failed.verdict)?.label ?? failed.verdict}：第 ${failed.index + 1} 个用例未通过（通过 ${s.passed}/${s.total}）`
+})
+
+/** Whether to render the per-case breakdown (hidden for CE — the compile message says it all). */
+const showCaseBreakdown = computed(() =>
+  submission.value?.status === 'DONE'
+  && submission.value.verdict != null
+  && submission.value.verdict !== 'CE'
+  && (submission.value.cases?.length ?? 0) > 0)
 
 /** Panel collapse state — collapsed panels shrink to their title bar and others absorb the space. */
 const showStatement = ref(true)
@@ -50,8 +75,21 @@ const title = computed(() => problem.value?.title || '题目')
 /** Rendered markdown statement (admin-authored). */
 const statementHtml = computed(() => (problem.value ? marked.parse(problem.value.description) : ''))
 
-/** The first sample case drives the self-test run. */
-const sampleCase = computed(() => problem.value?.sampleCases?.[0] ?? null)
+/** Seeds the self-test samples from the problem's public sample cases. */
+function loadSamples(): void {
+  runSamples.value = (problem.value?.sampleCases ?? []).map((s) => ({
+    stdin: s.stdin ?? '',
+    expected: s.expectedOutput ?? '',
+  }))
+}
+
+function addSample(): void {
+  runSamples.value.push({ stdin: '', expected: '' })
+}
+
+function removeSample(index: number): void {
+  runSamples.value.splice(index, 1)
+}
 
 function resetCode(): void {
   code.value = defaultCodeFor(languageId.value)
@@ -98,7 +136,7 @@ async function submit(): Promise<void> {
   }
 }
 
-async function runSample(): Promise<void> {
+async function runTests(): Promise<void> {
   if (running.value || !problem.value) return
   if (!session.value?.authenticated) {
     login(`/playground/${problem.value.id}`)
@@ -108,7 +146,11 @@ async function runSample(): Promise<void> {
   runError.value = ''
   runResult.value = null
   try {
-    runResult.value = await runCode(languageId.value, code.value, sampleCase.value?.stdin ?? '')
+    const samples = runSamples.value.map((s) => ({
+      stdin: s.stdin,
+      expected: s.expected.trim() === '' ? null : s.expected,
+    }))
+    runResult.value = await runProblem(problem.value.id, languageId.value, code.value, samples)
   } catch (e) {
     runError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -122,6 +164,7 @@ async function loadProblem(): Promise<void> {
   try {
     problem.value = await getProblem(problemId.value)
     code.value = defaultCodeFor(languageId.value)
+    loadSamples()
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   }
@@ -135,6 +178,7 @@ watch(
     submitError.value = ''
     runResult.value = null
     runError.value = ''
+    runSamples.value = []
     void loadProblem()
   },
   { immediate: true },
@@ -315,9 +359,9 @@ onBeforeUnmount(() => {
                 size="small"
                 class="shrink-0"
                 :disabled="running || submitting"
-                @click="runSample"
+                @click="runTests"
               >
-                {{ running ? '运行中…' : '运行样例' }}
+                {{ running ? '运行中…' : '运行测试' }}
               </el-button>
               <el-button
                 type="primary"
@@ -335,7 +379,7 @@ onBeforeUnmount(() => {
             v-show="showCode"
             class="mt-2 text-[11px] text-faint"
           >
-            建议先「运行样例」确认输出无误，再「提交评测」；提交后仅展示评测结论，不展示用例详情。
+            建议先「运行测试」用自建用例确认输出无误，再「提交评测」；提交后仅展示评测结论，不展示用例详情。
           </p>
 
           <div
@@ -348,51 +392,137 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <!-- Self-test run output (full detail — the submission path hides detail on purpose) -->
+          <!-- Self-test: editable samples + per-sample results (submission hides detail on purpose) -->
           <div
-            v-if="showCode && (runResult || runError)"
-            class="mt-3 rounded-md border border-line bg-soft p-2"
+            v-show="showCode"
+            class="mt-3 max-h-[320px] shrink-0 overflow-y-auto rounded-md border border-line p-2"
           >
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-              <span class="font-medium text-ink">运行样例</span>
-              <span
-                v-if="runError"
-                class="text-[#f43f5e]"
-              >{{ runError }}</span>
-              <template v-else-if="runResult">
-                <span :class="runStatusMeta(runResult.status).color">{{ runStatusMeta(runResult.status).label }}</span>
-                <span
-                  v-if="runResult.wallTimeMs != null"
-                  class="text-faint"
-                >{{ runResult.wallTimeMs }} ms</span>
-                <span
-                  v-if="sampleCase"
-                  class="ml-auto text-faint"
-                >期望输出：<span class="font-mono text-ink">{{ sampleCase.expectedOutput }}</span></span>
-              </template>
+            <div class="flex flex-wrap items-center gap-2 text-[11px]">
+              <span class="font-medium text-ink">测试用例</span>
+              <span class="text-faint">LeetCode 题填 JSON 参数，ACM 题填标准输入</span>
+              <el-button
+                class="ml-auto"
+                size="small"
+                :disabled="running || submitting"
+                @click="addSample"
+              >
+                添加用例
+              </el-button>
             </div>
-            <template v-if="runResult">
-              <pre
-                v-if="runResult.stdout"
-                class="m-0 mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-ink"
-              >{{ runResult.stdout }}</pre>
-              <pre
-                v-if="runResult.stderr"
-                class="m-0 mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
-              >{{ runResult.stderr }}</pre>
+
+            <div class="mt-2 flex flex-col gap-2">
               <div
-                v-if="!runResult.stdout && !runResult.stderr"
-                class="mt-1 text-[11px] text-faint"
+                v-for="(sample, index) in runSamples"
+                :key="index"
+                class="rounded-md border border-line p-2"
               >
-                （无输出）
+                <div class="mb-1 flex items-center gap-2 text-[11px] text-faint">
+                  <span>用例 {{ index + 1 }}</span>
+                  <button
+                    type="button"
+                    class="ml-auto rounded px-1 hover:text-[#f43f5e]"
+                    :disabled="running"
+                    @click="removeSample(index)"
+                  >
+                    删除
+                  </button>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <textarea
+                    v-model="sample.stdin"
+                    rows="2"
+                    spellcheck="false"
+                    class="w-full resize-y rounded border border-line bg-soft p-1.5 font-mono text-[12px] text-ink outline-none focus:border-[var(--accent)]"
+                    placeholder="输入"
+                  />
+                  <textarea
+                    v-model="sample.expected"
+                    rows="2"
+                    spellcheck="false"
+                    class="w-full resize-y rounded border border-line bg-soft p-1.5 font-mono text-[12px] text-ink outline-none focus:border-[var(--accent)]"
+                    placeholder="期望输出（留空则仅查看运行结果）"
+                  />
+                </div>
               </div>
               <div
-                v-if="runResult.message"
-                class="mt-1 text-[11px] text-faint"
+                v-if="!runSamples.length"
+                class="text-[11px] text-faint"
               >
-                {{ runResult.message }}
+                暂无自建用例：点击「添加用例」自己写一组，或直接「运行测试」使用题目样例。
               </div>
-            </template>
+            </div>
+
+            <!-- Run result -->
+            <div
+              v-if="runError || runResult"
+              class="mt-2 border-t border-line pt-2"
+            >
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                <span class="font-medium text-ink">运行结果</span>
+                <span
+                  v-if="runError"
+                  class="text-[#f43f5e]"
+                >{{ runError }}</span>
+                <template v-else-if="runResult">
+                  <span :class="runStatusMeta(runResult.status).color">{{ runStatusMeta(runResult.status).label }}</span>
+                  <span class="text-faint">{{ runResult.cases.length }} 个用例</span>
+                </template>
+              </div>
+
+              <div
+                v-if="runResult && runResult.compileMessage"
+                class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
+              >
+                {{ runResult.compileMessage }}
+              </div>
+
+              <div
+                v-if="runResult"
+                class="mt-1 flex flex-col gap-1.5"
+              >
+                <div
+                  v-for="item in runResult.cases"
+                  :key="item.index"
+                  class="rounded border border-line p-1.5"
+                >
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                    <span class="text-faint">用例 {{ item.index + 1 }}</span>
+                    <span :class="caseVerdictMeta(item.verdict).color">{{ caseVerdictMeta(item.verdict).label }}</span>
+                    <span
+                      v-if="item.timeMs != null"
+                      class="text-faint"
+                    >{{ item.timeMs }} ms</span>
+                    <span
+                      v-if="item.message"
+                      class="text-faint"
+                    >{{ item.message }}</span>
+                  </div>
+                  <div class="mt-1 grid gap-1.5 sm:grid-cols-2">
+                    <div>
+                      <div class="text-[10px] text-faint">
+                        输入
+                      </div>
+                      <pre class="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-ink">{{ item.input ?? '（空）' }}</pre>
+                    </div>
+                    <div>
+                      <div class="text-[10px] text-faint">
+                        实际输出
+                      </div>
+                      <pre class="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-ink">{{ item.actual ?? '（无输出）' }}</pre>
+                    </div>
+                  </div>
+                  <div
+                    v-if="item.expected != null"
+                    class="mt-1"
+                  >
+                    <div class="text-[10px] text-faint">
+                      期望输出
+                    </div>
+                    <pre class="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-ink">{{ item.expected }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -467,6 +597,35 @@ onBeforeUnmount(() => {
                 class="mt-2 whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
               >
                 {{ submission.compileMessage }}
+              </div>
+
+              <div
+                v-if="failureSummary"
+                class="mt-2 text-sm font-medium text-[#f43f5e]"
+              >
+                {{ failureSummary }}
+              </div>
+
+              <div
+                v-if="showCaseBreakdown"
+                class="mt-2 flex flex-col gap-1"
+              >
+                <div
+                  v-for="item in submission.cases"
+                  :key="item.index"
+                  class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-line px-2 py-1 text-[11px]"
+                >
+                  <span class="text-faint">用例 {{ item.index + 1 }}</span>
+                  <span :class="verdictMeta(item.verdict)?.color">{{ verdictMeta(item.verdict)?.label }}</span>
+                  <span
+                    v-if="item.timeMs"
+                    class="text-faint"
+                  >{{ item.timeMs }} ms</span>
+                  <span
+                    v-if="item.message"
+                    class="text-faint"
+                  >{{ item.message }}</span>
+                </div>
               </div>
             </template>
           </div>

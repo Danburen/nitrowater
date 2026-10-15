@@ -54,6 +54,23 @@ export function runStatusMeta(status: string | null | undefined): VerdictMeta {
   return RUN_STATUSES[status] ?? { label: status, color: 'text-dim' }
 }
 
+const CASE_VERDICTS: Record<string, VerdictMeta> = {
+  OK: { label: '运行成功', color: 'text-[#10b981]' },
+  AC: { label: '通过', color: 'text-[#10b981]' },
+  WA: { label: '答案错误', color: 'text-[#f43f5e]' },
+  TLE: { label: '超时', color: 'text-[#f59e0b]' },
+  OLE: { label: '输出超限', color: 'text-[#f59e0b]' },
+  RE: { label: '运行错误', color: 'text-[#f43f5e]' },
+  CE: { label: '编译错误', color: 'text-[#f43f5e]' },
+  SE: { label: '系统错误', color: 'text-[#a855f7]' },
+}
+
+/** Maps a per-sample self-test verdict (`PlaygroundCaseResult.verdict`) to display text/color. */
+export function caseVerdictMeta(verdict: string | null | undefined): VerdictMeta {
+  if (!verdict) return { label: '-', color: 'text-dim' }
+  return CASE_VERDICTS[verdict] ?? { label: verdict, color: 'text-dim' }
+}
+
 const DIFFICULTIES: Record<string, { label: string; color: string }> = {
   EASY: { label: '简单', color: 'text-[#10b981]' },
   MEDIUM: { label: '中等', color: 'text-[#f59e0b]' },

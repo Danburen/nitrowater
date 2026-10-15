@@ -18,6 +18,8 @@ import cn.nitrowater.server.infra.repository.UserPointLogRepository;
 import cn.nitrowater.server.infra.repository.UserProblemStatusRepository;
 import cn.nitrowater.server.infra.third.PistonClient;
 import cn.nitrowater.server.service.judge.harness.CHarness;
+import cn.nitrowater.server.service.judge.harness.CppHarness;
+import cn.nitrowater.server.service.judge.harness.FunctionRunner;
 import cn.nitrowater.server.service.judge.harness.JavaHarness;
 import cn.nitrowater.server.service.judge.harness.PythonHarness;
 import cn.nitrowater.server.service.shared.ExecResult;
@@ -68,8 +70,10 @@ class JudgeServiceFunctionModeTest {
     private JudgeService newService() {
         SandboxProperties sandbox = new SandboxProperties(
                 "http://localhost:2000", 2000, 15000, 65536, 8, 20000, 60, 10000, 268435456L);
+        FunctionRunner functionRunner = new FunctionRunner(pistonClient, sandbox,
+                List.of(new JavaHarness(), new PythonHarness(), new CHarness(), new CppHarness()));
         return new JudgeService(submissions, problems, testCases, users, userProblemStatus,
-                pointLogs, pistonClient, sandbox, List.of(new JavaHarness(), new PythonHarness(), new CHarness()), tx);
+                pointLogs, pistonClient, sandbox, functionRunner, tx);
     }
 
     private void runInlineTransactions() {
@@ -190,6 +194,80 @@ class JudgeServiceFunctionModeTest {
         assertThat(spec.getValue().pistonLanguage()).isEqualTo("python");
         assertThat(spec.getValue().fileName()).isEqualTo("main.py");
         assertThat(spec.getValue().code()).contains("class Solution").contains("_nitro_sol.twoSum(");
+        assertThat(spec.getValue().stdin())
+                .isEqualTo("[{\"nums\":[2,7,11,15],\"target\":9},{\"nums\":[3,2,4],\"target\":6}]");
+
+        Submission finished = finishedSubmission();
+        assertThat(finished.getVerdict()).isEqualTo(Verdict.AC);
+        assertThat(finished.getPassed()).isEqualTo(2);
+        assertThat(finished.getTotal()).isEqualTo(2);
+        assertThat(finished.getScore()).isEqualTo(20);
+    }
+
+    @Test
+    void acceptsAllCasesFromASingleCHarnessRun() {
+        JudgeService service = newService();
+        runInlineTransactions();
+        stubCommon(twoCases());
+        Submission c = queuedSubmission();
+        c.setLanguage(Language.C);
+        c.setCode("int *twoSum(int* nums, int numsSize, int target, int* returnSize) { returnSize[0] = 2; return nums; }");
+        when(submissions.findById(SUBMISSION_ID)).thenReturn(Optional.of(c));
+        BizUser user = new BizUser();
+        user.setId(USER_ID);
+        user.setPoints(0);
+        when(users.findById(USER_ID)).thenReturn(Optional.of(user));
+        ExecResult.Stage run = new ExecResult.Stage("[0,1]\n[1,2]\n", "", "[0,1]\n[1,2]\n", 0, null, null,
+                null, 1L, 900L, 1024L);
+        when(pistonClient.execute(any())).thenReturn(new ExecResult(null, run, "c", "10.2.0"));
+
+        service.judge(SUBMISSION_ID);
+
+        ArgumentCaptor<ExecSpec> spec = ArgumentCaptor.forClass(ExecSpec.class);
+        verify(pistonClient).execute(spec.capture());
+        assertThat(spec.getValue().pistonLanguage()).isEqualTo("c");
+        assertThat(spec.getValue().fileName()).isEqualTo("main");
+        assertThat(spec.getValue().code())
+                .contains("int main(void)")
+                .contains("#line 1")
+                .contains("twoSum(__nt_a_nums, __nt_a_nums_n, __nt_a_target, &__rs)");
+        assertThat(spec.getValue().stdin())
+                .isEqualTo("[{\"nums\":[2,7,11,15],\"target\":9},{\"nums\":[3,2,4],\"target\":6}]");
+
+        Submission finished = finishedSubmission();
+        assertThat(finished.getVerdict()).isEqualTo(Verdict.AC);
+        assertThat(finished.getPassed()).isEqualTo(2);
+        assertThat(finished.getTotal()).isEqualTo(2);
+        assertThat(finished.getScore()).isEqualTo(20);
+    }
+
+    @Test
+    void acceptsAllCasesFromASingleCppHarnessRun() {
+        JudgeService service = newService();
+        runInlineTransactions();
+        stubCommon(twoCases());
+        Submission cpp = queuedSubmission();
+        cpp.setLanguage(Language.CPP);
+        cpp.setCode("class Solution { public: vector<int> twoSum(vector<int>& nums, int target) { return {0, 1}; } };");
+        when(submissions.findById(SUBMISSION_ID)).thenReturn(Optional.of(cpp));
+        BizUser user = new BizUser();
+        user.setId(USER_ID);
+        user.setPoints(0);
+        when(users.findById(USER_ID)).thenReturn(Optional.of(user));
+        ExecResult.Stage run = new ExecResult.Stage("[0,1]\n[1,2]\n", "", "[0,1]\n[1,2]\n", 0, null, null,
+                null, 1L, 900L, 1024L);
+        when(pistonClient.execute(any())).thenReturn(new ExecResult(null, run, "c++", "10.2.0"));
+
+        service.judge(SUBMISSION_ID);
+
+        ArgumentCaptor<ExecSpec> spec = ArgumentCaptor.forClass(ExecSpec.class);
+        verify(pistonClient).execute(spec.capture());
+        assertThat(spec.getValue().pistonLanguage()).isEqualTo("c++");
+        assertThat(spec.getValue().fileName()).isEqualTo("main");
+        assertThat(spec.getValue().code())
+                .contains("using namespace std;")
+                .contains("int main(void)")
+                .contains("Solution().twoSum(");
         assertThat(spec.getValue().stdin())
                 .isEqualTo("[{\"nums\":[2,7,11,15],\"target\":9},{\"nums\":[3,2,4],\"target\":6}]");
 

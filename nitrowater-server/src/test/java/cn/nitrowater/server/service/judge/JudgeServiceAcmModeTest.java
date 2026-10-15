@@ -16,6 +16,7 @@ import cn.nitrowater.server.infra.repository.SubmissionRepository;
 import cn.nitrowater.server.infra.repository.UserPointLogRepository;
 import cn.nitrowater.server.infra.repository.UserProblemStatusRepository;
 import cn.nitrowater.server.infra.third.PistonClient;
+import cn.nitrowater.server.service.judge.harness.FunctionRunner;
 import cn.nitrowater.server.service.judge.harness.JavaHarness;
 import cn.nitrowater.server.service.judge.harness.PythonHarness;
 import cn.nitrowater.server.service.shared.ExecResult;
@@ -63,8 +64,10 @@ class JudgeServiceAcmModeTest {
     private JudgeService newService() {
         SandboxProperties sandbox = new SandboxProperties(
                 "http://localhost:2000", 2000, 15000, 65536, 8, 20000, 60, 10000, 268435456L);
+        FunctionRunner functionRunner = new FunctionRunner(pistonClient, sandbox,
+                List.of(new JavaHarness(), new PythonHarness()));
         return new JudgeService(submissions, problems, testCases, users, userProblemStatus,
-                pointLogs, pistonClient, sandbox, List.of(new JavaHarness(), new PythonHarness()), tx);
+                pointLogs, pistonClient, sandbox, functionRunner, tx);
     }
 
     private void runInlineTransactions() {

@@ -80,8 +80,11 @@ app:
     # 仅供 ApiProxyController 选取 registrationId；OIDC 客户端本身由
     # spring.security.oauth2.client.* 配置（见上）。
     registration-id: nitrowater
+  plugin-docs:
+    upstream: ${PLUGIN_DOCS_UPSTREAM:http://localhost:8085}
 
 logging:
   level:
     root: INFO
     org.springframework.security: INFO
+
