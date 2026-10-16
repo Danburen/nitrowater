@@ -5,4 +5,5 @@ include ':nitrowater-core'
 include ':nitrowater-server'
 include ':nitrowater-lib'
 include ':nitrowater-resource'
+include ':autogen-testcase'
 

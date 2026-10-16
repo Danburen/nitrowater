@@ -1,6 +1,7 @@
 
 plugins {
     id 'base'
+    id 'jacoco'
 }
 
 allprojects {
@@ -22,3 +23,66 @@ repositories {
 }
 tasks.register('classes')
 tasks.register('testClasses')
+
+// ============================================================
+// Unit-test coverage (JaCoCo)
+//  - Attach the JaCoCo agent to every module's `test` task and emit a per-module report
+//    under <module>/build/reports/jacoco/test/html/index.html (HTML + XML).
+//  - `jacocoRootReport` aggregates every module into one report under
+//    build/reports/jacoco/root/html/index.html.
+//  - toolVersion 0.8.15 is the first line that understands Java 25 class files (major 69);
+//    the Gradle 9.7.1 bundled default is older and would fail with "Unsupported class file
+//     major version 69".
+//  - Modules without tests (lib / bff, core only ships test resources) simply contribute no
+//    execution data; the aggregate report still renders for the modules that do.
+// ============================================================
+subprojects {
+    apply plugin: 'jacoco'
+
+    jacoco {
+        toolVersion = '0.8.15'
+    }
+
+    // The jacoco plugin only materialises `jacocoTestReport` once the `java` plugin is applied,
+    // which happens in each subproject's own build script (after this root script). Defer the
+    // configuration until then.
+    plugins.withId('java') {
+        tasks.withType(Test).configureEach {
+            // Emit the coverage report right after a plain `gradlew test`, not only on demand.
+            finalizedBy 'jacocoTestReport'
+        }
+
+        tasks.named('jacocoTestReport') {
+            dependsOn 'test'
+            reports {
+                html.required = true
+                xml.required = true
+                csv.required = false
+            }
+        }
+    }
+}
+
+tasks.register('jacocoRootReport', org.gradle.testing.jacoco.tasks.JacocoReport) {
+    group = 'verification'
+    description = 'Aggregated JaCoCo coverage report across all source modules.'
+
+    // Configure lazily: the `java` plugin is applied by each subproject's own build script,
+    // which is evaluated after this root script.
+    subprojects.each { p ->
+        p.plugins.withId('java') {
+            dependsOn "${p.path}:test"
+            executionData p.layout.buildDirectory.file('jacoco/test.exec')
+            sourceDirectories.from p.files(p.sourceSets.main.allSource.srcDirs)
+            classDirectories.from p.files(p.sourceSets.main.output)
+        }
+    }
+
+    reports {
+        html.required = true
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco/root/html')
+        xml.required = true
+        xml.outputLocation = layout.buildDirectory.file('reports/jacoco/root/jacocoRootReport.xml')
+        csv.required = false
+    }
+}
