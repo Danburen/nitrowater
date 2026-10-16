@@ -17,6 +17,7 @@ import java.io.InputStream;
  * @param contentType response content type (always {@code application/octet-stream} for media types
  *                    that must not render inline)
  * @param attachment whether the response must be forced to download ({@code Content-Disposition: attachment})
+ * @param fileName download file name for {@code Content-Disposition}, or {@code null} to omit it
  * @param contentLength byte length, or {@code -1} when unknown
  * @param cacheControl cache directives derived from visibility and the signature window
  */
@@ -25,6 +26,7 @@ public record ResourceReadResult(
         InputStream stream,
         MediaType contentType,
         boolean attachment,
+        String fileName,
         long contentLength,
         CacheControl cacheControl) {
 
@@ -34,19 +36,20 @@ public record ResourceReadResult(
      * @return a redirect outcome
      */
     public static ResourceReadResult redirect(String url, CacheControl cacheControl) {
-        return new ResourceReadResult(url, null, null, false, -1, cacheControl);
+        return new ResourceReadResult(url, null, null, false, null, -1, cacheControl);
     }
 
     /**
      * @param stream byte stream (caller closes)
      * @param contentType response content type
      * @param attachment whether to force a download
+     * @param fileName download file name, or {@code null}
      * @param contentLength byte length, or {@code -1} when unknown
      * @param cacheControl cache directives
      * @return a streamed outcome
      */
     public static ResourceReadResult stream(InputStream stream, MediaType contentType, boolean attachment,
-            long contentLength, CacheControl cacheControl) {
-        return new ResourceReadResult(null, stream, contentType, attachment, contentLength, cacheControl);
+            String fileName, long contentLength, CacheControl cacheControl) {
+        return new ResourceReadResult(null, stream, contentType, attachment, fileName, contentLength, cacheControl);
     }
 }

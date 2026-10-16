@@ -33,6 +33,8 @@ const nav: NavItem[] = [
   { to: '/admin/tags', label: '标签', icon: 'M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7-7A2 2 0 0 1 3 12.2V5a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.8zM7.5 7.5h.01' },
   { to: '/admin/sets', label: '题单', icon: 'M4 6h16M4 12h16M4 18h16M8 4v16' },
   { to: '/admin/editorials', label: '题解', icon: 'M4 4h16v14H8l-4 4z' },
+  { to: '/admin/plugins', label: '插件', icon: 'M20.5 11H19V7a1 1 0 0 0-1-1h-4V4.5a2.5 2.5 0 0 0-5 0V6H5a1 1 0 0 0-1 1v3.8h1.5a2.7 2.7 0 0 1 0 5.4H4V20a1 1 0 0 0 1 1h4.2v-1.5a2.5 2.5 0 0 1 5 0V21H19a1 1 0 0 0 1-1v-4.5h.5a2.5 2.5 0 0 0 0-5z' },
+  { to: '/admin/resources', label: '资源管理', icon: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' },
 ]
 
 function isActive(to: string): boolean {

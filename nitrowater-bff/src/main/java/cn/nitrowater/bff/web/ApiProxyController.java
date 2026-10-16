@@ -66,7 +66,13 @@ public class ApiProxyController {
     private static boolean isResourcePath(String path) {
         return path.equals("/api/resource")
                 || path.startsWith("/api/resource/")
-                || path.startsWith("/api/public/resource");
+                || path.equals("/api/resources")
+                || path.startsWith("/api/resources/")
+                || path.startsWith("/api/public/resource")
+                // File-management console (resource-owned); must win over the generic /api/admin/**
+                // that otherwise routes to the business API.
+                || path.equals("/api/admin/resources")
+                || path.startsWith("/api/admin/resources/");
     }
 
     @RequestMapping("/api/**")

@@ -123,12 +123,12 @@ generator:
 
 # -------- SSO / OIDC --------
 # OIDC issuer 统一取自 jwt.issuer（见上）：不再单独配置 sso.issuer，避免两份配置漂移。
-# -------- CORS 白名单（同主域子域 + 跨主域）+ Cookie（跨站同上）--------
-# 同主域：https://*.nitrowater.cn；跨主域：https://*.waterfun.top、https://waterfun.top
-# Cookie：同站用 Strict/false；跨主域（waterfun.top↔nitrowater.cn）改 same-site=None + secure=true
+# -------- CORS 白名单（同主域子域）+ Cookie --------
+# 同主域：https://*.nitrowater.cn（跨主域 waterfun.top 已移除）
+# Cookie：同站用 Strict/false；若将来需要跨主域，再改 same-site=None + secure=true
 app:
   cors:
-    allowed-origin-patterns: "http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn,https://waterfun.top,https://*.waterfun.top"
+    allowed-origin-patterns: "http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn"
   cookie:
     same-site: Strict
     secure: false

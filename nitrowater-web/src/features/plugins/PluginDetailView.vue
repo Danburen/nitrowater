@@ -1,70 +1,112 @@
 <script setup lang="ts">
 /**
- * Plugin detail — the single-page 说明 for one plugin (`/plugins/:key`).
+ * Plugin detail — one plugin at `/plugins/:key`.
  *
- * Layout: a header (name / tagline / tags / repo), an action bar (下载最新版 / 查看完整文档 /
- * 提交插件), the download version list, then the bundled markdown rendered by `marked`.
+ * Layout (Bukkit-style): a header (name / tagline / tags), an action bar (下载最新版 / 查看完整文档 /
+ * 条件外链), then two tabs —【介绍】renders the plugin's single-page markdown (read from the business
+ * service) and【文件】lists the published downloads.
  *
- * Downloads are the plugin's own mirrored jars: the version list is fetched from the plugin's
- * `res/manifest.json` (produced by bin/sync-res.ps1), so publishing a new jar needs no code change.
+ * Two independent reads run in parallel on mount / key change:
+ * - metadata + 说明 : `GET /api/public/plugins/{key}` (see `fetchPlugin`);
+ * - downloads       : `GET /api/public/resources?app=…&group=<key>` (see `fetchPluginResources`).
+ * The download list is fetched eagerly (not on tab switch) so 下载最新版 works from either tab.
  */
 import { computed, ref, watch } from 'vue'
 import { marked } from 'marked'
 import { useRoute } from 'vue-router'
-import { findPlugin, SUBMIT_PLUGIN_URL } from './catalog'
-
-interface ResFile {
-  name: string
-  version: string | null
-  bytes: number
-  modified: string
-}
+import {
+  fetchPlugin,
+  fetchPluginResources,
+  SUBMIT_PLUGIN_URL,
+  type PluginDetail,
+  type PluginResource,
+} from './catalog'
 
 const route = useRoute()
-const plugin = computed(() => findPlugin(String(route.params.key ?? '')))
-const mdHtml = computed(() => (plugin.value ? (marked.parse(plugin.value.markdown) as string) : ''))
 
-const files = ref<ResFile[]>([])
-const loadingRes = ref(false)
+const TABS = [
+  { value: 'intro', label: '介绍' },
+  { value: 'files', label: '文件' },
+] as const
+type TabValue = (typeof TABS)[number]['value']
+
+const key = computed(() => String(route.params.key ?? ''))
+
+const plugin = ref<PluginDetail | null>(null)
+const loadingPlugin = ref(true)
+const pluginError = ref(false)
+
+const files = ref<PluginResource[]>([])
+const loadingRes = ref(true)
 const resError = ref(false)
 
-async function loadManifest(): Promise<void> {
-  const p = plugin.value
-  files.value = []
-  resError.value = false
-  if (!p) return
-  loadingRes.value = true
-  try {
-    const res = await fetch(`${p.res}manifest.json`, { cache: 'no-cache' })
-    if (!res.ok) throw new Error(String(res.status))
-    const data = (await res.json()) as { files?: ResFile[] }
-    files.value = Array.isArray(data.files) ? data.files : []
-  } catch {
-    resError.value = true
-  } finally {
-    loadingRes.value = false
-  }
-}
+const tab = ref<TabValue>('intro')
 
-watch(() => route.params.key, loadManifest, { immediate: true })
-
+const mdHtml = computed(() =>
+  plugin.value?.readme ? (marked.parse(plugin.value.readme) as string) : '',
+)
 const latest = computed(() => files.value[0] ?? null)
 
-function fmtSize(bytes: number): string {
+async function load(): Promise<void> {
+  const k = key.value
+  plugin.value = null
+  pluginError.value = false
+  files.value = []
+  resError.value = false
+  tab.value = 'intro'
+  loadingPlugin.value = true
+  loadingRes.value = true
+  if (!k) {
+    loadingPlugin.value = false
+    loadingRes.value = false
+    return
+  }
+  const [pluginResult, filesResult] = await Promise.allSettled([
+    fetchPlugin(k),
+    fetchPluginResources(k),
+  ])
+  if (pluginResult.status === 'fulfilled') {
+    plugin.value = pluginResult.value
+  } else {
+    pluginError.value = true
+  }
+  if (filesResult.status === 'fulfilled') {
+    files.value = filesResult.value
+  } else {
+    resError.value = true
+  }
+  loadingPlugin.value = false
+  loadingRes.value = false
+}
+
+watch(key, load, { immediate: true })
+
+function fmtSize(bytes: number | null): string {
+  if (bytes == null) return '—'
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
   return `${bytes} B`
 }
-function fmtDate(iso: string): string {
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—'
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 10)
 }
 </script>
 
 <template>
-  <div class="min-h-full">
+  <!-- The section layout's <main> clips overflow (overflow-hidden) and delegates scrolling to the
+       page, so this root must own a definite height + its own scroll container. -->
+  <div class="h-full overflow-y-auto">
     <div class="mx-auto max-w-[860px] px-6 py-8">
-      <template v-if="plugin">
+      <p
+        v-if="loadingPlugin"
+        class="text-[13px] text-dim"
+      >
+        正在读取插件信息…
+      </p>
+
+      <template v-else-if="plugin">
         <!-- Header -->
         <header class="pb-6">
           <div class="flex items-center gap-3">
@@ -78,7 +120,7 @@ function fmtDate(iso: string): string {
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
-                <path :d="plugin.icon" />
+                <path :d="plugin.icon ?? ''" />
               </svg>
             </span>
             <div class="min-w-0">
@@ -90,7 +132,10 @@ function fmtDate(iso: string): string {
               </p>
             </div>
           </div>
-          <div class="mt-3 flex flex-wrap gap-1.5">
+          <div
+            v-if="plugin.tags.length"
+            class="mt-3 flex flex-wrap gap-1.5"
+          >
             <span
               v-for="t in plugin.tags"
               :key="t"
@@ -103,40 +148,101 @@ function fmtDate(iso: string): string {
         <div class="flex flex-wrap items-center gap-3 border-y border-line py-4">
           <a
             v-if="latest"
-            :href="plugin.res + latest.name"
+            :href="latest.url"
             download
             class="btn btn-primary"
-          >↓ 下载最新版 ({{ latest.version ?? latest.name }})</a>
+          >↓ 下载最新版 ({{ latest.version ?? latest.name ?? 'jar' }})</a>
           <span
             v-else-if="loadingRes"
             class="text-[13px] text-dim"
           >正在读取下载列表…</span>
           <a
-            :href="plugin.docs"
+            v-if="plugin.docsUrl"
+            :href="plugin.docsUrl"
             target="_blank"
             rel="noreferrer"
             class="btn"
           >查看完整文档 ↗</a>
           <a
-            :href="SUBMIT_PLUGIN_URL"
+            v-if="plugin.homepageUrl"
+            :href="plugin.homepageUrl"
             target="_blank"
             rel="noreferrer"
             class="text-[13.5px] text-accent transition hover:opacity-80"
-          >提供更多插件 ↗</a>
+          >官网 ↗</a>
           <a
-            v-if="plugin.repo"
-            :href="plugin.repo"
+            v-if="plugin.repoUrl"
+            :href="plugin.repoUrl"
+            target="_blank"
+            rel="noreferrer"
+            class="text-[13.5px] text-accent transition hover:opacity-80"
+          >源代码 ↗</a>
+          <a
+            v-if="plugin.sponsorUrl"
+            :href="plugin.sponsorUrl"
+            target="_blank"
+            rel="noreferrer"
+            class="text-[13.5px] text-accent transition hover:opacity-80"
+          >赞助 ↗</a>
+          <a
+            :href="SUBMIT_PLUGIN_URL"
             target="_blank"
             rel="noreferrer"
             class="ml-auto text-[13.5px] text-accent transition hover:opacity-80"
-          >源代码 ↗</a>
+          >提供更多插件 ↗</a>
         </div>
 
-        <!-- Download versions -->
-        <section class="pt-6">
-          <h2 class="mb-3 text-[15px] font-semibold">
-            下载 · 历史版本
-          </h2>
+        <!-- Tabs -->
+        <div class="mt-5 flex gap-1 border-b border-line">
+          <button
+            v-for="t in TABS"
+            :key="t.value"
+            type="button"
+            class="-mb-px border-b-2 px-3 py-2 text-[13.5px] transition"
+            :class="tab === t.value
+              ? 'border-accent font-medium text-accent'
+              : 'border-transparent text-dim hover:text-ink'"
+            @click="tab = t.value"
+          >
+            {{ t.label }}{{ t.value === 'files' && files.length ? ` (${files.length})` : '' }}
+          </button>
+        </div>
+
+        <!-- Tab: 介绍 -->
+        <section
+          v-if="tab === 'intro'"
+          class="pt-6"
+        >
+          <template v-if="mdHtml">
+            <!-- eslint-disable vue/no-v-html -- author-authored markdown -->
+            <div
+              class="md-body"
+              v-html="mdHtml"
+            />
+            <!-- eslint-enable vue/no-v-html -->
+          </template>
+          <p
+            v-else
+            class="text-[13px] text-dim"
+          >
+            该插件暂无单页说明。
+            <template v-if="plugin.docsUrl">
+              可前往
+              <a
+                :href="plugin.docsUrl"
+                target="_blank"
+                rel="noreferrer"
+                class="text-accent"
+              >完整文档</a>。
+            </template>
+          </p>
+        </section>
+
+        <!-- Tab: 文件 -->
+        <section
+          v-else
+          class="pt-6"
+        >
           <p
             v-if="loadingRes"
             class="text-[13px] text-dim"
@@ -149,19 +255,21 @@ function fmtDate(iso: string): string {
           >
             暂时无法读取下载列表，可直接前往
             <a
-              :href="plugin.docs"
+              v-if="plugin.docsUrl"
+              :href="plugin.docsUrl"
               target="_blank"
               rel="noreferrer"
               class="text-accent"
             >完整文档</a>
-            或
-            <a
-              v-if="plugin.repo"
-              :href="plugin.repo + '/releases'"
-              target="_blank"
-              rel="noreferrer"
-              class="text-accent"
-            >GitHub Releases</a>。
+            <template v-if="plugin.repoUrl">
+              或
+              <a
+                :href="plugin.repoUrl + '/releases'"
+                target="_blank"
+                rel="noreferrer"
+                class="text-accent"
+              >GitHub Releases</a>
+            </template>。
           </p>
           <div
             v-else-if="files.length"
@@ -169,13 +277,13 @@ function fmtDate(iso: string): string {
           >
             <div
               v-for="(f, i) in files"
-              :key="f.name"
+              :key="f.uuid"
               class="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
               :class="i === 0 ? 'bg-accent/5' : ''"
             >
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-[13.5px] font-medium text-ink">{{ f.name }}</span>
-                <span class="block text-[12px] text-faint">{{ fmtDate(f.modified) }} · {{ fmtSize(f.bytes) }}</span>
+                <span class="block truncate text-[13.5px] font-medium text-ink">{{ f.name ?? f.uuid }}</span>
+                <span class="block text-[12px] text-faint">{{ fmtDate(f.createdAt) }} · {{ fmtSize(f.sizeBytes) }}</span>
               </span>
               <span
                 v-if="i === 0"
@@ -186,7 +294,7 @@ function fmtDate(iso: string): string {
                 class="hidden shrink-0 text-[12.5px] text-dim sm:inline"
               >v{{ f.version }}</span>
               <a
-                :href="plugin.res + f.name"
+                :href="f.url"
                 download
                 class="shrink-0 text-[13.5px] text-accent transition hover:opacity-80"
               >下载</a>
@@ -199,24 +307,14 @@ function fmtDate(iso: string): string {
             暂无可用下载。
           </p>
         </section>
-
-        <!-- Single-page 说明 -->
-        <section class="pt-8">
-          <!-- eslint-disable vue/no-v-html -- author-authored markdown -->
-          <div
-            class="md-body"
-            v-html="mdHtml"
-          />
-          <!-- eslint-enable vue/no-v-html -->
-        </section>
       </template>
 
       <template v-else>
         <h1 class="text-[22px] font-bold tracking-tight">
-          未找到该插件
+          {{ pluginError ? '插件信息加载失败' : '未找到该插件' }}
         </h1>
         <p class="mt-2 text-sm text-dim">
-          请从左侧列表选择插件，或
+          {{ pluginError ? '请稍后刷新重试，或' : '请从左侧列表选择插件，或' }}
           <router-link
             to="/plugins"
             class="text-accent"

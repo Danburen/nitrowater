@@ -50,7 +50,9 @@ const router = createRouter({
         { path: 'problems/:id', name: 'admin-problem-edit', component: () => import('../features/admin/AdminProblemEdit.vue') },
         { path: 'tags', name: 'admin-tags', component: () => import('../features/admin/AdminTags.vue') },
         { path: 'sets', name: 'admin-sets', component: () => import('../features/admin/AdminSets.vue') },
+        { path: 'plugins', name: 'admin-plugins', component: () => import('../features/admin/AdminPlugins.vue') },
         { path: 'editorials', name: 'admin-editorials', component: () => import('../features/admin/AdminEditorials.vue') },
+        { path: 'resources', name: 'admin-resources', component: () => import('../features/admin/AdminResources.vue') },
       ],
     },
     {

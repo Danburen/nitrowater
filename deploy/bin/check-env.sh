@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 # nitrowater 环境自检 (Bash — Linux/macOS)
-# 检查：MySQL/Redis 端口、JWT 密钥、WATERFUN_KEK、DEVICE_SALT
+# 检查：MySQL/Redis 端口、JWT 密钥、NITROWATER_KEK、DEVICE_SALT
 # 若存在 deploy/docker/.env 则先加载（与 compose 的 --env-file 一致）。
 #
 # 用法:
@@ -48,10 +48,10 @@ for f in private.key public.key; do
 done
 
 echo "=== env ==="
-if [ -n "${WATERFUN_KEK:-}" ]; then
-    echo -e "  [${GREEN}PASS${NC}] WATERFUN_KEK set (len=${#WATERFUN_KEK})"
+if [ -n "${NITROWATER_KEK:-}" ]; then
+    echo -e "  [${GREEN}PASS${NC}] NITROWATER_KEK set (len=${#NITROWATER_KEK})"
 else
-    echo -e "  [${YELLOW}WARN${NC}] WATERFUN_KEK not set (bootRun 回退 build.gradle 开发默认；部署 account 必填)"
+    echo -e "  [${YELLOW}WARN${NC}] NITROWATER_KEK not set (bootRun 回退 build.gradle 开发默认；部署 account 必填)"
 fi
 if [ -n "${DEVICE_SALT:-}" ]; then
     echo -e "  [${GREEN}PASS${NC}] DEVICE_SALT set"

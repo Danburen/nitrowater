@@ -27,7 +27,7 @@ public final class EncryptionHelper {
     private static final int GCM_TAG_LENGTH = 128;
     
     public static SecretKey getKEKFromEnv() throws Exception{
-        String kekBase64 = System.getenv("WATERFUN_KEK");
+        String kekBase64 = System.getenv("NITROWATER_KEK");
         if (kekBase64 == null) {
             throw new RuntimeException("KEK System Environment Variable is not set.");
         }

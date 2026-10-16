@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../auth/useAuth'
-import { plugins } from '../features/plugins/catalog'
+import { fetchPlugins, type PluginSummary } from '../features/plugins/catalog'
 import { readyTools } from '../features/tools/catalog'
 
 const router = useRouter()
 const { session, login } = useAuth()
 
 const isLoggedIn = computed(() => !!session.value?.authenticated)
+
+/** 插件中心预告：与插件中心同源（业务服务 `GET /api/public/plugins`）。 */
+const pluginList = ref<PluginSummary[]>([])
+
+onMounted(async () => {
+  try {
+    pluginList.value = await fetchPlugins()
+  } catch {
+    pluginList.value = []
+  }
+})
 
 const PICS = 'https://picsum.photos/seed'
 
@@ -204,9 +215,18 @@ function enterPlayground(): void {
           </router-link>
         </div>
 
-        <div class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
+        <p
+          v-if="pluginList.length === 0"
+          class="text-[13px] text-dim"
+        >
+          暂无插件。
+        </p>
+        <div
+          v-else
+          class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(300px,1fr))]"
+        >
           <router-link
-            v-for="p in plugins"
+            v-for="p in pluginList"
             :key="p.key"
             :to="`/plugins/${p.key}`"
             class="flex flex-col gap-2.5 rounded-[14px] border border-line bg-card p-[18px] transition hover:-translate-y-0.5 hover:border-line-strong"
@@ -222,7 +242,7 @@ function enterPlayground(): void {
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 >
-                  <path :d="p.icon" />
+                  <path :d="p.icon ?? ''" />
                 </svg>
               </span>
               <div class="min-w-0">
@@ -235,7 +255,7 @@ function enterPlayground(): void {
               </div>
             </div>
             <p class="text-[13px] leading-relaxed text-dim">
-              {{ p.desc }}
+              {{ p.summary }}
             </p>
             <div class="flex flex-wrap gap-1.5">
               <span

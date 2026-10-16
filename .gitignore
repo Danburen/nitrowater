@@ -1,4 +1,4 @@
-HELP.md
+﻿HELP.md
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar
@@ -94,3 +94,7 @@ bin/.run/
 # Plugin docs are independently built & published artifacts (one sub-dir per plugin, synced by the
 # docs repo's pipeline) - not source. Keep deploy/plugin-docs/README.md (the mount<->base contract).
 /deploy/plugin-docs/*/
+
+# LOCAL storage backend (nitrowater-resource, app.resource.backend=local) writes
+# uploaded objects here at runtime - generated data, never source.
+/deploy/resource-storage/

@@ -49,6 +49,7 @@ public class ResourceUploadController {
     public UploadPolicyResp policy(@Valid @RequestBody UploadPolicyReq request, @AuthenticationPrincipal Jwt jwt) {
         UploadPolicyCommand command = new UploadPolicyCommand(
                 request.app(),
+                request.groupKey(),
                 request.fileName(),
                 request.contentType(),
                 request.sizeBytes(),

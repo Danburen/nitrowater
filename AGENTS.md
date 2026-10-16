@@ -8,7 +8,7 @@
 - Gradle 多模块：`nitrowater-lib` / `nitrowater-core` / `nitrowater-account`(SSO,OIDC,:8090) / `nitrowater-bff`(:8080) / `nitrowater-server`(业务,:8081) / `nitrowater-resource`(资源,:8093) + `nitrowater-web`(Vue3)。
 - 命令（仓库根）：`.\gradlew.bat build`；单模块 `.\gradlew.bat :<module>:bootRun`。
 - 前端（`nitrowater-web/`）：`npm run lint` / `npm run build`（dev 固定 5173）。
-- 运行前置：host MySQL(3306, root/123456)、Redis(6379)、SeaweedFS(8333)；account 需 `WATERFUN_KEK`（bootRun 注入 dev 默认）。
+- 运行前置：host MySQL(3306, root/123456)、Redis(6379)、SeaweedFS(8333)；account 需 `NITROWATER_KEK`（bootRun 注入 dev 默认）。
 
 ## 数据库 / Schema 约定（强制）
 

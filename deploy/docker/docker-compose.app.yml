@@ -27,7 +27,7 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
       SPRING_DATA_REDIS_HOST: redis
-      WATERFUN_KEK: ${WATERFUN_KEK:?set WATERFUN_KEK in .env}
+      NITROWATER_KEK: ${NITROWATER_KEK:?set NITROWATER_KEK in .env}
       DEVICE_SALT: ${DEVICE_SALT:-device-salt-dev}
     volumes:
       - ../keys:/app/deploy/keys:ro
@@ -103,14 +103,36 @@ services:
       RESOURCE_BASE_URL: http://resource:8093
       SPRING_DATA_REDIS_HOST: redis
       BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:-nitrowater-bff-secret}
+      # The BFF only forwards /plugin/** to the docs container (no static files of its own).
+      PLUGIN_DOCS_UPSTREAM: http://docs:80
     depends_on:
       - account
-    volumes:
-      # Plugin docs & download resources are independently built & published here
-      # (see deploy/plugin-docs/README.md); the BFF serves /plugin/<name>/** (e.g.
-      # /plugin/velochatx/docs/** and /plugin/velochatx/res/**) from this read-only mount.
-      - ../plugin-docs:/app/deploy/plugin-docs:ro
+      - docs
     mem_limit: 512m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+  # Plugin docs: ONE container (nginx) hosting ALL plugin docs + downloads as static files.
+  # Docs artifacts are independently built & published into ../plugin-docs
+  # (see deploy/plugin-docs/README.md). The BFF forwards /plugin/<name>/** here.
+  # Publishing a new plugin/version = rsync/scp the files (optionally `docker restart
+  # nitrowater-docs` for immediate cache bust); no BFF restart and no image rebuild needed.
+  docs:
+    # image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/docs:${IMAGE_TAG:-latest}
+    image: nginx:alpine
+    container_name: nitrowater-docs
+    ports:
+      # dev: BFF runs on the host (gradle bootRun) and reaches http://localhost:8085
+      # (the app.plugin-docs.upstream default). Loopback-only, so prod is not exposed.
+      # prod: the in-network BFF uses PLUGIN_DOCS_UPSTREAM=http://docs:80 instead.
+      - "127.0.0.1:8085:80"
+    volumes:
+      # Mounted at .../html/plugin so a URL /plugin/<name>/... maps to <host plugin-docs>/<name>/...
+      # (matches the BFF's /plugin/** namespace and the old WebConfig resource handler).
+      - ../plugin-docs:/usr/share/nginx/html/plugin:ro
+      - ./docs-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    mem_limit: 64m
     restart: unless-stopped
     networks:
       - nitrowater-net

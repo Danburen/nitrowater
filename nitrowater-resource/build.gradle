@@ -50,8 +50,10 @@ tasks.named('test') {
 }
 
 // 与其它模块一致：workingDir = 仓库根，便于解析相对路径（如本地存储目录）。
+//  - 注入 RESOURCE_INTERNAL_TOKEN（/internal/** 内部发布端点的共享密钥；生产用环境变量覆盖）
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
+    environment 'RESOURCE_INTERNAL_TOKEN', System.getenv('RESOURCE_INTERNAL_TOKEN') ?: 'nitrowater-internal-dev'
 }
 
 // 固定 bootJar 名称，便于 Dockerfile 复制（docker compose build 前先跑 bootJar）。

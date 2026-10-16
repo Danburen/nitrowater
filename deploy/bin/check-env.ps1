@@ -1,6 +1,6 @@
 ﻿# ============================================================
 # nitrowater 环境自检 (PowerShell)
-# 检查：MySQL/Redis 端口、JWT 密钥、WATERFUN_KEK、DEVICE_SALT
+# 检查：MySQL/Redis 端口、JWT 密钥、NITROWATER_KEK、DEVICE_SALT
 #
 # 用法:
 #   .\deploy\bin\check-env.ps1
@@ -28,10 +28,10 @@ foreach ($f in 'private.key', 'public.key') {
 }
 
 Write-Host "=== env ===" -ForegroundColor White
-if ([string]::IsNullOrEmpty($env:WATERFUN_KEK)) {
-    Write-Host "  [WARN] WATERFUN_KEK not set (bootRun 会回退到 build.gradle 开发默认值)" -ForegroundColor Yellow
+if ([string]::IsNullOrEmpty($env:NITROWATER_KEK)) {
+    Write-Host "  [WARN] NITROWATER_KEK not set (bootRun 会回退到 build.gradle 开发默认值)" -ForegroundColor Yellow
 } else {
-    Write-Host ("  [PASS] WATERFUN_KEK set (len={0})" -f $env:WATERFUN_KEK.Length) -ForegroundColor Green
+    Write-Host ("  [PASS] NITROWATER_KEK set (len={0})" -f $env:NITROWATER_KEK.Length) -ForegroundColor Green
 }
 
 $deviceSaltVal = $env:DEVICE_SALT

@@ -1,51 +1,103 @@
 /**
- * Plugin catalog — drives the plugin center (左侧插件列表 + 右侧单页说明).
+ * Plugin catalog — the plugin center's data client.
  *
- * Each plugin is published **independently** of the web build: its documentation is a VitePress
- * sub-site and its downloads are mirrored jars, both living under the BFF's deploy-owned dir
- * (`deploy/plugin-docs/<key>/`, see deploy/plugin-docs/README.md). The BFF serves that tree at
- * `/plugin/<key>/**`, so `docs` / `res` below are plain same-origin absolute URLs.
- *
- * A plugin's single-page 说明 is bundled markdown (raw-imported) rendered by `marked`.
+ * A plugin is published **independently** of the web build:
+ * - its metadata (name / tagline / links / 单页说明) lives in the business service, read anonymously
+ *   from `/api/public/plugins`, so it can be maintained from the admin console without a redeploy;
+ * - its downloads are jars on the unified resource service
+ *   (`/api/public/resources?app=…&group=<key>`, see {@link fetchPluginResources});
+ * - its documentation is a VitePress sub-site under the BFF's deploy-owned dir
+ *   (`deploy/plugin-docs/<key>/`) served at `/plugin/<key>/**`, i.e. a plain same-origin URL.
  */
-import velochatxMd from './descriptions/velochatx.md?raw'
 
-export interface PluginDef {
+/** App namespace under which plugin downloads are published on the unified resource service. */
+export const PLUGIN_RES_APP = 'nitrowater'
+
+/** A plugin card (the public listing) — one entry of the plugin center. */
+export interface PluginSummary {
+  /** Stable key: the route segment (`/plugins/<key>`), the resource group and the docs dir name. */
   key: string
   name: string
-  tagline: string
+  tagline: string | null
   /** One-line blurb for cards / search. */
-  desc: string
-  /** 24x24 stroke SVG path data (sidebar icon). */
-  icon: string
+  summary: string | null
+  /** 24x24 stroke SVG path data (sidebar / card icon). */
+  icon: string | null
   tags: string[]
   /** Absolute URL of the plugin's docs sub-site (a separate site → full-page navigation). */
-  docs: string
-  /** Base URL of the plugin's mirrored downloads; holds `manifest.json` + the jars. */
-  res: string
-  /** Source repository, or `null` when not public. */
-  repo: string | null
-  /** Bundled single-page markdown (the plugin's 说明). */
-  markdown: string
+  docsUrl: string | null
+  /** Plugin homepage, or `null` when it has none (the link is then hidden). */
+  homepageUrl: string | null
+  /** Source repository, or `null` when not public (the link is then hidden). */
+  repoUrl: string | null
+  /** Sponsor link, or `null` when the plugin has none (the link is then hidden). */
+  sponsorUrl: string | null
 }
 
-export const plugins: PluginDef[] = [
-  {
-    key: 'velochatx',
-    name: 'VeloChatX',
-    tagline: 'Velocity 跨服聊天插件',
-    desc: '为 Velocity 代理提供跨服聊天：自定义聊天格式、跨服 / 群组广播、定时广播、@提及、TabList 显示替换、违禁词过滤等；内置 i18n 与自动更新。',
-    icon: 'M4 5h16v11H8l-4 4zM8 9h8M8 12h5',
-    tags: ['Velocity', '跨服聊天', 'MiniMessage', 'LuckPerms'],
-    docs: '/plugin/velochatx/docs/',
-    res: '/plugin/velochatx/res/',
-    repo: 'https://github.com/Danburen/VeloChatX',
-    markdown: velochatxMd,
-  },
-]
+/** A plugin detail — a card plus its bundled single-page 说明 (rendered by `marked`). */
+export interface PluginDetail extends PluginSummary {
+  /** Intro markdown, or `null` when the plugin has no single-page 说明 yet. */
+  readme: string | null
+}
 
-export function findPlugin(key: string): PluginDef | undefined {
-  return plugins.find((p) => p.key === key)
+/** One published download of a plugin, as returned by the resource service list endpoint. */
+export interface PluginResource {
+  uuid: string
+  /** Original file name, or `null` when unknown. */
+  name: string | null
+  /** Version recorded in the resource's file info, or `null`. */
+  version: string | null
+  /** Size in bytes, or `null` when unknown. */
+  sizeBytes: number | null
+  /** Creation instant (ISO-8601), or `null`. */
+  createdAt: string | null
+  /** Same-origin URL that streams the file as a download attachment. */
+  url: string
+}
+
+/**
+ * Lists the enabled plugins (cards) for the sidebar / overview / home teaser.
+ *
+ * @returns the enabled plugins, server-ordered
+ * @throws when the request fails
+ */
+export async function fetchPlugins(): Promise<PluginSummary[]> {
+  const res = await fetch('/api/public/plugins', { cache: 'no-cache' })
+  if (!res.ok) throw new Error(String(res.status))
+  const data = (await res.json()) as PluginSummary[]
+  return Array.isArray(data) ? data : []
+}
+
+/**
+ * Reads one plugin detail, including its single-page 说明.
+ *
+ * @param key plugin key (route segment)
+ * @returns the plugin, or `null` when it does not exist or is disabled
+ * @throws when the request fails for any other reason
+ */
+export async function fetchPlugin(key: string): Promise<PluginDetail | null> {
+  const res = await fetch(`/api/public/plugins/${encodeURIComponent(key)}`, { cache: 'no-cache' })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(String(res.status))
+  return (await res.json()) as PluginDetail
+}
+
+/**
+ * Lists a plugin's published downloads (newest first) from the unified resource service, via the
+ * BFF proxy. The plugin `key` doubles as the resource `group`; the `app` is {@link PLUGIN_RES_APP}.
+ *
+ * @param key plugin key (also the resource group)
+ * @returns the published downloads, newest first
+ * @throws when the request fails
+ */
+export async function fetchPluginResources(key: string): Promise<PluginResource[]> {
+  const res = await fetch(
+    `/api/public/resources?app=${encodeURIComponent(PLUGIN_RES_APP)}&group=${encodeURIComponent(key)}`,
+    { cache: 'no-cache' },
+  )
+  if (!res.ok) throw new Error(String(res.status))
+  const data = (await res.json()) as PluginResource[]
+  return Array.isArray(data) ? data : []
 }
 
 /** Where users propose / request more plugins (GitHub Issues, no mailbox exposed). */

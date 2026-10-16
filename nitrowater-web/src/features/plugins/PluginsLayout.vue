@@ -3,12 +3,14 @@
  * Plugin center shell — the shared SectionLayout (like 工具箱 / 演练场) configured for 插件中心.
  *
  * The left sidebar lists the plugins (with a search box supplied via the `sidebar-extra` slot);
- * the selected plugin's single-page 说明 renders in the routed page on the right.
+ * the selected plugin's single-page 说明 renders in the routed page on the right. The list is read
+ * from the business service (`GET /api/public/plugins`) so it stays in sync with the admin console.
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import SectionLayout from '../../shared/ui/SectionLayout.vue'
-import { plugins } from './catalog'
+import { fetchPlugins, type PluginSummary } from './catalog'
 
+const plugins = ref<PluginSummary[]>([])
 const query = ref('')
 
 /** Overview entry above the divider (mirrors the tools/playground layout). */
@@ -18,14 +20,25 @@ const overview = {
   icon: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
 }
 
-const nav = computed(() => plugins.map((p) => ({ label: p.name, to: `/plugins/${p.key}`, icon: p.icon })))
+const nav = computed(() =>
+  plugins.value.map((p) => ({ label: p.name, to: `/plugins/${p.key}`, icon: p.icon ?? '' })),
+)
 
-/** Search filters the sidebar by name; the routed page is unaffected. */
+/** Search filters the sidebar by name / tagline / tags; the routed page is unaffected. */
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return nav.value
-  const hit = plugins.filter((p) => `${p.name} ${p.tagline} ${p.tags.join(' ')}`.toLowerCase().includes(q))
-  return hit.map((p) => ({ label: p.name, to: `/plugins/${p.key}`, icon: p.icon }))
+  return plugins.value
+    .filter((p) => `${p.name} ${p.tagline ?? ''} ${p.tags.join(' ')}`.toLowerCase().includes(q))
+    .map((p) => ({ label: p.name, to: `/plugins/${p.key}`, icon: p.icon ?? '' }))
+})
+
+onMounted(async () => {
+  try {
+    plugins.value = await fetchPlugins()
+  } catch {
+    plugins.value = []
+  }
 })
 </script>
 

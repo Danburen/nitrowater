@@ -2,14 +2,31 @@
 /**
  * Plugin center overview — the landing page shown at `/plugins`.
  *
- * Lists the integrated plugins (cards) and explains how the center works + how to submit more.
- * Clicking a card opens that plugin's single-page 说明 at `/plugins/:key`.
+ * Lists the integrated plugins (cards, read from `GET /api/public/plugins`) and explains how the
+ * center works + how to submit more. Clicking a card opens that plugin's single-page 说明 at
+ * `/plugins/:key`.
  */
-import { plugins, SUBMIT_PLUGIN_URL } from './catalog'
+import { onMounted, ref } from 'vue'
+import { fetchPlugins, SUBMIT_PLUGIN_URL, type PluginSummary } from './catalog'
+
+const plugins = ref<PluginSummary[]>([])
+const loading = ref(true)
+const failed = ref(false)
+
+onMounted(async () => {
+  try {
+    plugins.value = await fetchPlugins()
+  } catch {
+    failed.value = true
+  } finally {
+    loading.value = false
+  }
+})
 </script>
 
 <template>
-  <div class="min-h-full">
+  <!-- Definite height + own scroll container: the parent <main> is overflow-hidden. -->
+  <div class="h-full overflow-y-auto">
     <div class="mx-auto max-w-[900px] px-6 py-8">
       <header class="pb-6">
         <h1 class="text-[26px] font-bold tracking-tight">
@@ -23,7 +40,23 @@ import { plugins, SUBMIT_PLUGIN_URL } from './catalog'
         </p>
       </header>
 
-      <section class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(300px,1fr))]">
+      <p
+        v-if="loading"
+        class="text-[13px] text-dim"
+      >
+        正在读取插件列表…
+      </p>
+      <p
+        v-else-if="failed"
+        class="text-[13px] text-dim"
+      >
+        暂时无法读取插件列表，请稍后刷新。
+      </p>
+
+      <section
+        v-else
+        class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(300px,1fr))]"
+      >
         <router-link
           v-for="p in plugins"
           :key="p.key"
@@ -41,7 +74,7 @@ import { plugins, SUBMIT_PLUGIN_URL } from './catalog'
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
-                <path :d="p.icon" />
+                <path :d="p.icon ?? ''" />
               </svg>
             </span>
             <div class="min-w-0">
@@ -54,7 +87,7 @@ import { plugins, SUBMIT_PLUGIN_URL } from './catalog'
             </div>
           </div>
           <p class="text-[13px] leading-relaxed text-dim">
-            {{ p.desc }}
+            {{ p.summary }}
           </p>
           <div class="flex flex-wrap gap-1.5">
             <span

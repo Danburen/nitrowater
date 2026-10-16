@@ -10,6 +10,7 @@ import cn.nitrowater.resource.domain.StorageBackend;
  * request DTO into this command.</p>
  *
  * @param app target application / namespace
+ * @param groupKey grouping key within the app (e.g. plugin key), or {@code null}
  * @param fileName original file name (drives extension + MIME resolution)
  * @param contentType client-declared content type (recorded for reference only; never trusted for the
  *                    stored/served MIME)
@@ -19,6 +20,7 @@ import cn.nitrowater.resource.domain.StorageBackend;
  */
 public record UploadPolicyCommand(
         String app,
+        String groupKey,
         String fileName,
         String contentType,
         long sizeBytes,

@@ -37,6 +37,10 @@ public class Resource {
     @Column(name = "app", nullable = false, length = 32)
     private String app;
 
+    /** Grouping key within the app (e.g. plugin key); pairs with {@link #app} for grouped listing. */
+    @Column(name = "group_key", length = 64)
+    private String groupKey;
+
     @Column(name = "backend", nullable = false, columnDefinition = "tinyint UNSIGNED")
     private StorageBackend backend;
 
@@ -55,6 +59,10 @@ public class Resource {
 
     @Column(name = "size_bytes")
     private Long sizeBytes;
+
+    /** Original file name as supplied by the uploader (display / download name). */
+    @Column(name = "original_name", length = 255)
+    private String originalName;
 
     @Column(name = "source_type", nullable = false, columnDefinition = "tinyint UNSIGNED")
     private SourceType sourceType = SourceType.USER_UPLOADED;

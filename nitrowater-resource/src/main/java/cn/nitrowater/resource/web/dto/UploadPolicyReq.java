@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Size;
  * because this module is not wired to the core i18n bundles.
  *
  * @param app target application / namespace (object-key prefix); max 32 (column {@code app})
+ * @param groupKey optional grouping key within the app (e.g. plugin key); max 64 (column {@code group_key})
  * @param fileName original file name (drives the extension check); max 255
  * @param contentType declared content type; max 128 (column {@code mime_type})
  * @param sizeBytes declared size in bytes
@@ -21,6 +22,7 @@ import jakarta.validation.constraints.Size;
 public record UploadPolicyReq(
         @NotBlank(message = "app is required")
         @Size(max = 32, message = "app must be at most 32 characters") String app,
+        @Size(max = 64, message = "groupKey must be at most 64 characters") String groupKey,
         @NotBlank(message = "fileName is required")
         @Size(max = 255, message = "fileName must be at most 255 characters") String fileName,
         @NotBlank(message = "contentType is required")

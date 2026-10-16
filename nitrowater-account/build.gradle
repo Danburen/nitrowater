@@ -67,10 +67,10 @@ tasks.named('test') {
 
 // Phase 1 本地运行：
 //  - workingDir = 仓库根，使 application.yml 的 file:./deploy/keys/* 能解析
-//  - 注入 WATERFUN_KEK（EncryptionHelper 读取的 32 字节 AES KEK，Base64）
+//  - 注入 NITROWATER_KEK（EncryptionHelper 读取的 32 字节 AES KEK，Base64）
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
-    environment 'WATERFUN_KEK', System.getenv('WATERFUN_KEK') ?: 'kElE+g/NUUkCAG0azg9ZcYYXbevGg9mYuUtJvICut98='
+    environment 'NITROWATER_KEK', System.getenv('NITROWATER_KEK') ?: 'kElE+g/NUUkCAG0azg9ZcYYXbevGg9mYuUtJvICut98='
 }
 
 // 固定 bootJar 名称，便于根多目标 Dockerfile 提取（各服务同名 app.jar）。

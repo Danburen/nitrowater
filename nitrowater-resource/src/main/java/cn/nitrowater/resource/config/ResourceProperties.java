@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param s3 S3-compatible storage settings
  * @param cos Tencent COS storage settings (optional; the backend is only registered when credentials are set)
  * @param local local-filesystem backend settings
+ * @param internal internal-caller settings (shared-secret token for the {@code /internal/**} endpoints)
  */
 @ConfigurationProperties(prefix = "app.resource")
 public record ResourceProperties(
@@ -22,7 +23,8 @@ public record ResourceProperties(
         Integer readCacheSafetyMarginSeconds,
         S3 s3,
         Cos cos,
-        Local local) {
+        Local local,
+        Internal internal) {
 
     /** Default read-cache safety margin in seconds. */
     public static final int DEFAULT_CACHE_SAFETY_MARGIN_SECONDS = 60;
@@ -37,6 +39,16 @@ public record ResourceProperties(
         }
         // Never outlive the signature itself.
         return Math.min(readCacheSafetyMarginSeconds, Math.max(1, presignExpirySeconds - 1));
+    }
+
+    /** @return whether the internal publish endpoints are enabled (a token is configured) */
+    public boolean internalPublishEnabled() {
+        return internal != null && internal.token() != null && !internal.token().isBlank();
+    }
+
+    /** @return the configured internal token, or {@code null} when unset */
+    public String internalToken() {
+        return internal == null ? null : internal.token();
     }
 
     /**
@@ -71,5 +83,14 @@ public record ResourceProperties(
      * @param basePath root directory that object keys are resolved under
      */
     public record Local(String basePath) {
+    }
+
+    /**
+     * Internal-caller settings: a shared-secret token guarding the {@code /internal/**} endpoints
+     * (e.g. seeding platform-owned artefacts). The endpoints are disabled when no token is set.
+     *
+     * @param token shared secret expected in the {@code X-Internal-Token} request header
+     */
+    public record Internal(String token) {
     }
 }

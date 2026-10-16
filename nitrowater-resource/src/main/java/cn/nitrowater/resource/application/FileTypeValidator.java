@@ -23,7 +23,7 @@ public class FileTypeValidator {
             ResourceType.AUDIO, Set.of("mp3", "wav", "ogg"),
             ResourceType.TEXT, Set.of("txt", "md", "csv", "json", "log"),
             ResourceType.DOCUMENT, Set.of("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx"),
-            ResourceType.ARCHIVE, Set.of("zip", "rar", "7z", "tar", "gz"));
+            ResourceType.ARCHIVE, Set.of("zip", "rar", "7z", "tar", "gz", "jar"));
 
     /**
      * Server-side MIME mapping (extension -&gt; media type).
@@ -62,7 +62,8 @@ public class FileTypeValidator {
             Map.entry("rar", "application/vnd.rar"),
             Map.entry("7z", "application/x-7z-compressed"),
             Map.entry("tar", "application/x-tar"),
-            Map.entry("gz", "application/gzip"));
+            Map.entry("gz", "application/gzip"),
+            Map.entry("jar", "application/java-archive"));
 
     /** Media types that must never be rendered inline: they can execute script in the browser. */
     private static final Set<String> INLINE_UNSAFE_MIME_TYPES = Set.of(

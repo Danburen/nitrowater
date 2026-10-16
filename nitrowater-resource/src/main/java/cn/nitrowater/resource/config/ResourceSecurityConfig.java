@@ -30,6 +30,9 @@ import java.util.Set;
  *
  * <p>Audience is enforced explicitly (Spring does not check {@code aud} by default), and the
  * {@code roles} claim is mapped to authorities the same way as the business API.</p>
+ *
+ * <p>{@code /api/public/**} is anonymous; {@code /internal/**} bypasses JWT (it is not an end-user
+ * surface) and is guarded instead by a shared-secret token inside the controller.</p>
  */
 @Configuration
 @EnableWebSecurity
@@ -55,7 +58,12 @@ public class ResourceSecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/api/public/**", "/error").permitAll()
+                        .requestMatchers("/api/public/**", "/internal/**", "/error").permitAll()
+                        // File-management admin surface: any admin (ROLE_ADMIN) may reach it; the
+                        // per-row visibility (own vs. all) and delete rules are enforced in the
+                        // service, since they depend on the caller's uid and ROLE_SUPER_ADMIN.
+                        .requestMatchers("/api/admin/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
                         .decoder(jwtDecoder())
