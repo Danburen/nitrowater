@@ -191,6 +191,7 @@ onMounted(() => {
   <PageShell
     title="我的题单"
     desc="你自建的题单：勾选题目自由组卷，可设为私密或公开（公开后出现在题单广场）。"
+    content-width="1120px"
   >
     <template #actions>
       <router-link

@@ -47,6 +47,7 @@ onMounted(() => {
   <PageShell
     title="编程演练场"
     desc="ACM 模式在线判题：浏览题目（开放），提交代码并查看评测结果（需登录）。"
+    content-width="1120px"
   >
     <template #actions>
       <router-link

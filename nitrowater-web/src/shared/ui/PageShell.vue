@@ -5,37 +5,57 @@
  * Renders a compact title bar (title + optional info tooltip + an `actions` slot on the right)
  * above the page body. With `fill` the body fills the available height and never scrolls the
  * page (inner panels scroll); otherwise the body scrolls internally.
+ *
+ * `contentWidth` keeps the header content aligned with the page's own centered content column:
+ * pass the same max width the body uses (e.g. `'1120px'`) so the title / action buttons line up
+ * with the content below at every viewport size. `'full'` (default) keeps the header edge-to-edge
+ * for full-bleed layouts (tool pages).
  */
+import { computed } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 
-defineProps<{
-  title: string
-  desc?: string
-  fill?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    title: string
+    desc?: string
+    fill?: boolean
+    /** Max width of the header content column, e.g. `'1120px'`; `'full'` = no constraint. */
+    contentWidth?: string
+  }>(),
+  { contentWidth: 'full' },
+)
+
+const headerStyle = computed(() =>
+  props.contentWidth === 'full' ? undefined : { maxWidth: props.contentWidth },
+)
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <header class="flex shrink-0 items-center gap-1.5 border-b border-line px-5 py-3">
-      <h1 class="min-w-0 truncate text-base font-semibold tracking-tight text-ink">
-        {{ title }}
-      </h1>
-      <el-tooltip
-        v-if="desc"
-        :content="desc"
-        placement="bottom-start"
-        :show-after="150"
+    <header class="shrink-0 border-b border-line px-4 sm:px-5">
+      <div
+        class="mx-auto flex w-full min-w-0 items-center gap-1.5 py-3"
+        :style="headerStyle"
       >
-        <el-button
-          size="small"
-          :icon="InfoFilled"
-          circle
-          text
-        />
-      </el-tooltip>
-      <div class="ml-auto flex shrink-0 items-center gap-2">
-        <slot name="actions" />
+        <h1 class="min-w-0 truncate text-base font-semibold tracking-tight text-ink">
+          {{ title }}
+        </h1>
+        <el-tooltip
+          v-if="desc"
+          :content="desc"
+          placement="bottom-start"
+          :show-after="150"
+        >
+          <el-button
+            size="small"
+            :icon="InfoFilled"
+            circle
+            text
+          />
+        </el-tooltip>
+        <div class="ml-auto flex shrink-0 items-center gap-2">
+          <slot name="actions" />
+        </div>
       </div>
     </header>
 

@@ -96,6 +96,7 @@ watch(id, () => {
   <PageShell
     :title="set?.name || '题单详情'"
     :desc="set?.description || undefined"
+    content-width="960px"
   >
     <template #actions>
       <button

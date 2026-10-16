@@ -76,6 +76,7 @@ onMounted(() => {
   <PageShell
     title="我的提交"
     desc="当前账号的判题记录（最新在前）；点击某行可展开每个测试用例的结果。"
+    content-width="1120px"
   >
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="mx-auto w-full max-w-[1120px]">

@@ -37,6 +37,7 @@ onMounted(() => {
   <PageShell
     title="题单广场"
     desc="官方精选题单与大家公开分享的题单，选一份开始刷题。"
+    content-width="1120px"
   >
     <template #actions>
       <router-link
