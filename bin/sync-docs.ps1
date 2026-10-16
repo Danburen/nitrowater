@@ -23,8 +23,9 @@ $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path $PSScriptRoot -Parent
 $Dist = Join-Path $DocsRepo 'docs\.vitepress\dist'
-# Deploy-owned layout: <plugin>/docs/ = the VitePress site, <plugin>/res/ = downloadable artifacts
-# (see bin\sync-res.ps1). The BFF serves <pluginDocsDir>/<plugin>/** at /plugin/<plugin>/**.
+# Deploy-owned layout: <plugin>/docs/ = the VitePress site (only). Downloadable artifacts (jars) are
+# no longer stored here - they go to the resource service (see bin\sync-res.ps1). The BFF serves the
+# plugin-docs dir at /plugin/<plugin>/**.
 $Out = Join-Path $Root "deploy\plugin-docs\$Plugin\docs"
 # The docs site is mounted one level deeper than the plugin's own namespace.
 $Base = "/plugin/$Plugin/docs/"

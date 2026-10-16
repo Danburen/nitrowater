@@ -8,7 +8,7 @@ Authorization Server; this script asserts that, proving server-side silent refre
 
 Prereq:
   - account running at http://localhost:8090 (rebuilt, BFF client seeded)
-  - MySQL / Redis up, deploy/keys present, WATERFUN_KEK set
+  - MySQL / Redis up, deploy/keys present, NITROWATER_KEK set
   - a test account exists (default testuser1 / Passw0rd123)
 
 Usage (Windows PowerShell 5.1 or PowerShell 7):

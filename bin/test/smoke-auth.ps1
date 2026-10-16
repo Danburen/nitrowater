@@ -4,7 +4,7 @@
 #
 # 前置：
 #   - account 已启动（http://localhost:8090）
-#   - MySQL / Redis 正常，JWT 密钥在 deploy/keys/，WATERFUN_KEK 已设
+#   - MySQL / Redis 正常，JWT 密钥在 deploy/keys/，NITROWATER_KEK 已设
 #   - 验证码为图形码，需人工识别；短信验证码由 ConsoleSmsCodeSender 打到 account 控制台
 #
 # 用法：

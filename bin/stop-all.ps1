@@ -3,7 +3,7 @@
 #
 #   - app/tool listeners : 8090 account, 8080 bff, 8081 server, 8093 resource,
 #                          5173 web, 6379 redis
-#   - docker containers  : nitrowater-piston, nitrowater-seaweedfs
+#   - docker containers  : nitrowater-piston, nitrowater-seaweedfs, nitrowater-docs
 #   - console windows    : the exact PIDs recorded by start-*.ps1 in bin\.run\*.pid
 #   - MySQL              : left running by default (system service); -StopMysql to stop it
 #
@@ -47,7 +47,7 @@ Write-Step 'Stopping docker containers'
 try {
     & docker info *> $null
     if ($LASTEXITCODE -eq 0) {
-        foreach ($c in @('nitrowater-piston', 'nitrowater-seaweedfs')) {
+        foreach ($c in @('nitrowater-piston', 'nitrowater-seaweedfs', 'nitrowater-docs')) {
             $names = @(& docker ps -a --format '{{.Names}}')
             if ($names -contains $c) { & docker stop $c | Out-Null; Write-Ok "stopped container $c" }
             else { Write-Host "  [ - ]  $c not present" -ForegroundColor DarkGray }
@@ -84,7 +84,7 @@ else { Write-Host '  [ - ]  no tracked service windows' -ForegroundColor DarkGra
 # start script that did not record PIDs. Exact match cannot hit the IDE/browser/explorer.
 foreach ($t in @(
     'NitroWater - account', 'NitroWater - bff', 'NitroWater - server', 'NitroWater - resource',
-    'NitroWater - web', 'NitroWater - Redis', 'NitroWater - SeaweedFS', 'NitroWater - Piston'
+    'NitroWater - web', 'NitroWater - docs', 'NitroWater - Redis', 'NitroWater - SeaweedFS', 'NitroWater - Piston'
 )) {
     & taskkill /FI "WINDOWTITLE eq $t" /T /F *> $null
 }
@@ -99,3 +99,4 @@ if ($StopMysql) {
 }
 
 Write-Step 'Done'
+

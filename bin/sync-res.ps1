@@ -1,69 +1,72 @@
 ﻿# ============================================================
-# sync-res.ps1 - publish a plugin's downloadable artifacts into the BFF's deploy-owned dir.
+# sync-res.ps1 - publish a plugin's downloadable artifacts to the resource service.
 #
-# The plugin center's "download" button is bound to a LOCAL resource (no GitHub/CDN hop): the
-# jars are mirrored into deploy\plugin-docs\<plugin>\res\, which the BFF serves at
-# /plugin/<plugin>/res/<file> AT RUNTIME (see nitrowater-bff WebConfig) - so republishing needs
-# no web build and no BFF restart.
-#
-# Also writes res\manifest.json (name / version / bytes / modified, newest first); the SPA's
-# plugin detail page fetches it to build the version list, so adding a jar needs no code change.
+# The plugin center's "download" button is bound to the unified resource service
+# (nitrowater-resource, :8093) instead of a static dir: each jar is uploaded once through the
+# internal publish endpoint and afterwards served from object storage (SeaweedFS) behind a stable
+# public download URL. Republishing the same plugin + file name overwrites in place and keeps the
+# URL stable, so the SPA never needs a code change when a new jar is built.
 #
 # Usage:
-#   pwsh -File bin\sync-res.ps1                         # velochatx, default source
-#   pwsh -File bin\sync-res.ps1 -Clean                  # wipe res\ first (drops stale jars)
+#   pwsh -File bin\sync-res.ps1                                   # velochatx, default source
 #   pwsh -File bin\sync-res.ps1 -Plugin foo -SourceDir D:\x\out\artifacts\foo
+#   pwsh -File bin\sync-res.ps1 -BaseUrl http://localhost:8093 -Token <secret>
+#
+# The service must be running with a non-empty app.resource.internal.token (bootRun injects a dev
+# default; override with the RESOURCE_INTERNAL_TOKEN env var). This script talks to the service
+# port DIRECTLY (never through the BFF, which denies /internal/**).
 # ============================================================
 [CmdletBinding()]
 param(
     [string]$Plugin = 'velochatx',
+    [string]$App = 'nitrowater',
     [string[]]$SourceDir = @('D:\Project\plugin project\pro\VeloChatX\out\artifacts\VeloChatX'),
-    [switch]$Clean
+    [string]$BaseUrl = 'http://localhost:8093',
+    [string]$Token = $env:RESOURCE_INTERNAL_TOKEN
 )
 
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\_common.ps1"
 
-$Root = Split-Path $PSScriptRoot -Parent
-$Out = Join-Path $Root "deploy\plugin-docs\$Plugin\res"
+if ([string]::IsNullOrWhiteSpace($Token)) { $Token = 'nitrowater-internal-dev' }
 
-Write-Step "plugin resources: $Plugin"
+Write-Step "plugin resources -> resource service: $Plugin"
 
 $src = @($SourceDir | Where-Object { Test-Path -LiteralPath $_ })
 if ($src.Count -eq 0) { Write-Err "no source dir found: $($SourceDir -join ', ')"; exit 1 }
 
-# Stale jars would otherwise linger forever (unlike docs, res/ is not /MIR-mirrored).
-if ($Clean -and (Test-Path -LiteralPath $Out)) { Remove-Item -Recurse -Force $Out }
-New-Item -ItemType Directory -Force -Path $Out | Out-Null
-
 $jars = @(foreach ($dir in $src) { Get-ChildItem -LiteralPath $dir -File -Filter '*.jar' })
 if ($jars.Count -eq 0) { Write-Err "no *.jar under: $($src -join ', ')"; exit 1 }
 
-$total = ($jars | Measure-Object Length -Sum).Sum
+# Publish OLDEST-FIRST (mtime ascending). The public list endpoint returns createdAt DESC
+# ("newest first"), and Resource.createdAt is set only on INSERT (re-publishing keeps it), so the
+# LAST published jar wins the highest createdAt and therefore leads the download list. Within a
+# bulk seed that must be the newest build - e.g. the unversioned "VeloChatX.jar" (fresh IDE
+# artifact) is published last so it appears first for the SPA's "latest" badge (files[0]).
+$ordered = @($jars | Sort-Object LastWriteTime)
+$endpoint = "$BaseUrl/internal/resource/publish"
+$headers = @{ 'X-Internal-Token' = $Token }
 
-# Newest first: the unversioned "VeloChatX.jar" is a fresh IDE artifact, so order by mtime.
-$files = @()
-foreach ($j in ($jars | Sort-Object LastWriteTime -Descending)) {
-    Copy-Item -LiteralPath $j.FullName -Destination $Out -Force
+$ok = 0
+foreach ($j in $ordered) {
     $ver = $null
     $m = [regex]::Match($j.Name, '-(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.]+)?)\.jar$')
     if ($m.Success) { $ver = $m.Groups[1].Value }
-    $files += [ordered]@{
-        name     = $j.Name
-        version  = $ver
-        bytes    = $j.Length
-        modified = $j.LastWriteTime.ToUniversalTime().ToString('o')
+
+    $q = "app=$([uri]::EscapeDataString($App))&group=$([uri]::EscapeDataString($Plugin))&name=$([uri]::EscapeDataString($j.Name))"
+    if ($ver) { $q += "&version=$([uri]::EscapeDataString($ver))" }
+
+    $mb = [math]::Round($j.Length / 1MB, 1)
+    try {
+        Invoke-RestMethod -Method Post -Uri "${endpoint}?$q" -Headers $headers `
+            -ContentType 'application/java-archive' -InFile $j.FullName | Out-Null
+        Write-Ok "published $($j.Name)  ($mb MB)"
+        $ok++
+    } catch {
+        Write-Err "failed $($j.Name): $($_.Exception.Message)"
     }
 }
 
-$manifest = [ordered]@{
-    plugin      = $Plugin
-    generatedAt = (Get-Date).ToUniversalTime().ToString('o')
-    files       = $files
-}
-$json = $manifest | ConvertTo-Json -Depth 5
-[System.IO.File]::WriteAllText((Join-Path $Out 'manifest.json'), $json, (New-Object System.Text.UTF8Encoding($false)))
-
-$mb = [math]::Round($total / 1MB, 1)
-Write-Ok "published -> deploy\plugin-docs\$Plugin\res  ($($files.Count) jars, $mb MB)"
-Write-Ok "manifest: http://localhost:8080/plugin/$Plugin/res/manifest.json"
+if ($ok -ne $ordered.Count) { exit 1 }
+Write-Ok "done: $ok jars -> $App/$Plugin"
+Write-Ok "list: $BaseUrl/api/public/resources?app=$App&group=$Plugin"
