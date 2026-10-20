@@ -1,0 +1,124 @@
+{
+  "tool": "list-tree",
+  "generated_at": "20261020-102322",
+  "model": "deepseek-chat",
+  "portal": "http://localhost:8080",
+  "counts": {
+    "equivalence": 4,
+    "boundary": 5,
+    "invalid": 2,
+    "valid": 0
+  },
+  "cases": [
+    {
+      "id": "D1",
+      "kind": "equivalence-valid",
+      "input": "root\n├── a\n├── b\n│   ├── b1\n│   └── b2\n└── c",
+      "expected": "共 6 个节点",
+      "expect_all": [],
+      "nodes": 6,
+      "page_state": null,
+      "note": "有效等价类：典型多分支目录树"
+    },
+    {
+      "id": "D2",
+      "kind": "equivalence-valid",
+      "input": "app\n    config\n    models\n        user\n        order\n    main",
+      "expected": "共 6 个节点",
+      "expect_all": [],
+      "nodes": 6,
+      "page_state": null,
+      "note": "有效等价类：纯 4 空格缩进，无分支符号"
+    },
+    {
+      "id": "D3",
+      "kind": "equivalence-valid",
+      "input": "top\n├── x\n└── y\n    └── y1\n        └── y1a",
+      "expected": "共 5 个节点",
+      "expect_all": [],
+      "nodes": 5,
+      "page_state": null,
+      "note": "有效等价类：分支符号与缩进混用"
+    },
+    {
+      "id": "D4",
+      "kind": "equivalence-invalid",
+      "input": "root\n!!!\n###\n12345",
+      "expected": "共 1 个节点",
+      "expect_all": [],
+      "nodes": 1,
+      "page_state": null,
+      "note": "无效等价类：后续顶层行无缩进被丢弃，仅根节点计入"
+    },
+    {
+      "id": "D5",
+      "kind": "invalid",
+      "input": "alpha\nbeta\ngamma",
+      "expected": "共 1 个节点",
+      "expect_all": [],
+      "nodes": 1,
+      "page_state": null,
+      "note": "无效等价类：所有行均无缩进/分支，全部被忽略 | 人工复核: 顶层无缩进行被丢弃, 非法字符容错为单节点"
+    },
+    {
+      "id": "D6",
+      "kind": "invalid",
+      "input": "",
+      "expected": "共 0 个节点",
+      "expect_all": [],
+      "nodes": null,
+      "page_state": "disabled",
+      "note": "无效等价类：空输入，渲染按钮禁用"
+    },
+    {
+      "id": "D7",
+      "kind": "boundary-empty",
+      "input": "   \n\t\n  ",
+      "expected": "共 0 个节点",
+      "expect_all": [],
+      "nodes": null,
+      "page_state": "disabled",
+      "note": "边界值：纯空白输入，渲染按钮禁用"
+    },
+    {
+      "id": "D8",
+      "kind": "boundary-min",
+      "input": "onlyroot",
+      "expected": "共 1 个节点",
+      "expect_all": [],
+      "nodes": 1,
+      "page_state": null,
+      "note": "边界值：最小有效输入，仅根节点"
+    },
+    {
+      "id": "D9",
+      "kind": "boundary-deep",
+      "input": "r\n└── l1\n    └── l2\n        └── l3\n            └── l4\n                └── l5\n                    └── l6\n                        └── l7\n                            └── l8",
+      "expected": "共 9 个节点",
+      "expect_all": [],
+      "nodes": 9,
+      "page_state": null,
+      "note": "边界值：深层嵌套 9 层"
+    },
+    {
+      "id": "D10",
+      "kind": "boundary-large",
+      "input": "root\n├── n1\n├── n2\n├── n3\n├── n4\n├── n5\n├── n6\n├── n7\n├── n8\n├── n9\n├── n10\n├── n11\n├── n12\n├── n13\n├── n14\n├── n15\n├── n16\n├── n17\n├── n18\n├── n19\n└── n20",
+      "expected": "共 21 个节点",
+      "expect_all": [],
+      "nodes": 21,
+      "page_state": null,
+      "note": "边界值：大批量 20 个兄弟节点 + 根"
+    },
+    {
+      "id": "D11",
+      "kind": "boundary-long",
+      "input": "root\n├── aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n└── bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected": "共 3 个节点",
+      "expect_all": [],
+      "nodes": 3,
+      "page_state": null,
+      "note": "边界值：超长节点名"
+    }
+  ]
+}

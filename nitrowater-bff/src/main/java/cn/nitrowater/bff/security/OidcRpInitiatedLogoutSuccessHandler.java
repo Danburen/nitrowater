@@ -2,6 +2,8 @@ package cn.nitrowater.bff.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -27,10 +29,9 @@ import java.nio.charset.StandardCharsets;
  * falls back to the session's {@code id_token}. If neither the token nor the endpoint can be
  * resolved the handler degrades to a local-only logout (redirect to {@code fallbackUri}).</p>
  */
+@RequiredArgsConstructor
+@Slf4j
 public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler {
-
-    private static final Logger log = LoggerFactory.getLogger(OidcRpInitiatedLogoutSuccessHandler.class);
-
     private static final String END_SESSION_ENDPOINT_CLAIM = "end_session_endpoint";
     private static final String DEFAULT_END_SESSION_PATH = "/connect/logout";
 
@@ -43,19 +44,13 @@ public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler
         this(clientRegistrationRepository, registrationId, "/");
     }
 
-    public OidcRpInitiatedLogoutSuccessHandler(ClientRegistrationRepository clientRegistrationRepository,
-            String registrationId, String fallbackUri) {
-        this.clientRegistrationRepository = clientRegistrationRepository;
-        this.registrationId = registrationId;
-        this.fallbackUri = fallbackUri;
-    }
-
     @Override
     public void onLogoutSuccess(HttpServletRequest request, HttpServletResponse response,
             Authentication authentication) throws IOException {
         String idToken = resolveIdToken(request, authentication);
         ClientRegistration registration =
                 this.clientRegistrationRepository.findByRegistrationId(this.registrationId);
+        if (registration == null) return;
         String endSessionEndpoint = endSessionEndpoint(registration);
 
         if (idToken == null || endSessionEndpoint == null) {
@@ -68,7 +63,15 @@ public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler
         String logoutUrl = endSessionEndpoint
                 + separator
                 + "id_token_hint=" + urlEncode(idToken)
-                + "&post_logout_redirect_uri=" + urlEncode(postLogoutRedirectUri(request));
+                + "&post_logout_redirect_uri=" +
+                // logout redirect url
+                urlEncode(
+                        ServletUriComponentsBuilder.fromRequestUri(request)
+                                .replacePath(null)
+                                .replaceQuery(null)
+                                .build()
+                                .toUriString()
+                );
         response.sendRedirect(logoutUrl);
     }
 
@@ -84,19 +87,6 @@ public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler
             return oidcUser.getIdToken().getTokenValue();
         }
         return null;
-    }
-
-    /**
-     * The {@code post_logout_redirect_uri} must exactly match a registered value. It is derived
-     * from the request as {@code scheme://host[:port]} (no trailing slash), which is what the
-     * registered BFF origins use.
-     */
-    private static String postLogoutRedirectUri(HttpServletRequest request) {
-        return ServletUriComponentsBuilder.fromRequestUri(request)
-                .replacePath(null)
-                .replaceQuery(null)
-                .build()
-                .toUriString();
     }
 
     /** Resolves the end-session endpoint from the AS metadata, falling back to the issuer path. */

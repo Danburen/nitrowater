@@ -15,6 +15,11 @@ public class UsernameValidator implements ConstraintValidator<Username,String> {
 
     @Override
     public boolean isValid(String s, ConstraintValidatorContext constraintValidatorContext) {
+        // Null defers to @NotBlank (same lenient contract as PhoneNumberValidator);
+        // the regex matcher would otherwise throw NPE on a missing field.
+        if (s == null) {
+            return true;
+        }
         return USERNAME_PATTERN.matcher(s).matches();
     }
 }

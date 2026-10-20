@@ -9,10 +9,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Runs user code against user-supplied samples (a self-test) without recording a submission.
+ * Runs user code once with a free-form input (a self-test) without recording a submission or
+ * judging the output.
  *
- * <p>{@code POST /api/sandbox/run-problem} requires a valid SSO token and shares the
- * {@code /api/sandbox/**} rate-limit interceptor with {@code /api/sandbox/run}.</p>
+ * <p>{@code POST /api/sandbox/run-problem} returns the program's raw stdout under the problem's
+ * harness/limits; nothing is compared and nothing is persisted. It requires a valid SSO token and
+ * shares the {@code /api/sandbox/**} rate-limit interceptor with {@code /api/sandbox/run}.</p>
  */
 @RestController
 public class PlaygroundRunController {
@@ -23,7 +25,7 @@ public class PlaygroundRunController {
         this.playgroundRunService = playgroundRunService;
     }
 
-    /** Runs the code against the supplied samples (or the problem's sample cases). */
+    /** Runs the code once with the supplied input and returns its output (no judging). */
     @PostMapping("/api/sandbox/run-problem")
     public PlaygroundRunResponse run(@Valid @RequestBody PlaygroundRunRequest request) {
         return playgroundRunService.run(request);

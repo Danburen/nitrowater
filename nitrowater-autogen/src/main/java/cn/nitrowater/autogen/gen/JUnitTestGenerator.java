@@ -3,6 +3,7 @@ package cn.nitrowater.autogen.gen;
 import cn.nitrowater.autogen.ast.ClassFact;
 import cn.nitrowater.autogen.ast.MethodFact;
 import cn.nitrowater.autogen.llm.LlmClient;
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -36,7 +37,7 @@ public final class JUnitTestGenerator {
         String source = CodeExtractor.extractJava(raw);
         String fullyQualifiedName = JavaSourceInfo.fullyQualifiedName(source);
         JavaCompilationCheck.Result validation =
-                JavaCompilationCheck.check(fullyQualifiedName, source);
+                JavaCompilationCheck.check(Path.of(fact.filePath()), fullyQualifiedName, source);
         return new Generation(system, user, raw, source, fullyQualifiedName, validation);
     }
 }

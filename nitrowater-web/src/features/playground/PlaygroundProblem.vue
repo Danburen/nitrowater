@@ -3,18 +3,31 @@
  * Playground problem workspace — statement / code / verdict panels.
  *
  * A standalone top-level page (global header, no tools sidebar). The shell fills the viewport
- * and every panel owns its own scroll, so the layout absorbs all available height. Each of the
- * three panels can be collapsed to its title bar; the visible panels then grow to fill the space.
+ * and every panel owns its own scroll, so the layout absorbs all available height. Nested
+ * splitpanes let the user drag the dividers between panels (side-by-side on desktop, stacked
+ * rows on mobile); the pane shares are persisted to localStorage. Collapsing a panel removes
+ * it from the split and leaves a compact tab (a vertical rail on desktop for the statement,
+ * horizontal title bars for the editor/verdict) so every panel can always be expanded again.
  */
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { marked } from 'marked'
 import { Refresh, VideoPlay } from '@element-plus/icons-vue'
+import { Pane, Splitpanes, type SplitpanesResizedPayload } from 'splitpanes'
+import 'splitpanes/dist/splitpanes.css'
 import { useAuth } from '../../auth/useAuth'
 import { RUNNER_LANGUAGES, isRunnerLanguage, type RunnerLanguageId } from '../tools/code-runner/langCatalog'
 import CodeEditor from '../tools/code-runner/CodeEditor.vue'
-import { createSubmission, getProblem, getSubmission, runProblem, type ProblemDetail, type ProblemRunResult, type Submission } from './api'
-import { caseVerdictMeta, difficultyMeta, runStatusMeta, statusLabel, verdictMeta } from './labels'
+import {
+  createSubmission,
+  getProblem,
+  getSubmission,
+  runProblem,
+  type ProblemDetail,
+  type ProblemRunResult,
+  type Submission,
+} from './api'
+import { difficultyMeta, runStatusMeta, statusLabel, verdictMeta } from './labels'
 import PageShell from '../../shared/ui/PageShell.vue'
 
 const route = useRoute()
@@ -33,13 +46,11 @@ const submitting = ref(false)
 const submission = ref<Submission | null>(null)
 const submitError = ref('')
 
-/** Self-test samples the user can edit before running — the "run before submit" path. */
-interface EditableSample {
-  stdin: string
-  expected: string
-}
-
-const runSamples = ref<EditableSample[]>([])
+/**
+ * The single free-form self-test input: a plain "stdin in, stdout out" run (code-runner style).
+ * The backend never compares anything — the result simply shows what the program printed.
+ */
+const runStdin = ref('')
 const running = ref(false)
 const runResult = ref<ProblemRunResult | null>(null)
 const runError = ref('')
@@ -63,7 +74,7 @@ const showCaseBreakdown = computed(() =>
   && submission.value.verdict !== 'CE'
   && (submission.value.cases?.length ?? 0) > 0)
 
-/** Panel collapse state — collapsed panels shrink to their title bar and others absorb the space. */
+/** Panel collapse state — a collapsed panel leaves a compact tab and its pane leaves the split. */
 const showStatement = ref(true)
 const showCode = ref(true)
 const showResult = ref(false)
@@ -75,21 +86,81 @@ const title = computed(() => problem.value?.title || '题目')
 /** Rendered markdown statement (admin-authored). */
 const statementHtml = computed(() => (problem.value ? marked.parse(problem.value.description) : ''))
 
-/** Seeds the self-test samples from the problem's public sample cases. */
-function loadSamples(): void {
-  runSamples.value = (problem.value?.sampleCases ?? []).map((s) => ({
-    stdin: s.stdin ?? '',
-    expected: s.expectedOutput ?? '',
-  }))
+// ---------------------------------------------------------------------------
+// Responsive direction + persisted pane sizes
+// ---------------------------------------------------------------------------
+
+/** Breakpoint shared with the Tailwind `lg:` utilities — drives the splitpanes direction. */
+const DESKTOP_QUERY = '(min-width: 1024px)'
+const desktopMedia = window.matchMedia(DESKTOP_QUERY)
+const isDesktop = ref(desktopMedia.matches)
+
+function onDesktopChange(event: MediaQueryListEvent): void {
+  isDesktop.value = event.matches
 }
 
-function addSample(): void {
-  runSamples.value.push({ stdin: '', expected: '' })
+/** Persisted pane shares (%). The statement share means width/height per orientation. */
+interface LayoutState {
+  stmtDesktop: number
+  stmtMobile: number
+  code: number
+  res: number
 }
 
-function removeSample(index: number): void {
-  runSamples.value.splice(index, 1)
+const LAYOUT_KEY = 'nitrowater:playground-layout'
+const DEFAULT_LAYOUT: LayoutState = { stmtDesktop: 32, stmtMobile: 40, code: 60, res: 40 }
+
+/** Clamps a persisted share into a sane range, falling back to the default on garbage input. */
+function sanitizeShare(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 5 && value <= 95
+    ? value
+    : fallback
 }
+
+function loadLayout(): LayoutState {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (!raw) return { ...DEFAULT_LAYOUT }
+    const parsed = JSON.parse(raw) as Partial<LayoutState>
+    return {
+      stmtDesktop: sanitizeShare(parsed.stmtDesktop, DEFAULT_LAYOUT.stmtDesktop),
+      stmtMobile: sanitizeShare(parsed.stmtMobile, DEFAULT_LAYOUT.stmtMobile),
+      code: sanitizeShare(parsed.code, DEFAULT_LAYOUT.code),
+      res: sanitizeShare(parsed.res, DEFAULT_LAYOUT.res),
+    }
+  } catch {
+    return { ...DEFAULT_LAYOUT }
+  }
+}
+
+const layout = ref<LayoutState>(loadLayout())
+
+function persistLayout(): void {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout.value))
+  } catch {
+    // Storage unavailable (private mode etc.) — the layout simply won't persist.
+  }
+}
+
+/** Persists the statement share after a drag, but only while both outer panes exist. */
+function onOuterResized({ panes }: SplitpanesResizedPayload): void {
+  if (!showStatement.value || panes.length < 2) return
+  layout.value[isDesktop.value ? 'stmtDesktop' : 'stmtMobile'] = panes[0].size
+  persistLayout()
+}
+
+/** Persists the editor/verdict shares after a drag, but only while both panes exist. */
+function onInnerResized({ panes }: SplitpanesResizedPayload): void {
+  if (!showCode.value || !showResult.value || panes.length < 2) return
+  layout.value.code = panes[0].size
+  layout.value.res = panes[1].size
+  persistLayout()
+}
+
+// ---------------------------------------------------------------------------
+// Self-test run (stdin → stdout, no cases, no judging)
+// ---------------------------------------------------------------------------
 
 function resetCode(): void {
   code.value = defaultCodeFor(languageId.value)
@@ -146,11 +217,12 @@ async function runTests(): Promise<void> {
   runError.value = ''
   runResult.value = null
   try {
-    const samples = runSamples.value.map((s) => ({
-      stdin: s.stdin,
-      expected: s.expected.trim() === '' ? null : s.expected,
-    }))
-    runResult.value = await runProblem(problem.value.id, languageId.value, code.value, samples)
+    runResult.value = await runProblem(
+      problem.value.id,
+      languageId.value,
+      code.value,
+      runStdin.value,
+    )
   } catch (e) {
     runError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -164,7 +236,6 @@ async function loadProblem(): Promise<void> {
   try {
     problem.value = await getProblem(problemId.value)
     code.value = defaultCodeFor(languageId.value)
-    loadSamples()
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   }
@@ -178,7 +249,7 @@ watch(
     submitError.value = ''
     runResult.value = null
     runError.value = ''
-    runSamples.value = []
+    runStdin.value = ''
     void loadProblem()
   },
   { immediate: true },
@@ -189,7 +260,12 @@ watch(languageId, (lang) => {
   code.value = defaultCodeFor(lang)
 })
 
+onMounted(() => {
+  desktopMedia.addEventListener('change', onDesktopChange)
+})
+
 onBeforeUnmount(() => {
+  desktopMedia.removeEventListener('change', onDesktopChange)
   if (pollTimer) clearTimeout(pollTimer)
 })
 </script>
@@ -198,7 +274,7 @@ onBeforeUnmount(() => {
   <PageShell
     fill
     :title="title"
-    desc="ACM 模式在线判题：右侧写代码、提交评测，左侧查看题目与样例。三个面板均可收起/展开。"
+    desc="ACM 模式在线判题：右侧写代码、提交评测，左侧查看题目与样例。分隔条可拖动调整面板宽度，三个面板均可收起/展开。"
   >
     <div
       v-if="loadError"
@@ -215,104 +291,57 @@ onBeforeUnmount(() => {
 
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto lg:flex-row lg:overflow-hidden"
+      class="flex min-h-0 flex-1 flex-col gap-2.5 lg:flex-row"
     >
-      <!-- Statement -->
-      <section
-        class="panel flex flex-col"
-        :class="showStatement ? 'lg:min-h-0 lg:flex-1' : ''"
+      <!-- Collapsed statement: full-width bar on mobile, vertical rail on desktop -->
+      <button
+        v-if="!showStatement"
+        type="button"
+        class="panel-tab shrink-0 justify-center lg:h-full lg:w-10 lg:flex-col lg:px-0 lg:py-3"
+        :aria-expanded="false"
+        aria-label="展开题目面板"
+        @click="showStatement = true"
       >
-        <button
-          type="button"
-          class="flex items-center gap-2 text-left"
-          :aria-expanded="showStatement"
-          @click="showStatement = !showStatement"
+        <svg
+          class="size-3.5 shrink-0 rotate-90 text-faint transition-transform lg:rotate-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
-          <svg
-            class="size-3.5 shrink-0 text-faint transition-transform"
-            :class="showStatement ? 'rotate-90' : ''"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M9 5l7 7-7 7" />
-          </svg>
-          <span class="text-sm font-medium text-ink">题目</span>
-          <span
-            class="text-xs"
-            :class="difficultyMeta(problem.difficulty).color"
-          >{{ difficultyMeta(problem.difficulty).label }}</span>
-          <span class="ml-auto truncate text-xs text-faint">#{{ problem.id }} · {{ problem.slug }}</span>
-        </button>
+          <path d="M9 5l7 7-7 7" />
+        </svg>
+        <span class="text-sm font-medium text-ink lg:[writing-mode:vertical-rl]">题目</span>
+        <span
+          class="text-xs lg:[writing-mode:vertical-rl]"
+          :class="difficultyMeta(problem.difficulty).color"
+        >{{ difficultyMeta(problem.difficulty).label }}</span>
+        <span class="min-w-0 truncate text-xs text-faint lg:hidden">#{{ problem.id }} · {{ problem.slug }}</span>
+      </button>
 
-        <div
-          v-show="showStatement"
-          class="mt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
-        >
-          <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
-            <span>时限 {{ problem.timeLimitMs }} ms</span>
-            <span>内存 {{ Math.round(problem.memoryLimitKb / 1024) }} MB</span>
-          </div>
-
-          <!-- eslint-disable vue/no-v-html -- admin-authored markdown -->
-          <div
-            class="pg-statement"
-            v-html="statementHtml"
-          />
-          <!-- eslint-enable vue/no-v-html -->
-
-          <div
-            v-if="problem.sampleCases.length"
-            class="mt-4"
-          >
-            <div class="mb-2 text-sm font-medium text-ink">
-              样例
-            </div>
-            <div
-              v-for="sample in problem.sampleCases"
-              :key="sample.idx"
-              class="mb-3 grid gap-2 sm:grid-cols-2"
-            >
-              <div class="rounded-md border border-line bg-soft p-2">
-                <div class="mb-1 text-[11px] text-faint">
-                  输入
-                </div>
-                <pre class="m-0 whitespace-pre-wrap break-all font-mono text-xs text-ink">{{ sample.stdin }}</pre>
-              </div>
-              <div class="rounded-md border border-line bg-soft p-2">
-                <div class="mb-1 text-[11px] text-faint">
-                  输出
-                </div>
-                <pre class="m-0 whitespace-pre-wrap break-all font-mono text-xs text-ink">{{ sample.expectedOutput }}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Editor + verdict -->
-      <section
-        v-show="showCode || showResult"
-        class="flex flex-col gap-3 lg:min-h-0 lg:flex-1"
+      <Splitpanes
+        class="min-h-0 flex-1"
+        :horizontal="!isDesktop"
+        @resized="onOuterResized"
       >
-        <!-- Editor -->
-        <div
-          class="panel flex flex-col"
-          :class="showCode ? 'lg:min-h-0 lg:flex-[3]' : ''"
+        <!-- Statement -->
+        <Pane
+          v-if="showStatement"
+          :size="isDesktop ? layout.stmtDesktop : layout.stmtMobile"
+          min-size="18"
+          max-size="70"
         >
-          <div class="flex flex-wrap items-center gap-2">
+          <section class="panel flex h-full min-h-0 flex-col overflow-hidden">
             <button
               type="button"
               class="flex items-center gap-2 text-left"
-              :aria-expanded="showCode"
-              @click="showCode = !showCode"
+              :aria-expanded="true"
+              @click="showStatement = false"
             >
               <svg
-                class="size-3.5 shrink-0 text-faint transition-transform"
-                :class="showCode ? 'rotate-90' : ''"
+                class="size-3.5 shrink-0 rotate-90 text-faint transition-transform"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -322,315 +351,368 @@ onBeforeUnmount(() => {
               >
                 <path d="M9 5l7 7-7 7" />
               </svg>
-              <span class="flex items-center gap-1.5 text-sm font-medium text-ink">
-                <el-icon><VideoPlay /></el-icon>
-                代码
-              </span>
+              <span class="text-sm font-medium text-ink">题目</span>
+              <span
+                class="text-xs"
+                :class="difficultyMeta(problem.difficulty).color"
+              >{{ difficultyMeta(problem.difficulty).label }}</span>
+              <span class="ml-auto truncate text-xs text-faint">#{{ problem.id }} · {{ problem.slug }}</span>
             </button>
 
-            <template v-if="showCode">
-              <el-select
-                v-model="languageId"
-                class="!w-[124px] shrink-0"
-                size="small"
-                :disabled="submitting"
-              >
-                <el-option
-                  v-for="item in LANGUAGES"
-                  :key="item.id"
-                  :label="item.label"
-                  :value="item.id"
-                />
-              </el-select>
-              <el-tooltip
-                content="重置为初始代码"
-                placement="top"
-              >
-                <el-button
-                  class="ml-auto shrink-0"
-                  size="small"
-                  :icon="Refresh"
-                  circle
-                  :disabled="submitting"
-                  @click="resetCode"
-                />
-              </el-tooltip>
-              <el-button
-                size="small"
-                class="shrink-0"
-                :disabled="running || submitting"
-                @click="runTests"
-              >
-                {{ running ? '运行中…' : '运行测试' }}
-              </el-button>
-              <el-button
-                type="primary"
-                size="small"
-                class="shrink-0"
-                :disabled="submitting || running"
-                @click="submit"
-              >
-                {{ submitting ? '评测中…' : '提交评测' }}
-              </el-button>
-            </template>
-          </div>
+            <div class="mt-3 min-h-0 flex-1 overflow-y-auto">
+              <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-faint">
+                <span>时限 {{ problem.timeLimitMs }} ms</span>
+                <span>内存 {{ Math.round(problem.memoryLimitKb / 1024) }} MB</span>
+              </div>
 
-          <p
-            v-show="showCode"
-            class="mt-2 text-[11px] text-faint"
-          >
-            建议先「运行测试」用自建用例确认输出无误，再「提交评测」；提交后仅展示评测结论，不展示用例详情。
-          </p>
-
-          <div
-            v-show="showCode"
-            class="mt-3 h-[380px] overflow-hidden rounded-md border border-line lg:h-auto lg:min-h-0 lg:flex-1"
-          >
-            <CodeEditor
-              v-model="code"
-              :language="languageId"
-            />
-          </div>
-
-          <!-- Self-test: editable samples + per-sample results (submission hides detail on purpose) -->
-          <div
-            v-show="showCode"
-            class="mt-3 max-h-[320px] shrink-0 overflow-y-auto rounded-md border border-line p-2"
-          >
-            <div class="flex flex-wrap items-center gap-2 text-[11px]">
-              <span class="font-medium text-ink">测试用例</span>
-              <span class="text-faint">LeetCode 题填 JSON 参数，ACM 题填标准输入</span>
-              <el-button
-                class="ml-auto"
-                size="small"
-                :disabled="running || submitting"
-                @click="addSample"
-              >
-                添加用例
-              </el-button>
-            </div>
-
-            <div class="mt-2 flex flex-col gap-2">
+              <!-- eslint-disable vue/no-v-html -- admin-authored markdown -->
               <div
-                v-for="(sample, index) in runSamples"
-                :key="index"
-                class="rounded-md border border-line p-2"
+                class="pg-statement"
+                v-html="statementHtml"
+              />
+              <!-- eslint-enable vue/no-v-html -->
+
+              <div
+                v-if="problem.sampleCases.length"
+                class="mt-4"
               >
-                <div class="mb-1 flex items-center gap-2 text-[11px] text-faint">
-                  <span>用例 {{ index + 1 }}</span>
+                <div class="mb-2 text-sm font-medium text-ink">
+                  样例
+                </div>
+                <div
+                  v-for="sample in problem.sampleCases"
+                  :key="sample.idx"
+                  class="mb-3 grid gap-2 sm:grid-cols-2"
+                >
+                  <div class="rounded-md border border-line bg-soft p-2">
+                    <div class="mb-1 text-[11px] text-faint">
+                      输入
+                    </div>
+                    <pre class="m-0 whitespace-pre-wrap break-all font-mono text-xs text-ink">{{ sample.stdin }}</pre>
+                  </div>
+                  <div class="rounded-md border border-line bg-soft p-2">
+                    <div class="mb-1 text-[11px] text-faint">
+                      输出
+                    </div>
+                    <pre class="m-0 whitespace-pre-wrap break-all font-mono text-xs text-ink">{{ sample.expectedOutput }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </Pane>
+
+        <!-- Right column: editor + verdict -->
+        <Pane min-size="28">
+          <div class="flex h-full min-h-0 flex-col gap-2.5">
+            <!-- Collapsed editor: compact tab pinned above the inner split -->
+            <button
+              v-if="!showCode"
+              type="button"
+              class="panel-tab shrink-0"
+              :aria-expanded="false"
+              aria-label="展开代码面板"
+              @click="showCode = true"
+            >
+              <svg
+                class="size-3.5 shrink-0 rotate-90 text-faint transition-transform"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9 5l7 7-7 7" />
+              </svg>
+              <span class="text-sm font-medium text-ink">代码</span>
+            </button>
+
+            <Splitpanes
+              v-if="showCode || showResult"
+              horizontal
+              class="min-h-0 flex-1"
+              @resized="onInnerResized"
+            >
+              <!-- Editor -->
+              <Pane
+                v-if="showCode"
+                :size="showResult ? layout.code : undefined"
+                min-size="20"
+              >
+                <section class="panel flex h-full min-h-0 flex-col overflow-hidden">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 text-left"
+                      :aria-expanded="true"
+                      @click="showCode = false"
+                    >
+                      <svg
+                        class="size-3.5 shrink-0 rotate-90 text-faint transition-transform"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M9 5l7 7-7 7" />
+                      </svg>
+                      <span class="flex items-center gap-1.5 text-sm font-medium text-ink">
+                        <el-icon><VideoPlay /></el-icon>
+                        代码
+                      </span>
+                    </button>
+
+                    <el-select
+                      v-model="languageId"
+                      class="!w-[124px] shrink-0"
+                      size="small"
+                      :disabled="submitting"
+                    >
+                      <el-option
+                        v-for="item in LANGUAGES"
+                        :key="item.id"
+                        :label="item.label"
+                        :value="item.id"
+                      />
+                    </el-select>
+                    <el-tooltip
+                      content="重置为初始代码"
+                      placement="top"
+                    >
+                      <el-button
+                        class="ml-auto shrink-0"
+                        size="small"
+                        :icon="Refresh"
+                        circle
+                        :disabled="submitting"
+                        @click="resetCode"
+                      />
+                    </el-tooltip>
+                    <el-button
+                      size="small"
+                      class="shrink-0"
+                      :disabled="running || submitting"
+                      @click="runTests"
+                    >
+                      {{ running ? '运行中…' : '运行' }}
+                    </el-button>
+                    <el-button
+                      type="primary"
+                      size="small"
+                      class="shrink-0"
+                      :disabled="submitting || running"
+                      @click="submit"
+                    >
+                      {{ submitting ? '评测中…' : '提交评测' }}
+                    </el-button>
+                  </div>
+
+                  <p class="mt-2 text-[11px] text-faint">
+                    先「运行」用自测输入确认输出无误，再「提交评测」；提交后仅展示评测结论，不展示用例详情。
+                  </p>
+
+                  <div class="mt-3 min-h-[200px] flex-1 overflow-hidden rounded-md border border-line">
+                    <CodeEditor
+                      v-model="code"
+                      :language="languageId"
+                    />
+                  </div>
+
+                  <!-- Self-test: one free-form input → the program's output (no cases, no judging) -->
+                  <div class="mt-3 max-h-[320px] min-h-[140px] overflow-y-auto rounded-md border border-line p-2">
+                    <div class="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span class="font-medium text-ink">自测输入</span>
+                      <span class="text-faint">LeetCode 题填 JSON 参数，ACM 题填标准输入；点「运行」直接看输出，不评判</span>
+                    </div>
+
+                    <textarea
+                      v-model="runStdin"
+                      rows="3"
+                      spellcheck="false"
+                      class="mt-2 w-full resize-y rounded border border-line bg-soft p-1.5 font-mono text-[12px] text-ink outline-none focus:border-[var(--color-accent)]"
+                      placeholder="输入（stdin，可多行；可留空）"
+                    />
+
+                    <!-- Run result -->
+                    <div
+                      v-if="runError || runResult"
+                      class="mt-2 border-t border-line pt-2"
+                    >
+                      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                        <span class="font-medium text-ink">输出</span>
+                        <span
+                          v-if="runError"
+                          class="text-[#f43f5e]"
+                        >{{ runError }}</span>
+                        <template v-else-if="runResult">
+                          <span :class="runStatusMeta(runResult.status).color">{{ runStatusMeta(runResult.status).label }}</span>
+                          <span
+                            v-if="runResult.timeMs != null"
+                            class="text-faint"
+                          >{{ runResult.timeMs }} ms</span>
+                          <span
+                            v-if="runResult.memoryKb != null"
+                            class="text-faint"
+                          >{{ Math.round(runResult.memoryKb / 1024) }} MB</span>
+                          <span
+                            v-if="runResult.message"
+                            class="text-faint"
+                          >{{ runResult.message }}</span>
+                        </template>
+                      </div>
+
+                      <pre
+                        v-if="runResult && runResult.stderr"
+                        class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
+                      >{{ runResult.stderr }}</pre>
+
+                      <pre
+                        v-if="runResult"
+                        class="mt-1 min-h-[1.5rem] max-h-60 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-ink"
+                      >{{ runResult.stdout || '（无输出）' }}</pre>
+                    </div>
+                  </div>
+                </section>
+              </Pane>
+
+              <!-- Verdict -->
+              <Pane
+                v-if="showResult"
+                :size="showCode ? layout.res : undefined"
+                min-size="12"
+              >
+                <section class="panel flex h-full min-h-0 flex-col overflow-hidden">
                   <button
                     type="button"
-                    class="ml-auto rounded px-1 hover:text-[#f43f5e]"
-                    :disabled="running"
-                    @click="removeSample(index)"
+                    class="flex items-center gap-2 text-left"
+                    :aria-expanded="true"
+                    @click="showResult = false"
                   >
-                    删除
+                    <svg
+                      class="size-3.5 shrink-0 rotate-90 text-faint transition-transform"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span class="text-sm font-medium text-ink">评测结果</span>
+                    <span
+                      v-if="submission?.verdict"
+                      class="text-xs"
+                      :class="verdictMeta(submission.verdict)?.color"
+                    >{{ verdictMeta(submission.verdict)?.label }}</span>
                   </button>
-                </div>
-                <div class="grid gap-2 sm:grid-cols-2">
-                  <textarea
-                    v-model="sample.stdin"
-                    rows="2"
-                    spellcheck="false"
-                    class="w-full resize-y rounded border border-line bg-soft p-1.5 font-mono text-[12px] text-ink outline-none focus:border-[var(--accent)]"
-                    placeholder="输入"
-                  />
-                  <textarea
-                    v-model="sample.expected"
-                    rows="2"
-                    spellcheck="false"
-                    class="w-full resize-y rounded border border-line bg-soft p-1.5 font-mono text-[12px] text-ink outline-none focus:border-[var(--accent)]"
-                    placeholder="期望输出（留空则仅查看运行结果）"
-                  />
-                </div>
-              </div>
-              <div
-                v-if="!runSamples.length"
-                class="text-[11px] text-faint"
-              >
-                暂无自建用例：点击「添加用例」自己写一组，或直接「运行测试」使用题目样例。
-              </div>
-            </div>
 
-            <!-- Run result -->
-            <div
-              v-if="runError || runResult"
-              class="mt-2 border-t border-line pt-2"
-            >
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-                <span class="font-medium text-ink">运行结果</span>
-                <span
-                  v-if="runError"
-                  class="text-[#f43f5e]"
-                >{{ runError }}</span>
-                <template v-else-if="runResult">
-                  <span :class="runStatusMeta(runResult.status).color">{{ runStatusMeta(runResult.status).label }}</span>
-                  <span class="text-faint">{{ runResult.cases.length }} 个用例</span>
-                </template>
-              </div>
+                  <div class="mt-3 min-h-0 flex-1 overflow-y-auto">
+                    <div
+                      v-if="submitError"
+                      class="text-sm text-[#f43f5e]"
+                    >
+                      {{ submitError }}
+                    </div>
 
-              <div
-                v-if="runResult && runResult.compileMessage"
-                class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
-              >
-                {{ runResult.compileMessage }}
-              </div>
+                    <div
+                      v-else-if="!submission"
+                      class="py-6 text-center text-xs text-faint"
+                    >
+                      尚未提交，点击「提交评测」查看结果。
+                    </div>
 
-              <div
-                v-if="runResult"
-                class="mt-1 flex flex-col gap-1.5"
-              >
-                <div
-                  v-for="item in runResult.cases"
-                  :key="item.index"
-                  class="rounded border border-line p-1.5"
-                >
-                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-                    <span class="text-faint">用例 {{ item.index + 1 }}</span>
-                    <span :class="caseVerdictMeta(item.verdict).color">{{ caseVerdictMeta(item.verdict).label }}</span>
-                    <span
-                      v-if="item.timeMs != null"
-                      class="text-faint"
-                    >{{ item.timeMs }} ms</span>
-                    <span
-                      v-if="item.message"
-                      class="text-faint"
-                    >{{ item.message }}</span>
-                  </div>
-                  <div class="mt-1 grid gap-1.5 sm:grid-cols-2">
-                    <div>
-                      <div class="text-[10px] text-faint">
-                        输入
+                    <template v-else>
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span
+                          class="text-sm font-semibold"
+                          :class="verdictMeta(submission.verdict)?.color"
+                        >{{ verdictMeta(submission.verdict)?.label }}</span>
+                        <span class="text-xs text-faint">{{ statusLabel(submission.status) }}</span>
+                        <span
+                          v-if="submission.status === 'DONE'"
+                          class="ml-auto text-xs text-dim"
+                        >
+                          通过 {{ submission.passed }}/{{ submission.total }} · 得分 {{ submission.score }}
+                          <template v-if="submission.timeMs != null"> · {{ submission.timeMs }} ms</template>
+                          <template v-if="submission.memoryKb != null"> · {{ Math.round(submission.memoryKb / 1024) }} MB</template>
+                        </span>
                       </div>
-                      <pre class="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-ink">{{ item.input ?? '（空）' }}</pre>
-                    </div>
-                    <div>
-                      <div class="text-[10px] text-faint">
-                        实际输出
+
+                      <div
+                        v-if="submission.compileMessage"
+                        class="mt-2 whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
+                      >
+                        {{ submission.compileMessage }}
                       </div>
-                      <pre class="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-ink">{{ item.actual ?? '（无输出）' }}</pre>
-                    </div>
+
+                      <div
+                        v-if="failureSummary"
+                        class="mt-2 text-sm font-medium text-[#f43f5e]"
+                      >
+                        {{ failureSummary }}
+                      </div>
+
+                      <div
+                        v-if="showCaseBreakdown"
+                        class="mt-2 flex flex-col gap-1"
+                      >
+                        <div
+                          v-for="item in submission.cases"
+                          :key="item.index"
+                          class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-line px-2 py-1 text-[11px]"
+                        >
+                          <span class="text-faint">用例 {{ item.index + 1 }}</span>
+                          <span :class="verdictMeta(item.verdict)?.color">{{ verdictMeta(item.verdict)?.label }}</span>
+                          <span
+                            v-if="item.timeMs"
+                            class="text-faint"
+                          >{{ item.timeMs }} ms</span>
+                          <span
+                            v-if="item.message"
+                            class="text-faint"
+                          >{{ item.message }}</span>
+                        </div>
+                      </div>
+                    </template>
                   </div>
-                  <div
-                    v-if="item.expected != null"
-                    class="mt-1"
-                  >
-                    <div class="text-[10px] text-faint">
-                      期望输出
-                    </div>
-                    <pre class="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-ink">{{ item.expected }}</pre>
-                  </div>
-                </div>
-              </div>
-            </div>
+                </section>
+              </Pane>
+            </Splitpanes>
+
+            <!-- Collapsed verdict: compact tab pinned below the inner split -->
+            <button
+              v-if="!showResult"
+              type="button"
+              class="panel-tab shrink-0"
+              :aria-expanded="false"
+              aria-label="展开评测结果面板"
+              @click="showResult = true"
+            >
+              <svg
+                class="size-3.5 shrink-0 -rotate-90 text-faint transition-transform"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9 5l7 7-7 7" />
+              </svg>
+              <span class="text-sm font-medium text-ink">评测结果</span>
+              <span
+                v-if="submission?.verdict"
+                class="text-xs"
+                :class="verdictMeta(submission.verdict)?.color"
+              >{{ verdictMeta(submission.verdict)?.label }}</span>
+            </button>
           </div>
-        </div>
-
-        <!-- Verdict -->
-        <div
-          class="panel flex flex-col"
-          :class="showResult ? 'lg:min-h-0 lg:flex-[2]' : ''"
-        >
-          <button
-            type="button"
-            class="flex items-center gap-2 text-left"
-            :aria-expanded="showResult"
-            @click="showResult = !showResult"
-          >
-            <svg
-              class="size-3.5 shrink-0 text-faint transition-transform"
-              :class="showResult ? 'rotate-90' : ''"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M9 5l7 7-7 7" />
-            </svg>
-            <span class="text-sm font-medium text-ink">评测结果</span>
-            <span
-              v-if="submission?.verdict"
-              class="text-xs"
-              :class="verdictMeta(submission.verdict)?.color"
-            >{{ verdictMeta(submission.verdict)?.label }}</span>
-          </button>
-
-          <div
-            v-show="showResult"
-            class="mt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
-          >
-            <div
-              v-if="submitError"
-              class="text-sm text-[#f43f5e]"
-            >
-              {{ submitError }}
-            </div>
-
-            <div
-              v-else-if="!submission"
-              class="py-6 text-center text-xs text-faint"
-            >
-              尚未提交，点击「提交评测」查看结果。
-            </div>
-
-            <template v-else>
-              <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span
-                  class="text-sm font-semibold"
-                  :class="verdictMeta(submission.verdict)?.color"
-                >{{ verdictMeta(submission.verdict)?.label }}</span>
-                <span class="text-xs text-faint">{{ statusLabel(submission.status) }}</span>
-                <span
-                  v-if="submission.status === 'DONE'"
-                  class="ml-auto text-xs text-dim"
-                >
-                  通过 {{ submission.passed }}/{{ submission.total }} · 得分 {{ submission.score }}
-                  <template v-if="submission.timeMs != null"> · {{ submission.timeMs }} ms</template>
-                  <template v-if="submission.memoryKb != null"> · {{ Math.round(submission.memoryKb / 1024) }} MB</template>
-                </span>
-              </div>
-
-              <div
-                v-if="submission.compileMessage"
-                class="mt-2 whitespace-pre-wrap break-all font-mono text-[12px] text-[#f43f5e]"
-              >
-                {{ submission.compileMessage }}
-              </div>
-
-              <div
-                v-if="failureSummary"
-                class="mt-2 text-sm font-medium text-[#f43f5e]"
-              >
-                {{ failureSummary }}
-              </div>
-
-              <div
-                v-if="showCaseBreakdown"
-                class="mt-2 flex flex-col gap-1"
-              >
-                <div
-                  v-for="item in submission.cases"
-                  :key="item.index"
-                  class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-line px-2 py-1 text-[11px]"
-                >
-                  <span class="text-faint">用例 {{ item.index + 1 }}</span>
-                  <span :class="verdictMeta(item.verdict)?.color">{{ verdictMeta(item.verdict)?.label }}</span>
-                  <span
-                    v-if="item.timeMs"
-                    class="text-faint"
-                  >{{ item.timeMs }} ms</span>
-                  <span
-                    v-if="item.message"
-                    class="text-faint"
-                  >{{ item.message }}</span>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
-      </section>
+        </Pane>
+      </Splitpanes>
     </div>
   </PageShell>
 </template>

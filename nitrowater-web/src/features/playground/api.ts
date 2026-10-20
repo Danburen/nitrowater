@@ -153,48 +153,34 @@ export async function runCode(language: string, code: string, stdin: string): Pr
   )
 }
 
-/** One user-supplied self-test sample. `expected` may be omitted to only display the actual output. */
-export interface RunSample {
-  stdin: string
-  expected: string | null
-}
-
-/** Per-sample outcome of a problem-aware self-test run. */
-export interface RunCaseResult {
-  index: number
-  input: string | null
-  expected: string | null
-  actual: string | null
-  /** `AC`/`WA`/`TLE`/`OLE`/`RE`/`CE`/`SE`, or `OK` when the sample had no expectation. */
-  verdict: string
+/** Result of a problem-aware self-test run (`POST /api/sandbox/run-problem`). */
+export interface ProblemRunResult {
+  /** Run state: `OK`, otherwise `CE`/`TO`/`OL`/`RE`/`SG`/`SE`. */
+  status: string
+  stdout: string | null
+  stderr: string | null
   timeMs: number | null
   memoryKb: number | null
   message: string | null
 }
 
-/** Result of a problem-aware self-test run (`POST /api/sandbox/run-problem`). */
-export interface ProblemRunResult {
-  /** Overall status: `OK`/`CE`/`TO`/`OL`/`RE`/`SE`. */
-  status: string
-  compileMessage: string | null
-  cases: RunCaseResult[]
-}
-
 /**
- * Runs code against user-supplied samples for a problem (login required). LeetCode-style problems
- * go through the same harness as a submission; ACM problems run raw. Nothing is persisted.
+ * Runs code once with a free-form input for a problem (login required) — a plain "stdin in,
+ * stdout out" self-test: nothing is judged and nothing is persisted. LeetCode-style problems go
+ * through the same harness as a submission (the input is the JSON parameter object); ACM problems
+ * run raw.
  */
 export async function runProblem(
   problemId: number,
   language: string,
   code: string,
-  samples: RunSample[],
+  stdin: string,
 ): Promise<ProblemRunResult> {
   return toJson<ProblemRunResult>(
     await apiFetch('/api/sandbox/run-problem', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ problemId, language, code, samples }),
+      body: JSON.stringify({ problemId, language, code, stdin }),
     }),
   )
 }

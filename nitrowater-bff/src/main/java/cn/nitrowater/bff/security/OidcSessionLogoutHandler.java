@@ -1,7 +1,10 @@
 package cn.nitrowater.bff.security;
 
+import cn.nitrowater.lib.utils.JsonUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -37,29 +40,21 @@ import tools.jackson.databind.json.JsonMapper;
  * {@code SecurityContextLogoutHandler} invalidates it). Every upstream call is best-effort: a
  * failure is logged and logout still proceeds locally.</p>
  */
+@Slf4j
+@RequiredArgsConstructor
 public class OidcSessionLogoutHandler implements LogoutHandler {
 
     /** Request attribute carrying the freshly minted {@code id_token} for the success handler. */
     public static final String FRESH_ID_TOKEN_ATTRIBUTE =
             OidcSessionLogoutHandler.class.getName() + ".FRESH_ID_TOKEN";
 
-    private static final Logger log = LoggerFactory.getLogger(OidcSessionLogoutHandler.class);
 
     private static final String REVOCATION_ENDPOINT_CLAIM = "revocation_endpoint";
     private static final String DEFAULT_REVOCATION_PATH = "/oauth2/revoke";
 
     private final ClientRegistrationRepository clientRegistrationRepository;
     private final OAuth2AuthorizedClientRepository authorizedClientRepository;
-    private final JsonMapper jsonMapper = JsonMapper.builder().build();
     private final String registrationId;
-
-    public OidcSessionLogoutHandler(ClientRegistrationRepository clientRegistrationRepository,
-            OAuth2AuthorizedClientRepository authorizedClientRepository,
-            String registrationId) {
-        this.clientRegistrationRepository = clientRegistrationRepository;
-        this.authorizedClientRepository = authorizedClientRepository;
-        this.registrationId = registrationId;
-    }
 
     @Override
     public void logout(HttpServletRequest request, HttpServletResponse response,
@@ -67,8 +62,7 @@ public class OidcSessionLogoutHandler implements LogoutHandler {
         if (authentication == null || !authentication.isAuthenticated()) {
             return;
         }
-        ClientRegistration registration =
-                this.clientRegistrationRepository.findByRegistrationId(this.registrationId);
+        ClientRegistration registration = this.clientRegistrationRepository.findByRegistrationId(this.registrationId);
         if (registration == null) {
             return;
         }
@@ -108,7 +102,7 @@ public class OidcSessionLogoutHandler implements LogoutHandler {
                 .body(form)
                 .retrieve()
                 .body(String.class);
-        return this.jsonMapper.readTree(body);
+        return JsonUtil.getMapper().readTree(body);
     }
 
     /** Revokes the refresh token at the Authorization Server (RFC 7009). */

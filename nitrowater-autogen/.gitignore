@@ -1,0 +1,6 @@
+# Generated JUnit tests produced by the CLI at runtime - not source.
+generated-tests/
+
+# Local Gradle state (the project uses the root wrapper).
+.gradle/
+build/

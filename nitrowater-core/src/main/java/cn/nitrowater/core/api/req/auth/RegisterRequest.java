@@ -16,6 +16,9 @@ public class RegisterRequest {
     @NotBlank(message = "{user.valid.username_invalid}")
     @Pattern(regexp = "^[0-9a-zA-Z_]+$", message = "{user.valid.username_invalid}")
     private String username;
+    // StrongPasswordValidator returns true for null/blank (delegated to other constraints),
+    // so an explicit @NotBlank is required to reject empty passwords at the DTO layer.
+    @NotBlank(message = "{validation.required}")
     @StrongPassword
     private String password;
     @Email(message = "{valid.email_address.invalid}")

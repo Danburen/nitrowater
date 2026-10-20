@@ -195,6 +195,60 @@ html:root {
   .panel {
     @apply rounded-[14px] border border-line bg-card p-4;
   }
+
+  /* Compact title bar shown in place of a collapsed playground panel. */
+  .panel-tab {
+    @apply flex h-9 items-center gap-2 rounded-[14px] border border-line bg-card px-3 text-left transition hover:border-line-strong;
+  }
+}
+
+/* Playground split gutters: a page-background gutter (reads as a gap) with a grip that
+   appears on hover/focus. Unlayered so it overrides the splitpanes base stylesheet. */
+.splitpanes .splitpanes__splitter {
+  position: relative;
+  background: var(--color-bg);
+}
+
+.splitpanes .splitpanes__splitter::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  border-radius: 9999px;
+  background: var(--color-line-strong);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* Side-by-side (vertical) split: 10px gutter with a short vertical grip. */
+.splitpanes--vertical > .splitpanes__splitter {
+  width: 10px;
+}
+
+.splitpanes--vertical > .splitpanes__splitter::after {
+  width: 3px;
+  height: 28px;
+}
+
+/* Stacked (horizontal) split: 10px gutter with a short horizontal grip. */
+.splitpanes--horizontal > .splitpanes__splitter {
+  height: 10px;
+}
+
+.splitpanes--horizontal > .splitpanes__splitter::after {
+  width: 28px;
+  height: 3px;
+}
+
+.splitpanes .splitpanes__splitter:hover::after,
+.splitpanes .splitpanes__splitter:focus-visible::after {
+  opacity: 1;
+}
+
+.splitpanes .splitpanes__splitter:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
 }
 
 @layer base {

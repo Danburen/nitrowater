@@ -33,6 +33,9 @@ public final class PromptBuilder {
                 5. 每个 @Test 只断言一个行为，测试方法命名要有描述性（如 add_negativeNumbers_returnsSum）。
                 6. 只使用被测类的 public API 与 Java 标准库，保证代码可编译。
                 7. 不要引入 Mockito 等额外依赖。
+                8. 【最重要】必须为「需要生成测试的目标方法」中列出的**每一个**方法都生成测试，一个都不能少；
+                   每个目标方法至少 2 个 @Test（正常路径 + 边界或异常），建议按方法分组并用注释分隔。
+                   在输出前先在心里核对「覆盖检查清单」是否每个方法都已覆盖。
                 """;
     }
 
@@ -71,7 +74,17 @@ public final class PromptBuilder {
             sb.append(indent(m.source(), "      ")).append('\n');
         }
 
-        sb.append('\n').append("请现在输出 ").append(fact.className()).append("Test.java 的完整源码。");
+        sb.append('\n');
+        sb.append("【覆盖检查清单（必须全部覆盖，不得遗漏任何一个）】\n");
+        for (MethodFact m : targets) {
+            sb.append("  - ").append(m.name()).append("：至少 2 个用例")
+                    .append(m.thrownExceptions().isEmpty() ? "（如涉及边界/异常一并覆盖）" : "，含异常：" + String.join("/", m.thrownExceptions()))
+                    .append('\n');
+        }
+
+        sb.append('\n').append("请为上述全部 ").append(targets.size())
+                .append(" 个目标方法生成测试（逐方法分组），只输出 ")
+                .append(fact.className()).append("Test.java 的完整源码。");
         return sb.toString();
     }
 

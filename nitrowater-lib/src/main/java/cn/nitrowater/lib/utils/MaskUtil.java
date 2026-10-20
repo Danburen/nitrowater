@@ -13,6 +13,10 @@ public class MaskUtil {
         int at = raw.indexOf('@');
         String prefix = raw.substring(0, at);
         String suffix = raw.substring(at);
+        // Defensive: "@host" has an empty local part; charAt(0) would throw StringIndexOutOfBoundsException.
+        if (prefix.isEmpty()) {
+            return "***" + suffix;
+        }
         if (prefix.length() <= 2) {
             return prefix.charAt(0) + "***" + suffix;
         }

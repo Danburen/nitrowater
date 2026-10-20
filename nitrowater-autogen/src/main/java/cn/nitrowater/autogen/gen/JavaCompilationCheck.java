@@ -34,7 +34,7 @@ public final class JavaCompilationCheck {
     private JavaCompilationCheck() {
     }
 
-    public static Result check(String fullyQualifiedName, String source) {
+    public static Result check(Path targetSource, String fullyQualifiedName, String source) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             return Result.skipped("no system Java compiler (JRE only)");
@@ -48,7 +48,7 @@ public final class JavaCompilationCheck {
             return Result.skipped("cannot create temp dir: " + e.getMessage());
         }
 
-        JavaFileObject unit = new SimpleJavaFileObject(
+        JavaFileObject generated = new SimpleJavaFileObject(
                 URI.create("string:///" + fullyQualifiedName.replace('.', '/') + ".java"),
                 JavaFileObject.Kind.SOURCE) {
             @Override
@@ -64,13 +64,23 @@ public final class JavaCompilationCheck {
 
         try (StandardJavaFileManager fileManager =
                      compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
-            Boolean ok = compiler.getTask(null, fileManager, diagnostics, options, null, List.of(unit)).call();
-            List<String> messages = new ArrayList<>();
-            for (Diagnostic<? extends JavaFileObject> d : diagnostics.getDiagnostics()) {
-                messages.add(String.format("%s at line %d: %s",
-                        d.getKind(), d.getLineNumber(), d.getMessage(null)));
+            List<JavaFileObject> units = new ArrayList<>();
+            // Compile the class under test together with the generated test so that
+            // references to the target type resolve (Java needs the type, not just syntax).
+            if (targetSource != null && Files.isRegularFile(targetSource)) {
+                fileManager.getJavaFileObjects(targetSource.toFile()).forEach(units::add);
             }
-            return new Result(Boolean.TRUE.equals(ok) && messages.isEmpty(), messages);
+            units.add(generated);
+
+            Boolean ok = compiler.getTask(null, fileManager, diagnostics, options, null, units).call();
+            List<String> errors = new ArrayList<>();
+            for (Diagnostic<? extends JavaFileObject> d : diagnostics.getDiagnostics()) {
+                if (d.getKind() == Diagnostic.Kind.ERROR) {
+                    errors.add(String.format("%s at line %d: %s",
+                            d.getKind(), d.getLineNumber(), d.getMessage(null)));
+                }
+            }
+            return new Result(Boolean.TRUE.equals(ok) && errors.isEmpty(), errors);
         } catch (IOException e) {
             return Result.skipped("compile infrastructure error: " + e.getMessage());
         }
