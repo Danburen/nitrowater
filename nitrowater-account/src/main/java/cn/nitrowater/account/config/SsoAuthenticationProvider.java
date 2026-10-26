@@ -6,13 +6,18 @@ import cn.nitrowater.core.api.auth.LoginResult;
 import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.req.auth.PwdLoginReq;
 import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.exception.threshold.AttemptLimitExceededException;
+import cn.nitrowater.core.exception.threshold.DailyLimitExceededException;
 import cn.nitrowater.core.infrastructure.utils.CookieUtil;
 import cn.nitrowater.core.application.auth.DeviceService;
 import cn.nitrowater.core.application.auth.impl.LoginServiceImpl;
+import cn.nitrowater.lib.common.exceptions.AuthException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -63,7 +68,7 @@ public class SsoAuthenticationProvider implements AuthenticationProvider {
             LoginResult result = loginService.login(req, captchaKey);
             User user = result.user();
             String did = (deviceFp != null && !deviceFp.isBlank())
-                    ? deviceService.calculaateDid(user.getUid(), deviceFp)
+                    ? deviceService.computeDid(user.getUid(), deviceFp)
                     : null;
             SsoUserPrincipal principal = SsoUserPrincipal.of(
                     user,
@@ -78,8 +83,18 @@ public class SsoAuthenticationProvider implements AuthenticationProvider {
             Set<GrantedAuthority> authorities = new LinkedHashSet<>(principal.getAuthorities());
             authorities.add(FactorGrantedAuthority.fromAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY));
             return UsernamePasswordAuthenticationToken.authenticated(principal, null, authorities);
-        } catch (RuntimeException e) {
+        } catch (AuthenticationException e) {
+            throw e;
+        } catch (AttemptLimitExceededException | DailyLimitExceededException e) {
+            // A lockout is not a wrong password: keep it distinguishable for logs and for anyone
+            // wiring a failure handler (the default handler still redirects to /login?error).
+            throw new LockedException(e.getMessage(), e);
+        } catch (AuthException e) {
             throw new BadCredentialsException(e.getMessage() == null ? "login failed" : e.getMessage(), e);
+        } catch (RuntimeException e) {
+            // Anything else is our bug or an outage — never reported as bad credentials, or a broken
+            // login looks like a user typo forever.
+            throw new AuthenticationServiceException("login failed unexpectedly", e);
         }
     }
 

@@ -47,15 +47,15 @@
 
 ```powershell
 .\deploy\bin\gen-keys.ps1   # 首次：生成 JWT 密钥
-.\bin\start-infra.ps1       # MySQL + Redis + SeaweedFS + Piston
-.\bin\start-apps.ps1        # account -> bff / server / resource（加 -WithWeb 起 Vite dev :5173）
+.\bin\start-all.ps1         # 构建（bootJar）+ infra + 后端服务（account/bff/server/resource）
 ```
 
+- 前端由你自己启动：`cd nitrowater-web; npm run dev` → http://localhost:5173
+  （或 `.\bin\start-all.ps1 -BuildWeb` 让 BFF 在 :8080 直接托管构建版）
 - 门户 / 统一入口：http://localhost:8080 （BFF 托管的 SPA）
 - SSO 身份中心：http://localhost:8090
-- 前端开发服务器（可选）：http://localhost:5173
 
-完整脚本清单（启停 / 播种 / 同步）见 [`bin/README.md`](../../bin/README.md)。
+启停参数与 `bin/dev/` 数据脚本（播种 / 重置 / 同步）见 [`bin/README.md`](../../bin/README.md)。
 
 ## 仓库与文档
 

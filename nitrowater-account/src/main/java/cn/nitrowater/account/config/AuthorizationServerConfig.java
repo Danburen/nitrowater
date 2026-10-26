@@ -15,7 +15,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.session.ConcurrentSessionFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -24,6 +27,8 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.boot.ApplicationRunner;
@@ -52,6 +57,8 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.session.ConcurrentSessionFilter;
+import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
@@ -101,12 +108,32 @@ public class AuthorizationServerConfig {
     private static final PasswordEncoder CLIENT_SECRET_ENCODER =
             PasswordEncoderFactories.createDelegatingPasswordEncoder();
 
+    /**
+     * Paths reachable without a session and exempt from CSRF — hosted auth pages plus the public
+     * auth API. One array so the two lists cannot drift apart.
+     */
+    private static final String[] UNPROTECTED_PATHS = {
+            "/login", "/register", "/api/auth/**", "/auth/**", "/error",
+            "/favicon.ico", "/favicon.svg", "/admin/favicon.svg"};
+
+    /**
+     * CSP for our own pages. The inline bootstrap scripts force {@code 'unsafe-inline'} for scripts
+     * and styles; the remaining win is confining loads to this origin and forbidding framing,
+     * plugins and off-site form posts.
+     */
+    private static final String CONTENT_SECURITY_POLICY =
+            "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
+                    + "object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; "
+                    + "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+                    + "connect-src 'self'";
+
     /** AS 端点链（/oauth2/**、/.well-known/**、/userinfo 等）。未登录的 HTML 请求跳 /login。 */
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
             @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
-            RequestCache requestCache)
+            RequestCache requestCache,
+            SessionRegistry sessionRegistry)
             throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
                 new OAuth2AuthorizationServerConfigurer();
@@ -117,6 +144,9 @@ public class AuthorizationServerConfig {
                 .requestCache(c -> c.requestCache(requestCache))
                 .cors(c -> c.configurationSource(cors))
                 .csrf(csrf -> csrf.ignoringRequestMatchers(authorizationServerConfigurer.getEndpointsMatcher()))
+                // A revoked (expired) SSO session must not be able to walk /oauth2/authorize and
+                // mint fresh tokens, so the same expiry check guards the OIDC endpoints.
+                .addFilterBefore(expiredSessionFilter(sessionRegistry), ConcurrentSessionFilter.class)
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.defaultAuthenticationEntryPointFor(
                         new LoginUrlAuthenticationEntryPoint("/login"),
@@ -128,7 +158,10 @@ public class AuthorizationServerConfig {
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
             @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
-            RequestCache requestCache)
+            RequestCache requestCache,
+            SessionRegistry sessionRegistry,
+            SsoLoginSuccessHandler ssoLoginSuccessHandler,
+            SsoLoginFailureHandler ssoLoginFailureHandler)
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
         csrfRequestHandler.setCsrfRequestAttributeName("_csrf");
@@ -136,35 +169,43 @@ public class AuthorizationServerConfig {
         http
                 .requestCache(c -> c.requestCache(requestCache))
                 .cors(c -> c.configurationSource(cors))
-                // CSRF: the admin console's data API (/api/admin/**) is cookie-authenticated, so it
-                // must present the token echoed from the readable XSRF-TOKEN cookie. The SSO pages
-                // (/login, /register, /api/auth/**, /auth/**) are exempt: they are same-origin
-                // form/JS flows that intentionally stay unprotected.
+                // Static strings: the cost is one header write per response.
+                .headers(h -> h
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
+                        .referrerPolicy(r -> r.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        .frameOptions(f -> f.deny()))
+                // Cookie-authenticated writes must echo XSRF-TOKEN; see UNPROTECTED_PATHS for the
+                // same-origin auth pages that stay exempt.
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(csrfRequestHandler)
-                        .ignoringRequestMatchers(
-                                "/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico",
-                                "/favicon.svg", "/admin/favicon.svg"))
+                        .ignoringRequestMatchers(UNPROTECTED_PATHS))
                 .authorizeHttpRequests(a -> a
-                        // Brand favicon is public everywhere: /favicon.svg (login/register/error pages)
-                        // and /admin/favicon.svg (the admin SPA, emitted under the /admin/ Vite base).
-                        .requestMatchers("/login", "/register", "/api/auth/**", "/auth/**", "/error", "/favicon.ico",
-                                "/favicon.svg", "/admin/favicon.svg")
+                        .requestMatchers(UNPROTECTED_PATHS)
                         .permitAll()
-                        // Admin console SPA shell (static files + hashed bundles). Requiring a
-                        // session here means an anonymous hit is 302'd to /login (SavedRequest),
-                        // so a successful login lands back on /admin/ instead of the account root.
-                        // The SPA's own router guard remains a dev/tab-refresh fallback.
+                        // Admin SPA shell: requiring a session makes an anonymous hit 302 to /login
+                        // with a saved request, so login returns to /admin/.
                         .requestMatchers("/admin", "/admin/**")
                         .authenticated()
                         // Role / permission management is reserved for the super admin (站长).
                         .requestMatchers("/api/admin/**")
                         .hasAuthority("ROLE_SUPER_ADMIN")
                         .anyRequest().authenticated())
-                .formLogin(form -> form.loginPage("/login").permitAll())
-                // Log out straight to the login page: going to "/" first would bounce through
-                // the root and seed a saved request that re-enters the console on next login.
+                .formLogin(form -> form
+                        .loginPage("/login")
+                        .permitAll()
+                        .successHandler(ssoLoginSuccessHandler)
+                        .failureHandler(ssoLoginFailureHandler))
+                // Registry tracks sessions (no concurrency limit) so a credential/role change can
+                // terminate them all — see SessionInvalidationListener.
+                .sessionManagement(session -> session
+                        .maximumSessions(-1)
+                        .sessionRegistry(sessionRegistry))
+                // Setting maximumSessions already makes Spring build a ConcurrentSessionFilter, but
+                // that one answers with a plain-text body; ours runs first and returns 401 JSON.
+                .addFilterBefore(expiredSessionFilter(sessionRegistry), ConcurrentSessionFilter.class)
+                // Straight to the login page: going via "/" would seed a saved request.
                 .logout(l -> l.logoutSuccessUrl("/login"))
                 .exceptionHandling(ex -> ex
                         // XHR under /api/** gets a clean 401 JSON instead of a 302 to the HTML login page.
@@ -207,6 +248,37 @@ public class AuthorizationServerConfig {
             return accept != null && accept.contains(MediaType.TEXT_HTML_VALUE);
         });
         return requestCache;
+    }
+
+    /**
+     * Session registry populated by the default chain's {@code maximumSessions(-1)} (tracking only,
+     * no concurrency limit). {@link cn.nitrowater.account.security.SessionInvalidationListener}
+     * uses it to expire every session of an account whose credentials or roles changed.
+     */
+    @Bean
+    public SessionRegistry sessionRegistry() {
+        return new SessionRegistryImpl();
+    }
+
+    /**
+     * Turns an expired {@link org.springframework.security.core.session.SessionInformation} into a
+     * 401 JSON rejection. Registered ahead of the plain-text filter Spring builds for
+     * {@code maximumSessions}, on both chains.
+     */
+    private static ConcurrentSessionFilter expiredSessionFilter(SessionRegistry sessionRegistry) {
+        return new ConcurrentSessionFilter(sessionRegistry, event -> {
+            HttpServletResponse response = event.getResponse();
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":401,\"message\":\"unauthorized\",\"data\":null}");
+        });
+    }
+
+    /** Republishes container session events so dead sessions leave the registry. Static so the
+     * listener is registered before the Servlet context finishes initialising. */
+    @Bean
+    public static HttpSessionEventPublisher httpSessionEventPublisher() {
+        return new HttpSessionEventPublisher();
     }
 
     /**
@@ -395,7 +467,7 @@ public class AuthorizationServerConfig {
                 // OIDC standard `picture`: a STABLE URL (the resource service read path), derived from
                 // the avatar's resource uuid — never a stored/presigned URL, so it cannot expire.
                 if (principal.getAvatarUuid() != null && !principal.getAvatarUuid().isBlank()
-                        && StringUtil.isBlank(pictureBaseUrl)) {
+                        && !StringUtil.isBlank(pictureBaseUrl)) {
                     claims.claim("picture", trimTrailingSlash(pictureBaseUrl)
                             + "/api/public/resource/" + principal.getAvatarUuid());
                 }

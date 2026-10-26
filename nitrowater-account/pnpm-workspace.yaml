@@ -1,0 +1,7 @@
+# pnpm workspace for the account service's two Vue SPAs (admin console + hosted SSO pages)
+# and the small libraries they share. Kept inside nitrowater-account so the Gradle module
+# owns its own front-end toolchain; nitrowater-web stays an independent npm project.
+packages:
+  - admin-ui
+  - auth-ui
+  - packages/*

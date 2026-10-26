@@ -48,7 +48,7 @@ spring:
           nitrowater:
             provider: nitrowater
             client-id: nitrowater-bff
-            client-secret: ${BFF_CLIENT_SECRET:nitrowater-bff-secret}
+            client-secret: ${BFF_CLIENT_SECRET}
             client-name: NitroWater SSO
             authorization-grant-type: authorization_code
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"

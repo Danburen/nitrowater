@@ -19,9 +19,7 @@ import org.springframework.web.servlet.HandlerMapping;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
-import java.util.Enumeration;
 import java.util.Locale;
-import java.util.Set;
 
 /**
  * Proxies {@code /api/**} to the downstream services, attaching a server-held Bearer access token.
@@ -33,14 +31,6 @@ import java.util.Set;
  */
 @RestController
 public class ApiProxyController {
-
-    /** Headers that must not be copied verbatim between the two hops. */
-    private static final Set<String> EXCLUDED_HEADERS = Set.of(
-            "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-            "te", "trailer", "transfer-encoding", "upgrade", "host",
-            "content-length", "authorization", "cookie",
-            // Overwritten with the real client address so downstreams can rate-limit per IP.
-            "x-forwarded-for", "x-real-ip");
 
     private final RestClient serverRestClient;
     private final RestClient resourceRestClient;
@@ -95,7 +85,7 @@ public class ApiProxyController {
         RestClient.RequestBodySpec spec = restClient
                 .method(HttpMethod.valueOf(request.getMethod()))
                 .uri(target);
-        spec.headers(headers -> copyRequestHeaders(request, headers));
+        spec.headers(headers -> ProxyHeaders.forEachForwardedHeader(request, headers::add));
         if (client != null && client.getAccessToken() != null) {
             spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + client.getAccessToken().getTokenValue());
         }
@@ -109,27 +99,15 @@ public class ApiProxyController {
         return spec.exchange((req, res) -> {
             HttpHeaders responseHeaders = new HttpHeaders();
             res.getHeaders().forEach((name, values) -> {
-                String lower = name.toLowerCase(Locale.ROOT);
-                if (!EXCLUDED_HEADERS.contains(lower) && !lower.startsWith("access-control-")) {
+                // CORS is owned by this service's own security chain; a downstream must not
+                // overwrite it (and set-cookie is dropped by the shared policy).
+                if (ProxyHeaders.isRelayableResponseHeader(name)
+                        && !name.toLowerCase(Locale.ROOT).startsWith("access-control-")) {
                     responseHeaders.put(name, values);
                 }
             });
             byte[] responseBody = res.getBody().readAllBytes();
             return ResponseEntity.status(res.getStatusCode()).headers(responseHeaders).body(responseBody);
         });
-    }
-
-    private static void copyRequestHeaders(HttpServletRequest request, HttpHeaders headers) {
-        Enumeration<String> names = request.getHeaderNames();
-        while (names.hasMoreElements()) {
-            String name = names.nextElement();
-            if (EXCLUDED_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
-                continue;
-            }
-            Enumeration<String> values = request.getHeaders(name);
-            while (values.hasMoreElements()) {
-                headers.add(name, values.nextElement());
-            }
-        }
     }
 }

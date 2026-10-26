@@ -39,4 +39,4 @@ SET FOREIGN_KEY_CHECKS=1;'
 MYSQL_PWD="$DB_PASS" "$MYSQL_BIN" -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" -e "$SQL"
 
 echo "[OK] SSO tables dropped from '$DB_NAME'."
-echo "     Restart account (bootRun / bin/start-account.ps1) -> Flyway rebuilds from V1."
+echo "     Restart account (bootRun / bin/start-all.ps1) -> Flyway rebuilds from V1."

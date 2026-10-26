@@ -46,6 +46,7 @@ tasks.named('test') {
 // 与 account 一致：workingDir = 仓库根，使 application.yml 里 file:./nitrowater-web/dist/ 能解析。
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
+    environment 'BFF_CLIENT_SECRET', System.getenv('BFF_CLIENT_SECRET') ?: 'nitrowater-bff-secret'
 }
 
 // 把 SPA 构建产物打进 BFF：dist/* → classpath:/static/*，随 bootJar 一起打包成

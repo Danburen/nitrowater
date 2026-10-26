@@ -30,7 +30,7 @@ deploy/plugin-docs/
 3. **内部链接带 `.html`**（VitePress 默认 `cleanUrls: false`）：这样深层页面是真实文件、
    不会被 SPA fallback 劫持；目录首页（`/plugin/velochatx/docs/`）由 docs 容器的 nginx
    `try_files $uri $uri/ $uri/index.html` 兜底。
-4. **下载资源（不在本目录）**：Jar 由 `bin/sync-res.ps1` 经内部发布端点（`POST /internal/resource/publish`）
+4. **下载资源（不在本目录）**：Jar 由 `bin/dev/sync-res.ps1` 经内部发布端点（`POST /internal/resource/publish`）
    写入统一资源服务，落对象存储并以 `app=nitrowater` + `group_key=<plugin>` 归纳。
    插件中心调用列表接口渲染版本列表，因此 **新增一个 Jar 无需改前端代码**。
 
@@ -44,13 +44,13 @@ deploy/plugin-docs/
 
 ## 本地 / 开发
 
-- `bin/sync-docs.ps1`：按 `/plugin/<plugin>/docs/` 构建 velochatx-docs 并同步到 `docs/`（dev 用，一条命令）。
-- `bin/sync-res.ps1`：把插件构建出的 Jar（默认 `VeloChatX\out\artifacts\VeloChatX\*.jar`）发布到统一资源服务
+- `bin/dev/sync-docs.ps1`：按 `/plugin/<plugin>/docs/` 构建 velochatx-docs 并同步到 `docs/`（dev 用，一条命令）。
+- `bin/dev/sync-res.ps1`：把插件构建出的 Jar（默认 `VeloChatX\out\artifacts\VeloChatX\*.jar`）发布到统一资源服务
   （直连 `:8093` 的 `POST /internal/resource/publish`，需服务端 `app.resource.internal.token`；bootRun 已注入 dev 默认）。
 - docker 容器：compose（`deploy/docker/docker-compose.app.yml`）把本目录 **只读挂进 docs 容器**
   `../plugin-docs:/usr/share/nginx/html/plugin:ro`，nginx 配置为 `deploy/docker/docs-nginx.conf`。
   本地 dev：`docker compose -f deploy/docker/docker-compose.app.yml up -d docs`（或直接跑
-  `bin/start-apps.ps1`，已内置 docs 容器启动），容器监听 `127.0.0.1:8085`（= BFF 的 `app.plugin-docs.upstream` 默认）。
+  `bin/start-infra.ps1`，已内置 docs 容器启动），容器监听 `127.0.0.1:8085`（= BFF 的 `app.plugin-docs.upstream` 默认）。
   发布新文档后无需重启 BFF，可选 `docker restart nitrowater-docs` 立即生效。
 
 ## 为什么不用 `nitrowater-web/public/`？

@@ -7,7 +7,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import cn.nitrowater.account.web.dto.request.ForgotPasswordReAuthReq;
@@ -17,20 +16,12 @@ import cn.nitrowater.account.web.dto.response.ReAuthKeyVo;
 import cn.nitrowater.account.web.dto.response.ReAuthTokenVo;
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.lib.api.AuthCode;
-import cn.nitrowater.lib.api.TokenPair;
 import cn.nitrowater.lib.common.TokenResult;
 import cn.nitrowater.lib.common.exceptions.AuthException;
-import cn.nitrowater.core.api.auth.LoginResult;
-import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.api.auth.VerifyScene;
-import cn.nitrowater.core.api.req.auth.LogoutRequestBody;
-import cn.nitrowater.core.api.req.auth.PwdLoginReq;
 import cn.nitrowater.core.api.req.auth.RegisterRequest;
 import cn.nitrowater.core.api.req.auth.SendCodeReq;
-import cn.nitrowater.core.api.req.auth.VerifyCodeDto;
 import cn.nitrowater.core.api.resp.auth.CodeResult;
-import cn.nitrowater.core.api.resp.auth.LoginClientData;
-import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.infrastructure.aspect.RateLimit;
 import cn.nitrowater.core.infrastructure.utils.CookieUtil;
 import cn.nitrowater.core.infrastructure.utils.ResponseUtil;
@@ -38,9 +29,7 @@ import cn.nitrowater.core.application.account.AccountCoreService;
 import cn.nitrowater.core.application.auth.LineCaptchaResult;
 import cn.nitrowater.core.application.auth.SingleUseTokenService;
 import cn.nitrowater.core.application.auth.code.VerificationService;
-import cn.nitrowater.core.application.auth.impl.AuthCoreServiceImpl;
 import cn.nitrowater.core.application.auth.impl.CaptchaServiceImpl;
-import cn.nitrowater.core.application.auth.impl.LoginServiceImpl;
 import cn.nitrowater.core.application.auth.impl.RegisterServiceImpl;
 
 import java.io.IOException;
@@ -50,13 +39,9 @@ import java.io.IOException;
 @Validated
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-// Phase-1 /api/auth/** compatibility layer intentionally drives the deprecated AT/RT shim.
-@SuppressWarnings("deprecation")
 public class AuthController {
     private final CaptchaServiceImpl captchaService;
-    private final LoginServiceImpl loginService;
     private final RegisterServiceImpl registerService;
-    private final AuthCoreServiceImpl authService;
     private final VerificationService verificationService;
     private final SingleUseTokenService singleUseTokenService;
     private final AccountCoreService accountCoreService;
@@ -102,29 +87,6 @@ public class AuthController {
         return ApiResponse.success();
     }
 
-    @Operation(summary = "密码登陆")
-    @PostMapping("/login-by-password")
-    @RateLimit(key = "ip", permits = 5, window = 300)
-    public ApiResponse<LoginClientData> loginByPassword(@Valid @RequestBody PwdLoginReq body, HttpServletRequest request, HttpServletResponse response) {
-        Cookie[] cookies = request.getCookies();
-        LoginResult result = loginService.login(body, CookieUtil.getCookieValue(cookies, "CAPTCHA_KEY"));
-        return ApiResponse.success(
-                authService.buildLoginResponse(response, result.user(), body.getDeviceInfo(), false)
-        );
-    }
-
-
-    @Operation(summary = "手机/邮箱登陆")
-    @PostMapping("/login-by-code")
-    @RateLimit(key = "ip", permits = 5, window = 300)
-    public ApiResponse<LoginClientData> loginByCode(@Valid @RequestBody VerifyCodeDto dto, HttpServletRequest request, HttpServletResponse response) {
-        String codeKey = dto.getChannel() == VerifyChannel.SMS ? "SMS_CODE_KEY" : "EMAIL_CODE_KEY";
-        LoginResult result = loginService.login(dto, CookieUtil.getCookieValue(request, codeKey));
-        return ApiResponse.success(
-                authService.buildLoginResponse(response, result.user(), dto.getDeviceInfo(), result.isNewUser())
-        );
-    }
-
     @Operation(summary = "忘记密码 - 发送验证码到绑定手机（通过任意标识符）")
     @PostMapping("/forgot-password/re-auth")
     @RateLimit(key = "ip", permits = 3, window = 60)
@@ -166,36 +128,9 @@ public class AuthController {
     @Operation(summary = "注册")
     @PostMapping("/register")
     @RateLimit(key = "ip", permits = 3, window = 300)
-    public ApiResponse<LoginClientData> register(@Valid @RequestBody RegisterRequest dto, HttpServletRequest request, HttpServletResponse response) {
-        User user = registerService.register(
-                dto,
-                CookieUtil.getCookieValue(request.getCookies(), "SMS_CODE_KEY")
-        );
-        return ApiResponse.success(
-                authService.buildLoginResponse(response, user, dto.getVerify().getDeviceInfo(), true)
-        );
-    }
-
-    @PostMapping("/refresh")
-    public ApiResponse<LoginClientData> refresh(@Valid @NotNull String deviceFp, HttpServletRequest request, HttpServletResponse response) {
-        TokenPair tokenPair = authService.refreshAccessToken(
-                CookieUtil.getCookieValue(request.getCookies(), "REFRESH_TOKEN"),
-                deviceFp
-        );
-        CookieUtil.setTokenCookie(response, tokenPair);
-        ResponseUtil.setNoCacheSecurityHeaders(response);
-        return ApiResponse.success(new LoginClientData(
-                tokenPair.accessToken(), tokenPair.accessExp(), false
-        ));
-    }
-
-    @Operation(summary = "登出")
-    @PostMapping("/logout")
-    public ApiResponse<Void> logout(@RequestBody(required = false) LogoutRequestBody body,
-                                    HttpServletRequest request, HttpServletResponse response) {
-        String dfp = body != null ? body.getDeviceFp() : null;
-        loginService.logout(CookieUtil.getCookieValue(request.getCookies(), "REFRESH_TOKEN"), dfp);
-        CookieUtil.cleanTokenCookie(response);
+    public ApiResponse<Void> register(@Valid @RequestBody RegisterRequest dto, HttpServletRequest request) {
+        registerService.register(dto, CookieUtil.getCookieValue(request.getCookies(), "SMS_CODE_KEY"));
+        // No token is issued here: the client signs in through the SSO form login / OIDC afterwards.
         return ApiResponse.success();
     }
 

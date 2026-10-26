@@ -1,24 +1,36 @@
 package cn.nitrowater.account.web;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
 /**
  * Account root entry point.
  *
- * <p>The account service owns no page at the bare {@code /}: it hosts the SSO auth pages
- * ({@code /login}, {@code /register}) and the admin console SPA ({@code /admin/}). A browser can
- * still land on {@code /} two ways — Spring Security's post-logout default and the
- * {@code HttpSessionRequestCache} saved-request redirect (which carries a benign {@code ?continue}
- * query) — and without a mapping that path resolves to no resource and returns a 404. Forwarding
- * the root to the console lets the console's own guard take over (bouncing anonymous users to
- * {@code /login} with a saved request for {@code /admin/}).</p>
+ * <p>Admins keep the console shortcut; every other authenticated identity is sent to the portal.
+ * The old unconditional {@code redirect:/admin/} made any normal login without a saved request
+ * end up in the admin console.</p>
  */
 @Controller
 public class HomeController {
 
+    private final String defaultRedirect;
+
+    /**
+     * Creates the controller.
+     *
+     * @param defaultRedirect portal URL used for non-admin identities
+     */
+    public HomeController(
+            @Value("${app.sso.default-redirect:http://localhost:5173}") String defaultRedirect) {
+        this.defaultRedirect = defaultRedirect;
+    }
+
     @GetMapping("/")
-    public String index() {
-        return "redirect:/admin/";
+    public String index(Authentication authentication) {
+        boolean admin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+        return "redirect:" + (admin ? "/admin/" : defaultRedirect);
     }
 }

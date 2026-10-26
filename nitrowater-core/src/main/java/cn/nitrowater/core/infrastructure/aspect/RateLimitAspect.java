@@ -9,6 +9,7 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import cn.nitrowater.core.exception.threshold.RateLimitException;
+import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;
 
 import java.util.Objects;
 import java.util.Queue;
@@ -53,21 +54,18 @@ public class RateLimitAspect {
         return method + ":" + dimension;
     }
 
+    /** Per-user dimension from the identity the auth filter resolved (never a header — a caller
+     * could rotate {@code X-User-Uid} for a fresh quota every request). */
     private String getCurrentUserId() {
-        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
-        if (attrs instanceof ServletRequestAttributes servletAttrs) {
-            String userId = servletAttrs.getRequest().getHeader("X-User-Uid");
-            if (userId != null) return userId;
-        }
-        return "anon";
+        Long uid = UserCtxHolder.unsafeGetUserUid();
+        return uid != null ? String.valueOf(uid) : "anon";
     }
 
+    /** Per-IP dimension from the connection. Behind a proxy, enable Boot's forwarded-header support
+     * so {@code getRemoteAddr()} already reports the real client. */
     private String getCurrentIp() {
         RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
         if (attrs instanceof ServletRequestAttributes servletAttrs) {
-            // X-Real-Client-Ip is injected by Gateway's AuthGlobalFilter
-            String realIp = servletAttrs.getRequest().getHeader("X-Real-Client-Ip");
-            if (realIp != null && !realIp.isBlank()) return realIp;
             return servletAttrs.getRequest().getRemoteAddr();
         }
         return "unknown";

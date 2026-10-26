@@ -11,8 +11,9 @@ deploy/
 **/build/
 **/node_modules/
 **/dist/
-# admin-ui SPA output (rebuilt in the dedicated node stage, then copied into the build stage)
+# SPA outputs (rebuilt in dedicated node stages, then copied into the build stage)
 **/src/main/resources/static/admin/
+**/src/main/resources/static/auth/
 *.iml
 HELP.md
 README.md

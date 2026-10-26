@@ -1,0 +1,8 @@
+{
+  "extends": "@nitrowater/tsconfig/tsconfig.app.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -13,7 +13,7 @@ import java.util.Optional;
  * Scripting runtimes (Python/JavaScript/Lua) are written verbatim and keep their extension.</p>
  *
  * <p>The Piston {@code node} package registers the runtime as {@code javascript} (see
- * {@code bin/install-piston-langs.ps1}), so the front-end id {@code javascript} maps to it.</p>
+ * {@code bin/dev/install-piston-langs.ps1}), so the front-end id {@code javascript} maps to it.</p>
  */
 public final class LanguageMapper {
 

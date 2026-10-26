@@ -42,4 +42,4 @@ SET FOREIGN_KEY_CHECKS=1;
 if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] drop failed"; exit 1 }
 
 Write-Host "[OK] SSO tables dropped from '$DbName'."
-Write-Host "     Restart account (IDEA / bin\start-account.ps1) -> Flyway rebuilds from V1."
+Write-Host "     Restart account (IDEA / bin\start-all.ps1) -> Flyway rebuilds from V1."

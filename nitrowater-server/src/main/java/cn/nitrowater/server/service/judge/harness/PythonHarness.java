@@ -72,7 +72,7 @@ public final class PythonHarness implements FunctionHarness {
         }
         String serializer = serializerFunction(signature.returnType());
         source.append(driver(serializer + "(_nitro_sol." + signature.method() + "(" + args + "))"));
-        return new GeneratedHarness(source.toString(), countNewlines(prefix));
+        return new GeneratedHarness(source.toString(), HarnessSupport.countNewlines(prefix));
     }
 
     /** Serialiser function name for the return value, chosen by the declared return type. */
@@ -94,22 +94,10 @@ public final class PythonHarness implements FunctionHarness {
         };
     }
 
-    private static boolean needsType(JudgeSignature signature, String type) {
-        if (type.equals(signature.returnType().replace(" ", ""))) {
-            return true;
-        }
-        for (JudgeSignature.Param param : signature.params()) {
-            if (type.equals(param.type().replace(" ", ""))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /** Definitions of the node classes the signature uses and the user's own code does not define. */
     private static String nodeClasses(JudgeSignature signature, String userCode) {
-        boolean needsList = needsType(signature, "ListNode");
-        boolean needsTree = needsType(signature, "TreeNode");
+        boolean needsList = HarnessSupport.usesType(signature, "ListNode");
+        boolean needsTree = HarnessSupport.usesType(signature, "TreeNode");
         if (!needsList && !needsTree) {
             return "";
         }
@@ -221,13 +209,4 @@ public final class PythonHarness implements FunctionHarness {
         return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
-    private static int countNewlines(String text) {
-        int count = 0;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                count++;
-            }
-        }
-        return count;
-    }
 }

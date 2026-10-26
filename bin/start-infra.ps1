@@ -5,11 +5,13 @@
 #   Redis      6379 : redis-server.exe                        -> own console window
 #   SeaweedFS  8333 : docker container nitrowater-seaweedfs   -> docker logs -f window
 #   Piston     2000 : docker container nitrowater-piston      -> docker logs -f window
+#   docs       8085 : docker container nitrowater-docs        -> docker logs -f window
+#                     (nginx hosting ALL plugin docs; the BFF forwards /plugin/** here)
 #
 # Idempotent: anything already listening on its port is left as-is.
 # Every non-service component keeps its own console window (cmd /k) so its log stays visible.
 #
-# Usage:  pwsh -File bin\start-infra.ps1      (or double-click bin\start-all.bat)
+# Usage:  pwsh -File bin\start-infra.ps1
 # ============================================================
 [CmdletBinding()]
 param()
@@ -65,6 +67,17 @@ Ensure-DockerContainer 'nitrowater-piston' 2000 'NitroWater - Piston' {
         ghcr.io/engineer-man/piston | Out-Null
 }
 
+# ---- docs: ONE nginx container hosting every plugin's documentation (127.0.0.1:8085) ----
+# The BFF only proxies /plugin/** here (app.plugin-docs.upstream default = http://localhost:8085).
+# Created from compose (mounts + nginx config live there); started by name when it already exists.
+$composeFile = Join-Path $RepoRoot 'deploy/docker/docker-compose.app.yml'
+Ensure-DockerContainer 'nitrowater-docs' 8085 'NitroWater - docs' {
+    # compose declares `nitrowater-net` as external, so it must exist before `up`.
+    & docker network inspect nitrowater-net *> $null
+    if ($LASTEXITCODE -ne 0) { & docker network create nitrowater-net *> $null }
+    & docker compose -f $composeFile up -d docs *> $null
+}
+
 Write-Step 'Infra ready'
-Write-Host '  MySQL 3306 | Redis 6379 | SeaweedFS 8333 | Piston 2000' -ForegroundColor Gray
+Write-Host '  MySQL 3306 | Redis 6379 | SeaweedFS 8333 | Piston 2000 | docs 8085' -ForegroundColor Gray
 Write-Host '  Each component has its own console window showing logs.' -ForegroundColor Gray

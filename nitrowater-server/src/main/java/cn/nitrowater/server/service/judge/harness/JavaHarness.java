@@ -168,7 +168,7 @@ public final class JavaHarness implements FunctionHarness {
                 .replace("{{NODE_HELPERS}}", nodeHelpers(signature))
                 + nodeClasses(signature, code)
                 + "\n";
-        return new GeneratedHarness(prefix + body + "\n", countNewlines(prefix));
+        return new GeneratedHarness(prefix + body + "\n", HarnessSupport.countNewlines(prefix));
     }
 
     /** Expression that serialises the method's return value, unwrapping {@code ListNode}/{@code TreeNode}. */
@@ -180,26 +180,14 @@ public final class JavaHarness implements FunctionHarness {
         };
     }
 
-    private static boolean needsType(JudgeSignature signature, String type) {
-        if (type.equals(signature.returnType().replace(" ", ""))) {
-            return true;
-        }
-        for (JudgeSignature.Param param : signature.params()) {
-            if (type.equals(param.type().replace(" ", ""))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * Top-level {@code ListNode}/{@code TreeNode} definitions to inject after {@code Main}, but only
      * for types the signature actually uses and only when the user's own code does not already define
      * them (a duplicate top-level class would be a compile error).
      */
     private static String nodeClasses(JudgeSignature signature, String userCode) {
-        boolean needsList = needsType(signature, "ListNode");
-        boolean needsTree = needsType(signature, "TreeNode");
+        boolean needsList = HarnessSupport.usesType(signature, "ListNode");
+        boolean needsTree = HarnessSupport.usesType(signature, "TreeNode");
         if (!needsList && !needsTree) {
             return "";
         }
@@ -225,10 +213,10 @@ public final class JavaHarness implements FunctionHarness {
      */
     private static String nodeHelpers(JudgeSignature signature) {
         StringBuilder sb = new StringBuilder();
-        if (needsType(signature, "ListNode")) {
+        if (HarnessSupport.usesType(signature, "ListNode")) {
             sb.append(LIST_NODE_HELPERS);
         }
-        if (needsType(signature, "TreeNode")) {
+        if (HarnessSupport.usesType(signature, "TreeNode")) {
             sb.append(TREE_NODE_HELPERS);
         }
         return sb.toString();
@@ -277,16 +265,6 @@ public final class JavaHarness implements FunctionHarness {
 
     private static String stripPublicTypes(String code) {
         return PUBLIC_TYPE.matcher(code).replaceAll("$1");
-    }
-
-    private static int countNewlines(String text) {
-        int count = 0;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                count++;
-            }
-        }
-        return count;
     }
 
     private static String loadTemplate() {

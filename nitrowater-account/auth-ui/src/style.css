@@ -1,0 +1,203 @@
+@import 'tailwindcss';
+@import '@nitrowater/ui/theme.css';
+
+/* Tailwind ignores node_modules by default, so scan the shared UI package explicitly. */
+@source '../../packages/ui/src';
+
+@theme {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    system-ui, sans-serif;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    margin: 0;
+  }
+
+  body {
+    color: var(--color-ink);
+    background: var(--color-bg);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+}
+
+@layer components {
+  .auth-page {
+    position: relative;
+    display: grid;
+    min-height: 100dvh;
+    place-items: center;
+    overflow: hidden;
+    padding: 24px;
+    isolation: isolate;
+    background:
+      radial-gradient(
+        ellipse 60% 50% at 12% 12%,
+        color-mix(in srgb, var(--color-accent) 22%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse 50% 45% at 88% 86%,
+        color-mix(in srgb, var(--color-accent-2) 18%, transparent),
+        transparent 72%
+      ),
+      var(--color-bg);
+  }
+
+  .auth-page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.32;
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--color-line) 45%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--color-line) 45%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, black, transparent 78%);
+  }
+
+  .auth-card {
+    @apply relative z-10 grid w-full max-w-5xl overflow-hidden rounded-[24px] border border-line bg-card/90 shadow-2xl backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr];
+  }
+
+  .auth-brand-panel {
+    @apply relative flex flex-col justify-between overflow-hidden p-7 sm:p-10 lg:p-12;
+    background:
+      radial-gradient(
+        circle at 82% 18%,
+        color-mix(in srgb, var(--color-accent) 40%, transparent),
+        transparent 42%
+      ),
+      radial-gradient(
+        circle at 18% 86%,
+        color-mix(in srgb, var(--color-accent-2) 34%, transparent),
+        transparent 46%
+      ),
+      color-mix(in srgb, var(--color-soft) 86%, var(--color-card));
+  }
+
+  .auth-brand-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image: linear-gradient(
+      120deg,
+      transparent 0%,
+      color-mix(in srgb, white 8%, transparent) 48%,
+      transparent 62%
+    );
+  }
+
+  .auth-ring {
+    @apply pointer-events-none absolute rounded-full border border-white/10;
+  }
+
+  .auth-label {
+    @apply mb-2 block text-[13px] font-medium text-dim;
+  }
+
+  .auth-input {
+    @apply w-full rounded-xl border border-line bg-bg/60 py-3 pl-11 pr-4 text-sm text-ink outline-none transition placeholder:text-faint focus:border-accent focus:ring-4 focus:ring-accent/10;
+  }
+
+  .auth-input-plain {
+    @apply pr-12;
+  }
+
+  .auth-button {
+    @apply inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 transition hover:bg-accent-strong focus:outline-none focus:ring-4 focus:ring-accent/25 disabled:cursor-not-allowed disabled:opacity-65;
+  }
+
+  .auth-button-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-soft/70 px-4 py-2.5 text-sm font-medium text-ink transition hover:border-line-strong hover:bg-soft focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-55;
+  }
+
+  .auth-link {
+    @apply font-medium text-accent transition hover:text-accent-strong hover:underline;
+  }
+
+  .auth-alert {
+    @apply flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-[13px] leading-5;
+  }
+
+  .auth-alert-error {
+    @apply flex items-start gap-2.5 rounded-xl border border-danger/25 bg-danger/10 px-3.5 py-3 text-[13px] leading-5 text-danger;
+  }
+
+  .auth-alert-success {
+    @apply flex items-start gap-2.5 rounded-xl border border-ok/25 bg-ok/10 px-3.5 py-3 text-[13px] leading-5 text-ok;
+  }
+
+  .auth-alert-info {
+    @apply flex items-start gap-2.5 rounded-xl border border-accent/25 bg-accent/10 px-3.5 py-3 text-[13px] leading-5 text-accent;
+  }
+
+  .auth-footer {
+    @apply mt-8 border-t border-line pt-5 text-center text-xs text-faint;
+  }
+
+  .auth-dialog-mask {
+    @apply fixed inset-0 z-50 grid place-items-center bg-black/55 p-4 backdrop-blur-sm;
+  }
+
+  .auth-dialog {
+    @apply w-full max-w-sm rounded-2xl border border-line bg-card p-5 shadow-2xl;
+  }
+}
+
+.auth-fade-up {
+  animation: auth-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-fade-in {
+  animation: auth-fade-in 0.25s ease-out both;
+}
+
+@keyframes auth-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes auth-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-fade-up,
+  .auth-fade-in {
+    animation: none;
+  }
+}

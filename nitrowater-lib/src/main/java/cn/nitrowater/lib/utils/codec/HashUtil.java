@@ -12,7 +12,10 @@ import java.util.Base64;
 
 public final class HashUtil {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final Snowflake SNOW = Snowflake.of(0, 0);
+
+    /** Base62 alphabet, shared with {@link Base62}. */
+    private static final char[] DIGITS =
+            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
     private static final ThreadLocal<MessageDigest> MD5_DIGEST = ThreadLocal.withInitial(() -> {
         try {
             return MessageDigest.getInstance("MD5");
@@ -95,10 +98,19 @@ public final class HashUtil {
     }
 
     /**
-     * 62 Bit CharSet Base62 Snowflake
-     * @return 6 byte Snowflake
+     * A random 6-character base62 code (62^6 ≈ 5.7e10 values).
+     *
+     * <p>Used as the short suffix when a slug collides. It must not be derived from a clock:
+     * the previous snowflake-masked version shared its last bits with the millisecond, so codes
+     * generated in a burst could repeat — exactly when a slug collision is being retried.</p>
+     *
+     * @return exactly 6 base62 characters
      */
     public static String next62_6() {
-        return Base62.encode(SNOW.nextId() & 0xFFFFFF);
+        char[] out = new char[6];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = DIGITS[SECURE_RANDOM.nextInt(DIGITS.length)];
+        }
+        return new String(out);
     }
 }

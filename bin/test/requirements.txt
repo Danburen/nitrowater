@@ -1,9 +1,0 @@
-# NitroWater functional / E2E test scripts (bin/test) — pinned to the verified run.
-# Install (into bin/test/.venv):  uv pip install -r requirements.txt
-# Browsers:  python -m playwright install chromium   (PLAYWRIGHT_BROWSERS_PATH=D:\Program\ms-playwright)
-browser-use==0.13.11
-playwright==1.64.0
-redis==8.1.0
-requests==2.33.0
-pytest==8.4.2
-coverage==7.16.2

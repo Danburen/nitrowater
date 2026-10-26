@@ -22,9 +22,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Enumeration;
-import java.util.Locale;
-import java.util.Set;
 
 /**
  * Forwards {@code /plugin/**} to the dedicated plugin-docs container (a single nginx serving every
@@ -44,11 +41,6 @@ import java.util.Set;
  */
 @RestController
 public class PluginDocsProxyController {
-
-    /** Hop-by-hop / hop-specific headers that must not be copied between the two hops. */
-    private static final Set<String> EXCLUDED_HEADERS = Set.of(
-            "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-            "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length");
 
     /** Friendly maintenance page returned when the docs container cannot be reached (503). */
     private static final byte[] UNAVAILABLE_HTML = """
@@ -107,7 +99,7 @@ public class PluginDocsProxyController {
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(upstream + target))
                 .method(request.getMethod(), HttpRequest.BodyPublishers.noBody());
-        copyRequestHeaders(request, builder);
+        ProxyHeaders.forEachForwardedHeader(request, builder::header);
 
         HttpResponse<InputStream> response;
         try {
@@ -137,7 +129,7 @@ public class PluginDocsProxyController {
     private static ResponseEntity<StreamingResponseBody> toResponse(HttpResponse<InputStream> response) {
         HttpHeaders headers = new HttpHeaders();
         response.headers().map().forEach((name, values) -> {
-            if (!EXCLUDED_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+            if (ProxyHeaders.isRelayableResponseHeader(name)) {
                 headers.put(name, values);
             }
         });
@@ -167,19 +159,5 @@ public class PluginDocsProxyController {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .headers(headers)
                 .body(out -> out.write(UNAVAILABLE_HTML));
-    }
-
-    private static void copyRequestHeaders(HttpServletRequest request, HttpRequest.Builder builder) {
-        Enumeration<String> names = request.getHeaderNames();
-        while (names.hasMoreElements()) {
-            String name = names.nextElement();
-            if (EXCLUDED_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
-                continue;
-            }
-            Enumeration<String> values = request.getHeaders(name);
-            while (values.hasMoreElements()) {
-                builder.header(name, values.nextElement());
-            }
-        }
     }
 }

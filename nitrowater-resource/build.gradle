@@ -54,6 +54,7 @@ tasks.named('test') {
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
     environment 'RESOURCE_INTERNAL_TOKEN', System.getenv('RESOURCE_INTERNAL_TOKEN') ?: 'nitrowater-internal-dev'
+    environment 'S3_SECRET_KEY', System.getenv('S3_SECRET_KEY') ?: 'change-me'
 }
 
 // 固定 bootJar 名称，便于 Dockerfile 复制（docker compose build 前先跑 bootJar）。

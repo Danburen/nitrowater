@@ -8,6 +8,7 @@ import cn.nitrowater.account.admin.dto.RoleVO;
 import cn.nitrowater.account.admin.dto.UserSummaryVO;
 import cn.nitrowater.core.domain.role.Role;
 import cn.nitrowater.core.domain.role.UserRole;
+import cn.nitrowater.core.api.event.UserSessionsInvalidatedEvent;
 import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.exception.BizException;
 import cn.nitrowater.core.infrastructure.persistence.role.RoleRepository;
@@ -15,6 +16,7 @@ import cn.nitrowater.core.infrastructure.persistence.role.UserRoleRepository;
 import cn.nitrowater.core.infrastructure.persistence.user.UserRepository;
 import cn.nitrowater.lib.api.BaseResponseCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -46,8 +48,9 @@ import java.util.stream.Collectors;
  *   <li>the last {@code SUPER_ADMIN} binding can never be removed (lock-out protection).</li>
  * </ul>
  *
- * <p>Note: role changes take effect on the next token mint; an already-issued, unexpired access
- * token keeps its old {@code roles} claim until it refreshes.</p>
+ * <p>Replacing an account's role set also invalidates that account's sessions: the {@code roles}
+ * claim is a snapshot taken at login, so an old session would otherwise keep its old authorities for
+ * the refresh-token lifetime.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -62,6 +65,7 @@ public class RoleAdminService {
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ------------------------------------------------------------------ roles
 
@@ -172,6 +176,10 @@ public class RoleAdminService {
             bindings.add(binding);
         }
         userRoleRepository.saveAll(bindings);
+        // The roles claim is snapshotted in every issued token (and in the stored Authorization), so
+        // a changed binding only takes effect once the old sessions are destroyed.
+        eventPublisher.publishEvent(new UserSessionsInvalidatedEvent(user.getUid(),
+                UserSessionsInvalidatedEvent.Reason.ROLES_CHANGED));
         return new ArrayList<>(desired);
     }
 

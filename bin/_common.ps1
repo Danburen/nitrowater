@@ -3,7 +3,8 @@
 #
 # Dot-source it:  . "$PSScriptRoot\_common.ps1"
 # Provides: $RunDir (bin\.run), Write-Step/Ok/Warn/Err, Test-Port, Wait-Port,
-#           Test-Docker, Start-Window, Save-WindowPid, Ensure-DockerContainer.
+#           Test-Docker, Start-Window, Save-WindowPid, Ensure-DockerContainer,
+#           Stop-ListeningPort, Stop-ModuleProcess, Get-Jar, Start-ModuleJar.
 #
 # Window PIDs are recorded under bin\.run\*.pid so stop-all.ps1 can close the EXACT
 # processes. NEVER kill by window title with a wildcard: a "WINDOWTITLE eq NitroWater*"
@@ -79,9 +80,21 @@ $LogDir     = Join-Path $RunDir 'logs'
 if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
 
 # ---- toolchain paths (override with env vars when needed) ----
-$JavaExe     = if ($env:NITROWATER_JAVA)  { $env:NITROWATER_JAVA }  else { 'D:\Program Files\Java\openkdk-hotspot-25.0.1.1\bin\java.exe' }
+# Java 25 is mandatory: the modules compile to class-file major 69. Resolve in this order:
+#   $env:NITROWATER_JAVA -> the known JDK 25 install -> java.exe on PATH.
+# Deliberately NOT $env:JAVA_HOME - on this machine it points at an older JDK (22) that cannot
+# load the boot jars ("Unsupported class file major version 69").
+function Resolve-JavaExe {
+    if ($env:NITROWATER_JAVA) { return $env:NITROWATER_JAVA }
+    $known = 'D:\Program Files\Java\openkdk-hotspot-25.0.1.1\bin\java.exe'
+    if (Test-Path -LiteralPath $known) { return $known }
+    $cmd = Get-Command java.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    throw 'java.exe not found; set NITROWATER_JAVA to a JDK 25 java.exe'
+}
+$JavaExe     = Resolve-JavaExe
 $MysqlExe    = if ($env:NITROWATER_MYSQL) { $env:NITROWATER_MYSQL } else { 'E:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe' }
-$RedisDir    = 'E:\Program Files\Redis'
+$RedisDir    = if ($env:NITROWATER_REDIS_DIR) { $env:NITROWATER_REDIS_DIR } else { 'E:\Program Files\Redis' }
 $RedisCli    = Join-Path $RedisDir 'redis-cli.exe'
 $Gradlew     = Join-Path $RepoRoot 'gradlew.bat'
 
@@ -90,6 +103,11 @@ $DbHost        = '127.0.0.1'
 $DbUser        = 'root'
 $DbPass        = '123456'
 $NitrowaterKek = 'kElE+g/NUUkCAG0azg9ZcYYXbevGg9mYuUtJvICut98='
+$ResourceInternalToken = if ($env:RESOURCE_INTERNAL_TOKEN) { $env:RESOURCE_INTERNAL_TOKEN } else { 'nitrowater-internal-dev' }
+# No defaults live in application.yml any more (a missing prod secret must fail loudly); the dev
+# values below are injected here so a local start needs no setup.
+$BffClientSecret = if ($env:BFF_CLIENT_SECRET) { $env:BFF_CLIENT_SECRET } else { 'nitrowater-bff-secret' }
+$S3SecretKey     = if ($env:S3_SECRET_KEY) { $env:S3_SECRET_KEY } else { 'change-me' }
 $JwtKeyFile    = Join-Path $RepoRoot 'deploy\keys\private.key'
 $JwtKid        = 'nitrowater-key-1'
 $Issuer        = 'http://localhost:8090'
@@ -119,26 +137,90 @@ function Stop-ByPort([int]$Port) {
     }
 }
 
+# Same idea, but reports whether anything was actually stopped. start-all.ps1 uses it to replace
+# a listener that is still running the PREVIOUS jar after a fresh build.
+function Stop-ListeningPort([int]$Port) {
+    $stopped = $false
+    $conns = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+    foreach ($c in $conns) {
+        try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction Stop; $stopped = $true } catch { }
+    }
+    return $stopped
+}
+
+# Stop a service by its tracked wrapper PID first (this also closes the persistent console
+# window and its java child), then by port as a fallback for hidden or manually started jars.
+function Stop-ModuleProcess([string]$Module, [int]$Port) {
+    $stopped = $false
+    $pidFile = Get-ModulePidFile $Module
+    if (Test-Path -LiteralPath $pidFile) {
+        $raw = Get-Content -LiteralPath $pidFile -Raw -ErrorAction SilentlyContinue
+        if ($null -ne $raw) { $raw = $raw.Trim() }
+        if ($raw -match '^\d+$') {
+            $proc = Get-Process -Id ([int]$raw) -ErrorAction SilentlyContinue
+            if ($proc -and ($proc.ProcessName -in @('cmd', 'java'))) {
+                & taskkill /PID ([int]$raw) /T /F *> $null
+                if ($LASTEXITCODE -eq 0) { $stopped = $true }
+            }
+        }
+        Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+    }
+    if (Stop-ListeningPort $Port) { $stopped = $true }
+    return $stopped
+}
+
 # ---- app jar bookkeeping ----
 function Get-Jar([string]$Module) { return (Join-Path $RepoRoot "$Module\build\libs\app.jar") }
 function Get-ModulePidFile([string]$Module) { return (Join-Path $RunDir "$Module.pid") }
 
-# Launch a boot jar the way start-test.ps1 did: hidden window, stdout/stderr split into
-# .run\logs\<module>.{out,err}.log, PID recorded for stop-all.ps1. WorkingDirectory MUST be the
-# repo root (account resolves jwt.private-key=file:./deploy/keys/... relative to it).
-function Start-ModuleJar([string]$Module, [int]$Port) {
+# Launch a boot jar. WorkingDirectory MUST be the repo root (account resolves
+# jwt.private-key=file:./deploy/keys/... relative to it).
+#   default  : hidden process; stdout/stderr split into .run\logs\<module>.{out,err}.log
+#   -Windowed: own visible console window showing the Spring log live (no file redirect)
+# -NoWait returns as soon as the process is spawned (callers that start several services in
+# parallel wait for the ports themselves).
+function Start-ModuleJar([string]$Module, [int]$Port, [switch]$NoWait, [switch]$Windowed) {
     if (Test-TcpPort $Port) { Write-Ok "$Module already up ($Port)"; return $true }
     $jar = Get-Jar $Module
     if (-not (Test-Path -LiteralPath $jar)) { throw "jar missing: $jar (run: gradlew :${Module}:bootJar)" }
     if ($Module -eq 'nitrowater-account') { $env:NITROWATER_KEK = $NitrowaterKek }
-    $out = Join-Path $LogDir "$Module.out.log"
-    $err = Join-Path $LogDir "$Module.err.log"
-    $p = Start-Process -FilePath $JavaExe -ArgumentList @('-jar', $jar) -WorkingDirectory $RepoRoot `
-        -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -WindowStyle Hidden
-    Set-Content -LiteralPath (Get-ModulePidFile $Module) -Value $p.Id -Encoding ascii
-    Write-Host "  launched $Module pid=$($p.Id) (logs\$Module.out.log)"
+    # Dev default so bin\dev\seed-res.ps1 / sync-res.ps1 work out of the box. The endpoint itself
+    # is token-gated and restricted to loopback/private networks (see InternalEndpointFilter).
+    if ($Module -eq 'nitrowater-resource') { $env:RESOURCE_INTERNAL_TOKEN = $ResourceInternalToken }
+    # Secrets have no built-in defaults in application.yml: inject the dev values here (account and
+    # the BFF must share BFF_CLIENT_SECRET; resource authenticates to SeaweedFS with S3_SECRET_KEY).
+    if ($Module -eq 'nitrowater-account' -or $Module -eq 'nitrowater-bff') { $env:BFF_CLIENT_SECRET = $BffClientSecret }
+    if ($Module -eq 'nitrowater-resource') { $env:S3_SECRET_KEY = $S3SecretKey }
+    if ($Windowed) {
+        # java.exe launched straight from a console-less parent inherits the (hidden) parent
+        # console and shows nothing. Go through `cmd /k` like the infra windows do: the cmd
+        # wrapper owns a fresh visible console, and the jar runs inside it.
+        # The wrapper lives under .run\ (no spaces in its path), so Start-Window's
+        # "no embedded quotes" contract still holds.
+        $launcher = Join-Path $RunDir "run-$Module.cmd"
+        $lines = @(
+            '@echo off',
+            ('"{0}" -jar "{1}"' -f $JavaExe, $jar),
+            'echo.',
+            'echo [exited with code %ERRORLEVEL%]',
+            'pause'
+        )
+        Set-Content -LiteralPath $launcher -Value $lines -Encoding ascii
+        $p = Start-Window "NitroWater - $Module" $launcher $RepoRoot
+        Set-Content -LiteralPath (Get-ModulePidFile $Module) -Value $p.Id -Encoding ascii
+        Write-Host "  launched $Module pid=$($p.Id) (visible console window)" -ForegroundColor Gray
+    }
+    else {
+        $out = Join-Path $LogDir "$Module.out.log"
+        $err = Join-Path $LogDir "$Module.err.log"
+        $p = Start-Process -FilePath $JavaExe -ArgumentList @('-jar', $jar) -WorkingDirectory $RepoRoot `
+            -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -WindowStyle Hidden
+        Set-Content -LiteralPath (Get-ModulePidFile $Module) -Value $p.Id -Encoding ascii
+        Write-Host "  launched $Module pid=$($p.Id) (logs\$Module.out.log)" -ForegroundColor Gray
+    }
+    if ($NoWait) { return $true }
     if (Wait-TcpPort $Port 120) { Write-Ok "$Module up ($Port)"; return $true }
-    Write-Warn "$Module not up after 120s (see logs\$Module.out.log)"
+    Write-Warn "$Module not up after 120s (see the window, or logs\$Module.out.log)"
     return $false
 }
 

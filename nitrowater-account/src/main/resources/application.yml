@@ -6,6 +6,12 @@
 
 server:
   port: 8090
+  servlet:
+    session:
+      cookie:
+        # Cross-site POSTs must not carry the SSO session (CSRF hardening). Lax keeps normal
+        # top-level navigation working; all first-party flows are same-site anyway.
+        same-site: lax
 
 spring:
   application:
@@ -123,15 +129,18 @@ generator:
 
 # -------- SSO / OIDC --------
 # OIDC issuer 统一取自 jwt.issuer（见上）：不再单独配置 sso.issuer，避免两份配置漂移。
-# -------- CORS 白名单（同主域子域）+ Cookie --------
+# -------- CORS 白名单（同主域子域）--------
 # 同主域：https://*.nitrowater.cn（跨主域 waterfun.top 已移除）
-# Cookie：同站用 Strict/false；若将来需要跨主域，再改 same-site=None + secure=true
+# 本地只放开两个真实前端端口（Vite 5173 / BFF 8080）。不要用 localhost:* —— 带凭证的通配符让
+# 任意本地端口的页面都能读走 /api/auth/account 之类的个人数据。
+# Cookie 属性（SameSite 等）统一在 server.servlet.session.cookie 下配置，见文件头部。
 app:
+  # Hosted-login fallback when there is no saved request (no OIDC resume) and no explicit
+  # redirect. It must point at the portal, never at /admin/.
+  sso:
+    default-redirect: "${SSO_DEFAULT_REDIRECT:http://localhost:5173}"
   cors:
-    allowed-origin-patterns: "http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn"
-  cookie:
-    same-site: Strict
-    secure: false
+    allowed-origin-patterns: "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn"
   # 头像：OIDC picture claim 由 user.avatar_resource_uuid 派生（稳定读路径，非存储URL）。
   # 此处为资源服务对外的稳定基址；生产设 https://files.nitrowater.cn（或网关域名）。
   avatar:
@@ -143,8 +152,9 @@ app:
     access-token-audiences: nitrowater-server
     # BFF（confidential client）——服务端持 AT/RT，唯一面向浏览器的客户端。
     # 密文由 seeder 用 DelegatingPasswordEncoder 编码后存入 oauth2_registered_client。
-    # 生产把 BFF_CLIENT_SECRET 换成强随机值（务必与 nitrowater-bff 的配置一致）。
-    bff-client-secret: "${BFF_CLIENT_SECRET:nitrowater-bff-secret}"
+    # 必填：无内置默认值（启动缺变量即失败）。本地由 bin/start-all 或 bootRun 注入 dev 值，
+    # 生产必须与 nitrowater-bff 用同一个强随机值。
+    bff-client-secret: "${BFF_CLIENT_SECRET}"
     # 重定向 URI：dev 经 Vite 代理(5173) / 直接 BFF(8080)；prod 为门户域名。逗号分隔。
     bff-redirect-uris: "${BFF_REDIRECT_URIS:http://localhost:5173/login/oauth2/code/nitrowater,http://localhost:8080/login/oauth2/code/nitrowater,https://nitrowater.cn/login/oauth2/code/nitrowater}"
     # RP-initiated logout 回跳地址：逗号分隔。

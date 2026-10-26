@@ -7,8 +7,9 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
+import { ThemeToggle } from '@nitrowater/ui'
+
 import { useSession } from '@/auth/session'
-import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const route = useRoute()
 // Resolved by the router guard before this layout renders — read from the shared singleton.

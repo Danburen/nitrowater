@@ -43,19 +43,22 @@ A **multi-module backend platform** with a **composite showcase site** (portal Â
 
 ## Getting Started
 
-Prerequisites: **JDK 25**, **Docker** (for infrastructure & Piston), **MySQL 8**, **Redis**.
+Prerequisites: **JDK 25**, **Node.js 24 + pnpm 11** (for the `nitrowater-account` admin/auth SPAs),
+**Docker** (for infrastructure & Piston), **MySQL 8**, **Redis**.
 
 ```powershell
 .\deploy\bin\gen-keys.ps1   # generate JWT keys (first run)
-.\bin\start-infra.ps1       # MySQL + Redis + SeaweedFS + Piston
-.\bin\start-apps.ps1        # account -> bff / server / resource (add -WithWeb for Vite dev :5173)
+.\bin\start-all.ps1         # build (bootJar) + infra + backend services (account/bff/server/resource)
 ```
 
+- Frontend is started by you: `cd nitrowater-web; npm run dev` â†’ http://localhost:5173
+  (or `.\bin\start-all.ps1 -BuildWeb` to serve the built SPA on :8080)
+- Account admin/auth SPAs are a pnpm workspace under `nitrowater-account/`; the Gradle build
+  invokes `pnpm install` + filtered builds automatically (Docker builds them in node stages).
 - Portal / unified entry: http://localhost:8080 (BFF-hosted SPA)
 - SSO identity center: http://localhost:8090
-- Front-end dev server (optional): http://localhost:5173
 
-See [`bin/README.md`](bin/README.md) for the full script set (start/stop/seed/sync).
+See [`bin/README.md`](bin/README.md) for start/stop flags and the `bin/dev/` data scripts (seed / reset / sync).
 
 ## Repository & Docs
 

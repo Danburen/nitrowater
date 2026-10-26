@@ -2,5 +2,10 @@ package cn.nitrowater.core.api.auth;
 
 import cn.nitrowater.core.domain.user.User;
 
-public final record LoginResult(User user, boolean isNewUser) {
+/**
+ * Outcome of a successful credential check.
+ *
+ * @param user the authenticated account
+ */
+public record LoginResult(User user) {
 }

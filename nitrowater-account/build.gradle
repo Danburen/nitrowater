@@ -23,14 +23,13 @@ dependencies {
     implementation project(':nitrowater-core')
     // --- web ---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-    // Phase 2：OIDC Provider（SSO 门面）
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server'
-    // core 依赖的 crypto(BCrypt) 与 jose(JWT)
+
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.springframework.security:spring-security-oauth2-jose'
     implementation 'io.swagger.core.v3:swagger-annotations:2.2.41'
-    // --- persistence / cache（core 运行期所需，implementation 不传递，故在此重声明）---
+
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
@@ -40,7 +39,6 @@ dependencies {
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
 
-    // --- auth core 运行期库 ---
     implementation 'cn.hutool:hutool-captcha:5.8.26'
     implementation 'org.mindrot:jbcrypt:0.4'
     implementation 'org.jetbrains:annotations:26.0.2'
@@ -48,7 +46,6 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
-    // --- 迁移 / JSON(Jackson 3) / 驱动 ---
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     runtimeOnly 'org.flywaydb:flyway-mysql'
     implementation 'tools.jackson.core:jackson-databind'
@@ -71,6 +68,7 @@ tasks.named('test') {
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
     environment 'NITROWATER_KEK', System.getenv('NITROWATER_KEK') ?: 'kElE+g/NUUkCAG0azg9ZcYYXbevGg9mYuUtJvICut98='
+    environment 'BFF_CLIENT_SECRET', System.getenv('BFF_CLIENT_SECRET') ?: 'nitrowater-bff-secret'
 }
 
 // 固定 bootJar 名称，便于根多目标 Dockerfile 提取（各服务同名 app.jar）。
@@ -79,38 +77,59 @@ tasks.named('bootJar') {
 }
 
 // ============================================================
-// admin-ui（Vue 3 SPA）构建接线
-//  - `./gradlew build` 一次产出含管理台的完整 jar
-//  - SPA 用 npm 构建，直接输出到 src/main/resources/static/admin（已 gitignore），
-//    由 processResources 一并打包
-//  - -PskipAdminUi：跳过（CI/Docker 里 SPA 已由独立的 node stage 构建完成）
+// Account UIs (Vue 3 SPAs) — pnpm workspace at this module root.
+//  - one `pnpm install` covers admin-ui, auth-ui and packages/* (shared libs);
+//  - `./gradlew build` rebuilds both SPAs into src/main/resources/static/{admin,auth}
+//    (gitignored, generated) and processResources packs them into the jar;
+//  - -PskipAdminUi / -PskipAuthUi: skip either SPA (CI/Docker build them in node stages).
+// Requires pnpm on PATH; Docker performs the install/build itself and passes both skip flags.
 // ============================================================
-def adminUiDir = file('admin-ui')
+def uiRoot = project.projectDir
 def skipAdminUi = project.hasProperty('skipAdminUi')
+def skipAuthUi = project.hasProperty('skipAuthUi')
 def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
 
-// Windows 下 .cmd 需经 cmd /c 调用，Linux/macOS 直接用 npm。
-def npmCommand = { List<String> args ->
-    (isWindows ? ['cmd', '/c', 'npm'] : ['npm']) + args
+// Windows resolves the pnpm shim through cmd /c; Linux/macOS can exec pnpm directly.
+def pnpmCommand = { List<String> args ->
+    (isWindows ? ['cmd', '/c', 'pnpm'] : ['pnpm']) + args
 }
 
-tasks.register('adminUiInstall', Exec) {
+tasks.register('pnpmInstall', Exec) {
     group = 'build'
-    description = 'Install admin-ui dependencies (skipped when node_modules already exists).'
-    workingDir = adminUiDir
-    commandLine npmCommand(['install'])
-    onlyIf { !skipAdminUi && !new File(adminUiDir, 'node_modules').exists() }
+    description = 'Install the account UI workspace dependencies with pnpm.'
+    workingDir = uiRoot
+    commandLine pnpmCommand(['install'])
+    inputs.files(
+        file('package.json'),
+        file('pnpm-workspace.yaml'),
+        file('pnpm-lock.yaml'),
+        fileTree(uiRoot) {
+            include '*/package.json', 'packages/*/package.json'
+            exclude 'node_modules/**', 'build/**'
+        },
+    )
+    outputs.dir(file('node_modules'))
+    onlyIf { !skipAdminUi || !skipAuthUi }
 }
 
 tasks.register('adminUiBuild', Exec) {
     group = 'build'
     description = 'Build the admin-ui SPA into src/main/resources/static/admin.'
-    dependsOn 'adminUiInstall'
-    workingDir = adminUiDir
-    commandLine npmCommand(['run', 'build'])
+    dependsOn 'pnpmInstall'
+    workingDir = uiRoot
+    commandLine pnpmCommand(['--filter', 'admin-ui', 'run', 'build'])
     onlyIf { !skipAdminUi }
 }
 
+tasks.register('authUiBuild', Exec) {
+    group = 'build'
+    description = 'Build the auth-ui SPA into src/main/resources/static/auth.'
+    dependsOn 'pnpmInstall'
+    workingDir = uiRoot
+    commandLine pnpmCommand(['--filter', 'auth-ui', 'run', 'build'])
+    onlyIf { !skipAuthUi }
+}
+
 tasks.named('processResources') {
-    dependsOn 'adminUiBuild'
+    dependsOn 'adminUiBuild', 'authUiBuild'
 }

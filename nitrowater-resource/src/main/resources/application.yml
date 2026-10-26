@@ -60,7 +60,7 @@ app:
     s3:
       endpoint: ${S3_ENDPOINT:http://localhost:8333}          # 服务端访问；容器内填 http://seaweedfs:8333
       access-key: ${S3_ACCESS_KEY:nitrowater}
-      secret-key: ${S3_SECRET_KEY:change-me}
+      secret-key: ${S3_SECRET_KEY}
       bucket: ${S3_BUCKET:nitrowater}
       region: ${S3_REGION:us-east-1}
       public-endpoint: ${S3_PUBLIC_ENDPOINT:}                 # presigned URL 用（浏览器可达）；空=同 endpoint

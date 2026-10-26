@@ -4,22 +4,23 @@ import cn.nitrowater.resource.application.ResourceException;
 import cn.nitrowater.resource.application.ResourceService;
 import cn.nitrowater.resource.config.ResourceProperties;
 import cn.nitrowater.resource.web.dto.ResourceMetaResp;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 /**
- * Internal publish endpoint, used by operator tooling (e.g. {@code bin/sync-res.ps1}) to seed
+ * Internal publish endpoint, used by operator tooling (e.g. {@code bin/dev/sync-res.ps1}) to seed
  * platform-owned artefacts such as plugin {@code .jar} downloads.
  *
  * <p>This is not an end-user surface: it is reached directly on the service port (never through the
@@ -61,10 +62,39 @@ public class InternalPublishController {
             @RequestParam(required = false) String version,
             @RequestHeader(name = TOKEN_HEADER, required = false) String token,
             @RequestHeader(name = HttpHeaders.CONTENT_TYPE, required = false) String contentType,
-            @RequestBody byte[] body) {
+            HttpServletRequest request) throws IOException {
+        // Authorise BEFORE touching the body. With @RequestBody the whole payload was buffered by
+        // Spring's argument resolver before this method ran, so an anonymous caller could force a
+        // large allocation without ever presenting a token.
         requireToken(token);
+        byte[] body = readBody(request);
         return ResourceWebMapper.toResp(resourceService.publishSystem(
                 app, group, name, version, contentType, new ByteArrayInputStream(body), body.length));
+    }
+
+    /**
+     * Reads the payload, refusing anything above the configured object-size limit.
+     *
+     * @param request the publish request whose body carries the file
+     * @return the body bytes, never larger than {@link ResourceProperties#maxSizeBytes()}
+     */
+    private byte[] readBody(HttpServletRequest request) throws IOException {
+        long maxBytes = properties.maxSizeBytes();
+        if (request.getContentLengthLong() > maxBytes) {
+            throw tooLarge(maxBytes);
+        }
+        // Cap the read too: a chunked upload carries no Content-Length.
+        long cap = Math.min(maxBytes + 1, Integer.MAX_VALUE - 8);
+        byte[] body = request.getInputStream().readNBytes((int) cap);
+        if (body.length > maxBytes) {
+            throw tooLarge(maxBytes);
+        }
+        return body;
+    }
+
+    private static ResourceException tooLarge(long maxBytes) {
+        return new ResourceException(HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large",
+                "Payload exceeds the " + maxBytes + "-byte limit");
     }
 
     /** Rejects the request unless the internal publish endpoint is enabled and the token matches. */

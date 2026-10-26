@@ -3,6 +3,7 @@ package cn.nitrowater.core.application.account.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -11,6 +12,7 @@ import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.lib.common.TokenResult;
 import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.api.auth.VerifyScene;
+import cn.nitrowater.core.api.event.UserSessionsInvalidatedEvent;
 import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.resp.auth.CodeResult;
 import cn.nitrowater.core.domain.user.User;
@@ -43,6 +45,7 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     private final VerificationService verificationService;
     private final RedisHelperHolder redisHelperHolder;
     private final SingleUseTokenService singleUseTokenService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final String FP_CTX_PREFIX = "op:verify:context:fp:";
     private static final java.time.Duration FP_CTX_TTL = Duration.ofMinutes(5);
@@ -51,11 +54,8 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     @Transactional
     @Override
     public void changePwd(long userUid, String newPwd, String confirmPwd, DeviceInfo deviceInfo) {
-        if (!newPwd.equals(confirmPwd)) {
-            throw new BizException(BaseResponseCode.PASSWORD_TWO_PASSWORD_NOT_EQUAL);
-        }
-        userCoreService.changePwd(userUid, newPwd);
-        }
+        applyNewPassword(userUid, newPwd, confirmPwd);
+    }
 
     @Transactional
     @Override
@@ -169,11 +169,27 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     @Override
     @Transactional
     public void resetPasswordByToken(Long userUid, String newPwd, String confirmPwd, DeviceInfo deviceInfo) {
+        applyNewPassword(userUid, newPwd, confirmPwd);
+    }
+
+    /** Both password-change entry points: confirm-check, persist, then kill the account's sessions. */
+    private void applyNewPassword(long userUid, String newPwd, String confirmPwd) {
         if (!newPwd.equals(confirmPwd)) {
             throw new BizException(BaseResponseCode.PASSWORD_TWO_PASSWORD_NOT_EQUAL);
         }
         userCoreService.changePwd(userUid, newPwd);
-        }
+        invalidateSessions(userUid);
+    }
+
+    /**
+     * Kills every session of the account after a credential change: the OIDC authorizations (whose
+     * stored principal still carries the old identity) and the legacy AT/RT in Redis. Without this a
+     * stolen session survives a password reset for up to the refresh-token lifetime.
+     */
+    private void invalidateSessions(long userUid) {
+        eventPublisher.publishEvent(new UserSessionsInvalidatedEvent(userUid,
+                UserSessionsInvalidatedEvent.Reason.CREDENTIALS_CHANGED));
+    }
 
     @Override
     @Nullable

@@ -1,0 +1,43 @@
+/*
+ * Shared design tokens for the account UIs. Imported AFTER `@import 'tailwindcss'` by both
+ * admin-ui and auth-ui, so `bg-bg`, `text-dim`, `border-line`, ... resolve to the same palette.
+ * Dark is the @theme default; light is applied by flipping the SAME tokens under
+ * :root[data-theme='light'] (token inversion — components stay unchanged).
+ *
+ * Any app that imports this file must also add `@source` for this package so Tailwind scans
+ * the shared Vue components for utility classes (node_modules is ignored by default).
+ */
+@theme {
+  --color-bg: #0f1115;
+  --color-soft: #171a21;
+  --color-card: #1c2029;
+  --color-line: #2a2f3a;
+  --color-line-strong: #3a4150;
+  --color-ink: #e6e8ec;
+  --color-dim: #9aa1ad;
+  --color-faint: #737b8a;
+  --color-accent: #5b8cff;
+  --color-accent-strong: #4a7bf0;
+  --color-accent-2: #9b6bff;
+  --color-ok: #6fcf8f;
+  --color-warn: #f0b45b;
+  --color-danger: #d97b7b;
+}
+
+/* Light theme: override token values only. Unlayered + higher specificity than :root so it wins. */
+:root[data-theme='light'] {
+  --color-bg: #f6f7f9;
+  --color-soft: #eef1f5;
+  --color-card: #ffffff;
+  --color-line: #e3e7ed;
+  --color-line-strong: #c3cad6;
+  --color-ink: #1b1e24;
+  --color-dim: #5a616c;
+  --color-faint: #8b929d;
+  --color-accent: #3b6fe0;
+  --color-accent-strong: #2f61d0;
+  --color-accent-2: #7c4dff;
+  --color-ok: #1e9e57;
+  --color-warn: #b7791f;
+  --color-danger: #cf3f3f;
+}

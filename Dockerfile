@@ -11,14 +11,31 @@
 #   docker build --target bff      -t nitrowater-bff:local      .
 # CI（docker/build-push-action）用 target 分别构建各镜像。
 # ============================================================
-# ==================== admin-ui (Vue SPA) ====================
-# Build the account admin console in a node stage; its vite build emits straight to
-# nitrowater-account/src/main/resources/static/admin (same relative layout), which the
-# build stage copies in. The gradle run then uses -PskipAdminUi so it never shells to npm.
-FROM node:22-alpine AS admin-ui
-WORKDIR /build/nitrowater-account/admin-ui
-COPY nitrowater-account/admin-ui/ ./
-RUN npm ci && npm run build
+# ==================== account UIs (pnpm workspace) ====================
+# Both SPAs and the shared packages live in one pnpm workspace at nitrowater-account/.
+# Build them in a node stage; vite emits straight to
+# nitrowater-account/src/main/resources/static/{admin,auth} (same relative layout), which
+# the gradle stage overlays. Gradle then runs with -PskipAdminUi -PskipAuthUi so it never
+# shells out to node/pnpm.
+FROM node:24-alpine AS ui-base
+WORKDIR /build/nitrowater-account
+# pnpm 11 requires Node >= 22.13; node:24-alpine also matches local dev.
+RUN npm install -g pnpm@11.18.0
+COPY nitrowater-account/package.json nitrowater-account/pnpm-workspace.yaml nitrowater-account/pnpm-lock.yaml ./
+COPY nitrowater-account/packages ./packages
+COPY nitrowater-account/admin-ui/package.json ./admin-ui/package.json
+COPY nitrowater-account/auth-ui/package.json ./auth-ui/package.json
+RUN pnpm install --frozen-lockfile
+COPY nitrowater-account/admin-ui ./admin-ui
+COPY nitrowater-account/auth-ui ./auth-ui
+
+FROM ui-base AS admin-ui
+RUN pnpm --filter admin-ui build
+
+# ==================== auth-ui (Vue SPA) ====================
+# SSO login / register surface. Same workspace and output contract as admin-ui.
+FROM ui-base AS auth-ui
+RUN pnpm --filter auth-ui build
 
 # ==================== build (gradle, all modules) ====================
 FROM eclipse-temurin:25-jdk AS build
@@ -33,10 +50,11 @@ COPY nitrowater-bff/ nitrowater-bff/
 COPY nitrowater-server/ nitrowater-server/
 COPY nitrowater-resource/ nitrowater-resource/
 
-# Overlay the freshly built SPA (context excludes any stale local copy via .dockerignore).
+# Overlay the freshly built SPAs (context excludes any stale local copies via .dockerignore).
 COPY --from=admin-ui /build/nitrowater-account/src/main/resources/static/admin nitrowater-account/src/main/resources/static/admin
+COPY --from=auth-ui /build/nitrowater-account/src/main/resources/static/auth nitrowater-account/src/main/resources/static/auth
 
-RUN chmod +x gradlew && ./gradlew --no-daemon -x test -PskipAdminUi \
+RUN chmod +x gradlew && ./gradlew --no-daemon -x test -PskipAdminUi -PskipAuthUi \
       :nitrowater-account:bootJar :nitrowater-bff:bootJar \
       :nitrowater-server:bootJar :nitrowater-resource:bootJar
 

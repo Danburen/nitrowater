@@ -9,32 +9,18 @@ import cn.nitrowater.lib.api.AuthCode;
 import cn.nitrowater.lib.common.cache.RedisKeyBuilder;
 import cn.nitrowater.lib.common.exceptions.AuthException;
 import cn.nitrowater.lib.utils.DateUtil;
-import cn.nitrowater.lib.utils.StringUtil;
-import cn.nitrowater.lib.utils.codec.HashUtil;
 import cn.nitrowater.core.api.auth.LoginResult;
-import cn.nitrowater.core.api.auth.VerifyChannel;
-import cn.nitrowater.core.api.auth.VerifyScene;
 import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.req.auth.PwdLoginReq;
-import cn.nitrowater.core.api.req.auth.VerifyCodeDto;
-import cn.nitrowater.core.domain.EncryptionDataKey;
 import cn.nitrowater.core.domain.user.User;
-import cn.nitrowater.core.domain.user.UserDatum;
 import cn.nitrowater.core.exception.notfound.NotFoundException;
 import cn.nitrowater.core.exception.threshold.AttemptLimitExceededException;
 import cn.nitrowater.core.exception.threshold.DailyLimitExceededException;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
-import cn.nitrowater.core.infrastructure.persistence.user.UserDatumRepo;
-import cn.nitrowater.core.infrastructure.security.EncryptedKeyService;
-import cn.nitrowater.core.infrastructure.security.RefreshTokenPayload;
-import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;
 import cn.nitrowater.core.application.auth.LoginService;
-import cn.nitrowater.core.application.auth.RegisterService;
-import cn.nitrowater.core.application.auth.code.VerificationService;
 import cn.nitrowater.core.application.user.UserCoreService;
 
 import java.time.Duration;
-import java.util.function.Supplier;
 
 import static cn.nitrowater.lib.common.RedisKeyPrefix.THRESHOLD;
 
@@ -42,27 +28,20 @@ import static cn.nitrowater.lib.common.RedisKeyPrefix.THRESHOLD;
 @Service
 @Transactional
 @RequiredArgsConstructor
-// This service is shared by the Phase-2 OIDC login and the Phase-1 /api/auth/** shim;
-// the latter still revokes the deprecated AT/RT on logout.
-@SuppressWarnings("deprecation")
 public class LoginServiceImpl implements LoginService {
-    private final AccessTokenServiceImpl authTokenServiceImpl;
-    private final UserDatumRepo userDatumRepo;
-    private final EncryptedKeyService encryptedKeyService;
     private final CaptchaServiceImpl captchaService;
-    private final VerificationService verificationService;
-    private final RegisterService registerService;
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
     private final RedisHelperHolder redisHelper;
     private final UserCoreService userCoreService;
 
-    private static final int ADMIN_LOGIN_MAX_ATTEMPTS = 5;
-    private static final long ADMIN_LOGIN_LOCK_MINUTES = 120;
-    private static final int NORMAL_LOGIN_MAX_ATTEMPTS = 5;
-    private static final long NORMAL_LOGIN_LOCK_MINUTES = 15;
-    private static final long DAILY_NORMAL_LOGIN_MAX_ATTEMPTS = 30;
-    private static final long DAILY_ADMIN_LOGIN_MAX_ATTEMPTS = 15;
+    private static final int LOGIN_MAX_ATTEMPTS = 5;
+    private static final long LOGIN_LOCK_MINUTES = 15;
+    private static final long DAILY_LOGIN_MAX_ATTEMPTS = 30;
+
+    /** Bcrypt hash of a throwaway string: burns the same CPU a real account would when the
+     * identifier does not exist, so response time does not reveal existence. */
+    private static final String DUMMY_PASSWORD_HASH = new BCryptPasswordEncoder().encode("dummy-password");
 
     /** Short-term lockout window key: {@code threshold:fail:login:temp:{username}} */
     private static String loginTempFailKey(String username) {
@@ -75,129 +54,62 @@ public class LoginServiceImpl implements LoginService {
     }
 
     @Override
-    public void logout(String refreshToken, String dfp) {
-        if(StringUtil.isBlank(refreshToken)) throw new AuthException(AuthCode.REAUTHORIZATION_REQUIRED);
-        long userUid = UserCtxHolder.getUserUid();
-        RefreshTokenPayload payload = authTokenServiceImpl.validateRefreshToken(userUid, refreshToken, dfp);
-        authTokenServiceImpl.removeAccessToken(payload.userUid(), payload.deviceId());
-        authTokenServiceImpl.removeRefreshToken(userUid, dfp, refreshToken);
-    }
-
-    @Override
-    public LoginResult login(VerifyCodeDto dto, String codeKey) {
-        DeviceInfo deviceInfo = dto.getDeviceInfo();
-        if(dto.getScene() != VerifyScene.LOGIN){
-            throw new AuthException(AuthCode.INVALID_VERIFY_SCENE);
-        }
-        VerifyChannel channel = dto.getChannel();
-
-        EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
-        UserDatum userDatum = null;
-        if(channel == VerifyChannel.SMS){
-            userDatum = userDatumRepo.findByPhoneHash(HashUtil.toSha256HmacString(dto.getTarget(), hmacKey.getEncryptedKey()))
-                    .orElse(null);
-        }else if(channel == VerifyChannel.EMAIL){
-            userDatum = userDatumRepo.findByEmailHash(HashUtil.toSha256HmacString(dto.getTarget(), hmacKey.getEncryptedKey()))
-                    .orElse(null);
-        }
-
-        if (userDatum == null) {
-            User autoUser = registerService.autoRegister(
-                    dto.getTarget(), channel, dto.getScene(), codeKey, dto.getCode(),
-                    deviceInfo != null ? deviceInfo.getDeviceFp() : null
-            );
-            return new LoginResult(autoUser, true);
-        }
-        User u = userDatum.getUser();
-        verificationService.verifyCode(dto.getTarget(),dto.getScene(),channel,codeKey,dto.getCode());
-        // TODO(SSO): role-based admin distinction cut — user_role tables not migrated yet
-        return recordAndBuildLoginResult(u, deviceInfo);
-    }
-
-    @Override
-    public LoginResult adminLogin(PwdLoginReq body, String verifyUuidKey) {
-        DeviceInfo deviceInfo = body.getDeviceInfo();
-        // TODO(SSO): role-based admin verification cut — user_role tables not migrated yet
-        return tryLogin(
-                body.getIdentifier(),
-                true,
-                () -> verifyCredentials(body, verifyUuidKey),
-                deviceInfo
-        );
-    }
-
-    @Override
     public LoginResult login(PwdLoginReq body, String verifyUuidKey) {
-        DeviceInfo deviceInfo = body.getDeviceInfo();
-        return tryLogin(body.getIdentifier(), false,
-                () -> verifyCredentials(body, verifyUuidKey), deviceInfo);
-    }
-
-    private LoginResult tryLogin(
-            String username, boolean isAdmin,
-            Supplier<User> credentialChecker,
-            DeviceInfo deviceInfo
-    ) {
-        String shortFailKey = loginTempFailKey(username);
-        String dailyFailKey = loginDailyFailKey(username);
-        checkShortTermLockout(shortFailKey, isAdmin);
-        checkDailyLimit(dailyFailKey, isAdmin);
+        String identifier = body.getIdentifier();
+        String shortFailKey = loginTempFailKey(identifier);
+        String dailyFailKey = loginDailyFailKey(identifier);
+        checkShortTermLockout(shortFailKey);
+        checkDailyLimit(dailyFailKey);
 
         User u;
         try {
-            u = credentialChecker.get();
+            u = verifyCredentials(body, verifyUuidKey);
         } catch (AuthException e) {
             if (AuthCode.USERNAME_OR_PASSWORD_INCORRECT.getCode().equals(e.getErrorCode())) {
-                incrementFailCounters(shortFailKey, dailyFailKey, isAdmin);
+                incrementFailCounters(shortFailKey, dailyFailKey);
             }
             throw e;
         }
-
-        // TODO(SSO): role match check (isAdmin != isUserAdmin) cut — user_role tables not migrated yet
         redisHelper.del(shortFailKey);
-        return recordAndBuildLoginResult(u, deviceInfo);
+        // TODO(SSO): stats recording / login ban check / online last-active update cut — business
+        // services not migrated yet.
+        return new LoginResult(u);
     }
 
-    private LoginResult recordAndBuildLoginResult(User u, DeviceInfo deviceInfo) {
-        // TODO(SSO): stats recording / login ban check / online last-active update cut — business services not migrated
-        return new LoginResult(u, false);
-    }
-
-    private void checkShortTermLockout(String failKey, boolean isAdmin) {
+    private void checkShortTermLockout(String failKey) {
         String val = redisHelper.getValue(failKey);
-        int threshold = isAdmin ? ADMIN_LOGIN_MAX_ATTEMPTS : NORMAL_LOGIN_MAX_ATTEMPTS;
-        if (val != null && Integer.parseInt(val) >= threshold) {
-            long lockMinutes = isAdmin ? ADMIN_LOGIN_LOCK_MINUTES : NORMAL_LOGIN_LOCK_MINUTES;
-            throw new AttemptLimitExceededException(lockMinutes);
+        if (val != null && Integer.parseInt(val) >= LOGIN_MAX_ATTEMPTS) {
+            throw new AttemptLimitExceededException(LOGIN_LOCK_MINUTES);
         }
     }
 
-    private void checkDailyLimit(String failKey, boolean isAdmin) {
+    private void checkDailyLimit(String failKey) {
         String val = redisHelper.getValue(failKey);
-        long threshold = isAdmin ? DAILY_ADMIN_LOGIN_MAX_ATTEMPTS : DAILY_NORMAL_LOGIN_MAX_ATTEMPTS;
-        if (val != null && Long.parseLong(val) >= threshold) {
+        if (val != null && Long.parseLong(val) >= DAILY_LOGIN_MAX_ATTEMPTS) {
             log.warn("Daily login limit exceeded: username key={}", failKey);
             throw new DailyLimitExceededException();
         }
     }
 
-    private void incrementFailCounters(String shortFailKey, String dailyFailKey, boolean isAdmin) {
-        long lockMinutes = isAdmin ? ADMIN_LOGIN_LOCK_MINUTES : NORMAL_LOGIN_LOCK_MINUTES;
-        redisHelper.increment(shortFailKey, Duration.ofMinutes(lockMinutes));
+    private void incrementFailCounters(String shortFailKey, String dailyFailKey) {
+        redisHelper.increment(shortFailKey, Duration.ofMinutes(LOGIN_LOCK_MINUTES));
         redisHelper.increment(dailyFailKey, Duration.ofSeconds(DateUtil.getSecondsUntilMidnight()));
     }
 
     private User verifyCredentials(PwdLoginReq body, String verifyUuidKey) {
-        // Resolve identifier (phone/email/username) → userUid → User
+        // Captcha first: checked last, the two failure codes became an existence oracle ("unknown
+        // identifier" never reached the captcha, "known identifier" did).
+        if (!captchaService.verifyCode(verifyUuidKey, body.getCaptcha()))
+            throw new AuthException(AuthCode.CAPTCHA_INVALID);
+
         Long userUid;
         try {
             userUid = userCoreService.resolveUid(body.getIdentifier());
         } catch (NotFoundException e) {
+            encoder.matches(body.getPassword(), DUMMY_PASSWORD_HASH);
             throw new AuthException(AuthCode.USERNAME_OR_PASSWORD_INCORRECT);
         }
         User uu = userCoreService.getUser(userUid);
-        if (!captchaService.verifyCode(verifyUuidKey, body.getCaptcha()))
-            throw new AuthException(AuthCode.CAPTCHA_INVALID);
         if (!encoder.matches(body.getPassword(), uu.getPasswordHash()))
             throw new AuthException(AuthCode.USERNAME_OR_PASSWORD_INCORRECT);
         return uu;

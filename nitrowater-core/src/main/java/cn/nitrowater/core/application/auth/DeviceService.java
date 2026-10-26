@@ -1,32 +1,18 @@
 package cn.nitrowater.core.application.auth;
 
-import org.springframework.scheduling.annotation.Async;
-
-import java.util.Set;
-
+/**
+ * Derives the device identifier carried by the token {@code did} claim.
+ *
+ * <p>Only the derivation is left: the Phase-1 token shim owned the per-device Redis registry
+ * (device sets, last-active timestamps, zombie sweeping) and went away with it. OIDC sessions are
+ * tracked by the authorization server, and revocation works at account level.</p>
+ */
 public interface DeviceService {
-    String generateAndStoreDeviceId(Long userUid, String dfp);
-
-    void removeUserDevice(Long userUid, String deviceId);
-
-    String calculaateDid(long userUid, String dfp);
-
-    @Async
-    void cleanZombieDevicesBatch(int batchSize);
-
-    void scheduledCleanup();
-
-    String getDeviceHashSalt();
 
     /**
-     * Get user's devices
-     *
-     * @param userUid the user ID
-     * @return List ofPending device IDs
+     * @param userUid account the device belongs to
+     * @param dfp     browser fingerprint supplied at login
+     * @return a stable, salted device identifier
      */
-    Set<String> getUserDeviceIds(Long userUid);
-
-    void updateUserDeviceActive(long userUid, String did);
-
-    boolean isNewDeviceDid(long userUid, String calculatedHashDid);
+    String computeDid(long userUid, String dfp);
 }

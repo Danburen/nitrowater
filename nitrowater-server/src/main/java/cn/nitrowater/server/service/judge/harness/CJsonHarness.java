@@ -87,20 +87,12 @@ abstract class CJsonHarness implements FunctionHarness {
 
     /** Strips insignificant whitespace so {@code "int []"} and {@code "int[]"} compare equal. */
     protected static String normalized(String type) {
-        return type.replace(" ", "");
+        return HarnessSupport.normalized(type);
     }
 
     /** @return whether the signature uses the given type as a parameter or as the return type */
     protected static boolean needsType(JudgeSignature signature, String type) {
-        if (type.equals(normalized(signature.returnType()))) {
-            return true;
-        }
-        for (JudgeSignature.Param param : signature.params()) {
-            if (type.equals(normalized(param.type()))) {
-                return true;
-            }
-        }
-        return false;
+        return HarnessSupport.usesType(signature, type);
     }
 
     /**

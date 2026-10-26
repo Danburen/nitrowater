@@ -1,113 +1,119 @@
-# bin/ — nitrowater 启动脚本（本地 dev）
+# bin/ — 本地预览脚本（构建 → 启动 → 停止）
 
-> 目录分工（均从**仓库根目录**执行）：
-> - `bin/` — 本地**启动/关闭**（全部 **PowerShell**：`start-*.ps1` / `stop-all.ps1`；`*.bat` 仅作**双击启动器**，不含逻辑）
-> - `bin/test/` — **端到端冒烟**（smoke-*）
-> - `deploy/bin/` — **运维/部署**脚本（gen-keys / check-env / backup_mysql / reset-sso-db / deploy；每组 `.ps1` + `.sh` 成对）
-> - `deploy/docker/` — Docker Compose（infra / app / piston）
+> 目标：**一条命令**完成「构建后端 → 起基础设施 → 起 4 个后端服务」，供人工预览或自动化（AI）验证。
+> **前端不在这里启动**，由你自己 `npm run dev`（见下）。
+> 全部脚本为 PowerShell，从**仓库根目录**执行；`*.bat` 只是双击启动器（无逻辑）。
+> 编码：`.ps1` = UTF-8 with BOM，`.bat` = ASCII + CRLF。
 
-## 一键启动 / 关闭（推荐）
-
-> 每个组件/服务都会**独占一个命令行窗口**并实时输出日志；窗口标题统一为 `NitroWater - <name>`。
-> 均**幂等**：端口已在监听则跳过，不会重复启动。
+## 顶层：只用这 4 个
 
 | 脚本 | 用途 |
 |------|------|
-| `start-all.ps1`（或双击 `start-all.bat`） | **一键全部**：先起 infra，再起全部业务服务（= `start-infra.ps1` + `start-apps.ps1`） |
-| `start-infra.ps1` | **一键 infra**：MySQL(3306, 系统服务·无窗口) / Redis(6379) / SeaweedFS(8333) / Piston(2000) |
-| `start-apps.ps1`  | **一键业务**：account(8090) → bff(8080) / server(8081) / resource(8093) + **docs 容器**(`nitrowater-docs`, nginx, 127.0.0.1:8085)；加 `-WithWeb` 再起 web(5173) |
-| `stop-all.ps1`（或双击 `stop-all.bat`） | **一键关闭**：停所有监听端口 + Docker 容器 + 服务窗口（MySQL 保留，加 `-StopMysql` 一并停） |
+| `start-all.ps1`（或双击 `start-all.bat`） | **构建 + 启动**：`gradlew :<module>:bootJar` → infra → 4 个后端 jar |
+| `start-infra.ps1` | 仅 infra：MySQL(3306, 系统服务) / Redis(6379) / SeaweedFS(8333) / Piston(2000) / docs(8085) |
+| `stop-all.ps1`（或双击 `stop-all.bat`） | 停后端 + infra 容器 + 跟踪进程；**默认不动 :5173**（加 `-WithWeb` 才停） |
+| `_common.ps1` | 共享 helper（被其余脚本点源，不直接运行） |
 
-- 启动顺序：MySQL → Redis → SeaweedFS/Piston → account →（等 :8090 就绪）→ bff/server/resource → docs 容器 →（可选）web。
-- `start-apps.ps1` **先等 account(:8090) 就绪**，因为 bff/server 启动时要取 OIDC discovery。
-- `stop-all.ps1` 按 **端口 / Docker / 窗口 PID**（`bin/.run/*.pid`，由 start 脚本记录）三种方式回收；残留进程可再执行一次。**不再按窗口标题通配杀进程**（曾误杀 IDE/浏览器/资源管理器 → 桌面消失）。
-- 共用 helper 在 `bin/_common.ps1`（各 `start-*.ps1` / `stop-all.ps1` 点源复用）。`*.bat` 只是 `pwsh/powershell -File ...` 的**双击启动器**，无逻辑。
+## start-all 做了什么
 
-## 启动（本地 dev·手动单起）
+1. **build**：`gradlew :nitrowater-account:bootJar :nitrowater-bff:bootJar :nitrowater-server:bootJar :nitrowater-resource:bootJar`
+   → 每模块产出 `build\libs\app.jar`（不含测试）。
+2. **infra**：调用 `start-infra.ps1`（已在监听的组件跳过）。
+3. **services**：`java -jar` 起 account(:8090) → **等 :8090 就绪** → 并行起 bff(:8080) / server(:8081) / resource(:8093)。
+   - 默认每个后端一个**常驻 cmd 窗口**（标题 `NitroWater - <module>`），窗口里直接刷 Spring 日志；关掉窗口即停该服务。
+   - 端口已被旧进程占用时，默认**先停旧窗口/旧进程再起新的**（避免跑到上一次的 jar）；`-NoRestart` 则完全不动。
+   - account 起不来会**直接中止**（bff/server 启动时要拉 OIDC discovery）。
+   - 加 `-Hidden` 才回到旧行为：进程隐藏，日志落 `bin\.run\logs\<module>.{out,err}.log`。
+
+| 参数 | 作用 |
+|------|------|
+| `-SkipBuild` | 跳过构建，直接用现有 jar（缺失会报错退出） |
+| `-SkipInfra` | infra 已就绪，跳过 |
+| `-BuildWeb` | 额外 `npm run build`，让 :8080 直接托管最新 SPA |
+| `-NoRestart` | 已在运行的服务原样保留（可能仍是旧 jar） |
+| `-Hidden` | 后台隐藏运行，日志落盘（不是默认） |
+| `-Windowed` | 旧参数；现在默认就是可见窗口，保留兼容 |
+
+```powershell
+.\bin\start-all.ps1              # 日常：构建 + infra + 4 个后端窗口（窗口常驻，日志直接看）
+.\bin\start-all.ps1 -Hidden      # 后台隐藏运行，日志落盘
+.\bin\start-all.ps1 -SkipBuild   # 只重启后端（jar 已是新的）
+.\bin\start-all.ps1 -BuildWeb    # 顺带把前端 dist 构建进 :8080
+```
+
+> 默认模式下每个后端都会弹出一个标题为 `NitroWater - <module>` 的常驻 cmd 窗口；
+> 窗口里就是 Spring 日志，服务退出后会停在 `[exited with code ...]` 并 `pause`，方便看错误。
+> 关闭窗口会结束该服务；`stop-all.ps1` 也会按 PID 关闭这些窗口。
+>
+> `-Hidden` 的旧模式「没窗口 ≠ 没启动」：`Get-Process java` 能看到 4 个进程，端口 8090/8080/8081/8093 在监听。
+>
+> PID 记录：默认窗口模式记录的是 cmd 包装进程，`stop-all` 会连同 java 子进程一起结束；`-Hidden` 记录的是 java.exe。
+
+## 前端（你自己启动）
+
+```powershell
+cd nitrowater-web
+npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout /plugin 代理到 :8080
+```
+
+- 想直接在 **:8080** 看构建版：`.\bin\start-all.ps1 -BuildWeb`（= `cd nitrowater-web; npm run build`）。
+  BFF 运行期读 `nitrowater-web/dist/`，所以**只改前端时重新 build 即可，无需重启 BFF**。
+- `:5173` 的 Vite 进程不归本目录管：`stop-all.ps1` 默认不会杀它。
+
+## 服务端口一览
+
+| 服务 | 端口 | 入口 |
+|---|---|---|
+| account（SSO/OIDC） | 8090 | http://localhost:8090 |
+| bff（门户 / SPA / 代理） | 8080 | http://localhost:8080 |
+| server（业务 API + 判题） | 8081 | `/api/**`（经 BFF 访问） |
+| resource（资源/插件 jar） | 8093 | `/api/resource/**`（经 BFF 访问） |
+| docs（插件文档 nginx） | 8085 | `/plugin/**`（经 BFF 访问） |
+| Vite dev（可选） | 5173 | http://localhost:5173 |
+
+## dev/ — 数据与同步（不参与日常启动）
 
 | 脚本 | 用途 |
 |------|------|
-| `start-redis.ps1`     | 本地 Redis（127.0.0.1:6379） |
-| `start-account.ps1`   | `nitrowater-account`（SSO，:8090） |
-| `start-bff.ps1`       | `nitrowater-bff`（BFF / Token Handler，:8080） |
-| `start-seaweedfs.ps1` | 自托管 SeaweedFS（S3，:8333；本地磁盘） |
-| `start-resource.ps1`  | `nitrowater-resource`（统一资源服务，:8093） |
-| `start-piston.ps1`    | Piston 代码沙箱（判题/运行，:2000；需 Docker + cgroup v2 + privileged） |
-| `install-piston-langs.ps1` | 给 Piston 装语言运行时（经 `ghproxy.net` 代理，见下） |
+| `bin\dev\dev-seed.ps1` | 一键：reset → 播种用户 / 题目 / 资源（`-Skip*` 分段；幂等） |
+| `bin\dev\reset-db.ps1` | **破坏性**：drop 库让 Flyway 从 V1 重放（`-Restart` 顺带重启归属服务） |
+| `bin\dev\seed-test-users.ps1` | 测试用户 `testadmin` / `testuser1` / `testuser`（密码 `Passw0rd123`） |
+| `bin\dev\seed-demo-problem.ps1` | 「两数之和」ACM 模式 + 2 用例（铸造管理员 JWT 后建题） |
+| `bin\dev\seed-func-problem.ps1` | 「两数之和」LeetCode 函数模式（`two-sum-func`，走 harness） |
+| `bin\dev\seed-res.ps1` | 经 `/internal/resource/publish` 发资源夹具（`smoke-plugin`、`samples`） |
+| `bin\dev\sync-docs.ps1` | 构建插件文档（VitePress）并镜像到 `deploy\plugin-docs\<plugin>\docs` |
+| `bin\dev\sync-res.ps1` | 把插件 jar 发布到资源服务（`:8093` 直连，不经 BFF） |
+| `bin\dev\install-piston-langs.ps1` | 给 Piston **一次性**装语言运行时（经 `ghproxy.net`） |
 
-> **Piston 语言运行时**：官方镜像 `ghcr.io/engineer-man/piston` **不含任何语言**。首次用
-> `.\bin\install-piston-langs.ps1` 安装（经 GitHub 代理 `ghproxy.net` 拉包；装 java/gcc/node/python/typescript/lua，
-> 覆盖 server 的 7 语言）。运行时持久化在命名卷 `nitrowater-piston`，只需装一次。生产/compose 路径见
-> `deploy/docker/docker-compose.piston.yml`（不映射宿主端口）。
-> **TypeScript** 额外补 `@types/node`：脚本会自动安装并在 `compile` 步骤里暴露给 `tsc`，
-> 使 `require` / `process` 等不再报 `TS2580`。
+> ⚠ `dev-seed.ps1` / `reset-db.ps1 -Restart` 用 `java -jar build\libs\app.jar` 起服务，
+> 所以**先跑一次 `bin\start-all.ps1`**（或 `gradlew :<module>:bootJar`）把 jar 产出，否则报 `jar missing`。
+> 另：Flyway 从 classpath 读迁移 —— `start-all` 走 jar，改完 `db/migration/*.sql` 必须先重新构建再启动。
 
-## 快速开始（本地 dev）
+## 运行态与排查
 
-```powershell
-.\deploy\bin\gen-keys.ps1        # 1) 生成/放置 JWT 密钥
-.\bin\start-redis.ps1            # 2) 本地 Redis（MySQL 假定已在运行）
-.\deploy\bin\check-env.ps1       # 3) 自检
-.\bin\start-account.ps1          # 4) SSO
-.\bin\start-bff.ps1              # 5) BFF
-.\bin\start-seaweedfs.ps1        # 6) 存储
-.\bin\start-resource.ps1         # 7) 资源服务
-```
+- 运行态目录 `bin\.run\`（gitignored）：`*.pid` = 进程号；`logs\` = `-Hidden` 模式的 stdout/stderr。
+- 默认窗口模式直接看各自 cmd 窗口；`-Hidden` 模式实时看日志：
+  ```powershell
+  Get-Content .\bin\.run\logs\nitrowater-server.out.log -Wait -Tail 50
+  ```
+- 起不来先看 `logs\<module>.out.log` / `.err.log`；端口占用用 `Get-NetTCPConnection -State Listen -LocalPort 8080`。
+- 依赖的本地路径（可用环境变量覆盖）：
+  - Java 25：`NITROWATER_JAVA`（默认 `D:\Program Files\Java\openkdk-hotspot-25.0.1.1\bin\java.exe`；**不读 JAVA_HOME**）
+  - Redis：`NITROWATER_REDIS_DIR`（默认 `E:\Program Files\Redis`）
+  - MySQL：`NITROWATER_MYSQL`（默认 `E:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe`）；Windows 服务名固定 `MySQL`
+- Docker 不可用时 SeaweedFS / Piston / docs 会被跳过（脚本给 WARN，不报错）。
 
-## 开发数据（重置 + 播种）
+## 前置配置（首次）
 
-> **未上线期约定**：迁移只含 schema + 真实内容；**测试数据一律由脚本播种**，不进迁移。
-> 因此改测试数据不会动 Flyway checksum，也不必再改迁移。
+1. JWT 密钥：`.\deploy\bin\gen-keys.ps1` → `deploy\keys\{private,public}.key`（gitignored）。
+2. `NITROWATER_KEK`：32 字节 AES KEK 的 Base64（`start-all` 起 account 时注入 dev 默认）。
+3. `RESOURCE_INTERNAL_TOKEN`：`/internal/**` 的共享密钥（`start-all` 起 resource 时注入 dev 默认
+   `nitrowater-internal-dev`，与 `bin\dev\sync-res.ps1` 一致）；该前缀只接受**本机/内网**来源。
+4. `BFF_CLIENT_SECRET` / `S3_SECRET_KEY`：**application.yml 里已无内置默认值**，缺失即启动失败；
+   `start-all`（account/bff）与 `gradlew bootRun` 会注入 dev 值，手工 `java -jar` 需自行 export。
+5. 环境自检：`.\deploy\bin\check-env.ps1`。
 
-| 脚本 | 用途 |
-|------|------|
-| `dev-seed.ps1` | **一键**：reset → start → users → problems → resources（`-Skip*` 可分段跑；幂等） |
-| `reset-db.ps1` | **破坏性**：drop 某库全部表，让 Flyway 下次启动从 V1 重放（`-Restart` 顺带重启归属服务） |
-| `seed-test-users.ps1` | 幂等造测试用户 `testadmin`/ADMIN、`testuser1`/USER、`testuser`/USER 并授角色 |
-| `seed-demo-problem.ps1` | 铸造管理员 JWT → 建「两数之和」(ACM 模式) + 2 用例 |
-| `seed-func-problem.ps1` | 同上，**LeetCode 函数模式**版（`two-sum-func`，走 harness） |
-| `seed-res.ps1` | 经 `/internal/resource/publish` 发 SYSTEM 资源夹具（`smoke-plugin` jar、`samples` 文本） |
+## 相关目录
 
-```powershell
-.\bin\dev-seed.ps1                 # 最常用：重建 biz 并播种全部测试数据
-.\bin\dev-seed.ps1 -SkipReset      # 服务已在跑，只补播种
-.\bin\reset-db.ps1 -Db biz -Force -Restart
-```
-
-> **⚠ 改迁移后必须先重建 jar**：Flyway 从 **jar 的 classpath** 读迁移（不是工作树），
-> 只改 `db/migration/*.sql` 而不 `bootJar` 会让旧迁移继续生效。正解：停服 → `gradlew :<module>:bootJar` → `reset-db` 重放。
-> 另：`flyway repair` **不能**替代重放——它只改 checksum，不会补执行基线里新增的 DDL（表缺失的静默漂移）。
-## 冒烟测试
-`bin/test/`：`smoke-auth` / `smoke-oidc` / `smoke-logout` / `smoke-resource`。
-
-## 运维 / 部署 / Docker
-- 运维/部署脚本：`deploy/bin/`（详见 `deploy/bin/README.md`）
-- Docker Compose：`deploy/docker/`（infra + app + piston）；单入口 `deploy/bin/deploy.ps1`
-
-### 插件文档容器（nitrowater-docs）
-插件文档由**一个** nginx 容器（`nitrowater-docs`）统一托管，BFF 只转发 `/plugin/**`（不再自己读盘）。
-
-```powershell
-# 首次创建 / 更新后启动（推荐；用 compose，挂载 + nginx 配置都正确）
-docker compose -f deploy/docker/docker-compose.app.yml up -d docs
-
-# 按容器名单独操作（容器已存在时）
-docker start   nitrowater-docs      # 启动
-docker stop    nitrowater-docs      # 停止
-docker restart nitrowater-docs      # 重启（发布新文档后立即生效）
-docker logs -f nitrowater-docs      # 实时日志
-docker inspect nitrowater-docs      # 详情
-
-# 重建（改动挂载/nginx 配置后）
-docker compose -f deploy/docker/docker-compose.app.yml up -d --force-recreate docs
-```
-- dev 端口 `127.0.0.1:8085`（= BFF 的 `app.plugin-docs.upstream` 默认）；prod 中 BFF 走容器网络名 `http://docs:80`。
-- `bin/start-apps.ps1` 已内置：容器存在则 `docker start`，不存在则用 compose 创建。
-
-## 前置配置
-
-1. **JWT 密钥**：`deploy/keys/{private,public}.key`（`deploy/bin/gen-keys.ps1` 生成；已 gitignore）。
-2. **NITROWATER_KEK**：32 字节 AES KEK 的 Base64（或 `nitrowater-account/build.gradle` bootRun 开发默认）。
-3. **DEVICE_SALT**：已在 `application.yml` 复用 waterfun 开发值。
-
-详见 `deploy/env-vars-reference.md`。脚本编码：`.bat`=ASCII+CRLF；`.ps1`=UTF-8 with BOM。
+- `deploy\bin\` — 运维/部署脚本（gen-keys / check-env / backup_mysql / reset-sso-db / deploy）。
+- `deploy\docker\` — Docker Compose（infra / app / piston）与根 `Dockerfile`。
