@@ -54,9 +54,9 @@ onMounted(() => {
         <h1 class="text-[28px] font-bold tracking-tight">
           关于 NitroWater
         </h1>
-        <p class="mt-3 max-w-[760px] text-sm leading-relaxed text-dim">
-          NitroWater 是一个多项目后端平台，包含一个聚合展示站点（导航 · 工具箱 · 编程演练场 · 文档）与独立的 SSO / OIDC 身份中心。
-          所有本地工具都在浏览器内完成计算，文件与数据不会上传服务器。
+        <p class="mt-3 max-w-[800px] text-sm leading-relaxed text-dim">
+          NitroWater 是一个面向 Minecraft 腐竹与插件/服务器社区的多模块平台，包含一个聚合展示站点（导航 · 开服工具箱 · 插件中心 · 文档）与独立的 SSO / OIDC 身份中心。
+          开服工具箱覆盖 MOTD 格式化预览、server.properties 生成/校验、server-icon 生成与启动脚本生成；所有本地工具都在浏览器内完成计算，文件与数据不会上传服务器。
         </p>
         <div class="mt-5 flex flex-wrap gap-[18px] text-[13.5px]">
           <a
@@ -97,6 +97,61 @@ onMounted(() => {
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- ===== AI 额度说明 ===== -->
+      <section
+        id="ai-quota"
+        class="py-6"
+      >
+        <h2 class="text-[21px] font-semibold tracking-tight">
+          AI 额度说明
+        </h2>
+        <p class="mt-1.5 max-w-[800px] text-sm leading-relaxed text-dim">
+          NitroBot 对每个登录账号设置了每日 token 上限。额度按天重置、不累计，也不与设备绑定。
+        </p>
+
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          <div class="rounded-[14px] border border-line bg-card p-4">
+            <h3 class="text-[13.5px] font-medium text-ink">
+              为什么要限制
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-dim">
+              每次回答都要调用大模型并按 token 计费，检索用的向量库、代码沙箱和服务器也需要持续运行。
+              有了上限，站点才能对所有人保持免费，而不会被少数高频请求拖垮。
+            </p>
+          </div>
+          <div class="rounded-[14px] border border-line bg-card p-4">
+            <h3 class="text-[13.5px] font-medium text-ink">
+              额度怎么计算
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-dim">
+              输入和输出都计入：你的问题、检索到的文档片段、近期对话，以及模型生成的回答。
+              一次普通问答通常在几千 token 量级，长文档检索或多次工具调用会消耗更多。
+            </p>
+          </div>
+          <div class="rounded-[14px] border border-line bg-card p-4">
+            <h3 class="text-[13.5px] font-medium text-ink">
+              什么时候重置
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-dim">
+              每天 UTC 0 点（北京时间 08:00）自动重置，无需任何操作。
+              用量快用完时，聊天页会在输入框上方提示一次。
+            </p>
+          </div>
+          <div class="rounded-[14px] border border-line bg-card p-4">
+            <h3 class="text-[13.5px] font-medium text-ink">
+              用完了怎么办
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-dim">
+              等第二天自动恢复；也可以先用工具箱或文档自己查。确实需要继续对话时，可以联系管理员重置当日用量。
+            </p>
+          </div>
+        </div>
+
+        <p class="mt-4 text-[12.5px] leading-relaxed text-faint">
+          本站不投放广告、不出售额度，也没有付费套餐。额度上限由管理员按服务器成本统一调整。
+        </p>
       </section>
 
       <!-- ===== 开源鸣谢 ===== -->

@@ -3,11 +3,9 @@ package cn.nitrowater.account.config;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
+import cn.nitrowater.account.security.PromptLoginFilter;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
-import org.springframework.security.web.savedrequest.RequestCache;
-import org.springframework.security.web.savedrequest.SavedRequest;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -30,38 +28,25 @@ import java.io.IOException;
 @Component
 public class SsoLoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
-    private final RequestCache requestCache;
-    private final String defaultRedirect;
+    private final LoginRedirectResolver redirectResolver;
 
     /**
      * Creates the handler.
      *
-     * @param requestCache    session request cache shared with the security chains
-     * @param defaultRedirect portal URL used when neither a saved request nor a safe redirect exists
+     * @param redirectResolver shared resolver (saved request → safe explicit redirect → portal)
      */
-    public SsoLoginSuccessHandler(RequestCache requestCache,
-            @Value("${app.sso.default-redirect:http://localhost:5173}") String defaultRedirect) {
-        this.requestCache = requestCache;
-        this.defaultRedirect = defaultRedirect;
+    public SsoLoginSuccessHandler(LoginRedirectResolver redirectResolver) {
+        this.redirectResolver = redirectResolver;
     }
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
             Authentication authentication) throws IOException, ServletException {
         clearAuthenticationAttributes(request);
-
-        SavedRequest savedRequest = requestCache.getRequest(request, response);
-        if (savedRequest != null) {
-            getRedirectStrategy().sendRedirect(request, response, savedRequest.getRedirectUrl());
-            return;
-        }
-
-        String explicit = LoginRedirects.safeLocalPath(request.getParameter(LoginRedirects.PARAM));
-        if (explicit != null) {
-            getRedirectStrategy().sendRedirect(request, response, explicit);
-            return;
-        }
-
-        getRedirectStrategy().sendRedirect(request, response, defaultRedirect);
+        String target = redirectResolver.resolve(request, response);
+        // If the saved request is an authorization URL carrying prompt=login/select_account, let
+        // PromptLoginFilter know this is the one resumed pass that must not bounce back to /login.
+        PromptLoginFilter.markIfNeeded(request.getSession(false), target);
+        getRedirectStrategy().sendRedirect(request, response, target);
     }
 }

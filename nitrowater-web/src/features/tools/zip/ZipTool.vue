@@ -8,6 +8,7 @@ import { computed, ref } from 'vue'
 import { saveAs } from 'file-saver'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import TextField from '../../../shared/ui/TextField.vue'
 import { ARCHIVE_EXTENSIONS, decompressArchive } from '../lib/archive/libarchive'
 import { compressZip, decompressZip } from '../lib/archive/zip'
 
@@ -218,11 +219,11 @@ function downloadExtracted(file: ExtractedFile): void {
         v-if="compressFiles.length"
         class="flex flex-wrap items-center gap-2"
       >
-        <input
+        <TextField
           v-model="zipFileName"
-          class="input max-w-[260px]"
+          class="max-w-[260px]"
           placeholder="压缩包名（默认 archive.zip）"
-        >
+        />
         <el-button
           type="primary"
           :icon="Download"

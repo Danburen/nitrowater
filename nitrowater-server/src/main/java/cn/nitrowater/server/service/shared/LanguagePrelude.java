@@ -5,8 +5,8 @@ import java.util.regex.Pattern;
 
 /**
  * Prepends a language-specific prelude of common imports/includes to user code before it reaches
- * the sandbox, so submissions may omit boilerplate (mirroring how online judges auto-import common
- * libraries such as {@code java.util.*}).
+ * the sandbox, so snippets may omit boilerplate (mirroring how many online runners auto-import
+ * common libraries such as {@code java.util.*}).
  *
  * <p>Only languages with a well-known, safe prelude are touched; everything else passes through
  * unchanged. Because a header shifts the body down, compiler diagnostics are kept faithful to the

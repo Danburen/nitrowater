@@ -53,8 +53,8 @@ class ResourceServiceDeletePermissionTest {
     private PresignedUrlCache readUrlCache;
 
     private ResourceService newService() {
-        // properties / validator are unused by the delete paths; pass nulls to keep the fixture small.
-        return new ResourceService(repository, storageRegistry, null, null, readUrlCache);
+        // properties / validator / policy are unused by the delete paths; pass nulls to keep the fixture small.
+        return new ResourceService(repository, storageRegistry, null, null, null, readUrlCache);
     }
 
     private Resource resource(SourceType sourceType, Long ownerUid, ResourceStatus status) {

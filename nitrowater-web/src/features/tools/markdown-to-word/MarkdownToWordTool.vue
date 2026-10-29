@@ -7,6 +7,8 @@ import { computed, ref } from 'vue'
 import { saveAs } from 'file-saver'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import TextArea from '../../../shared/ui/TextArea.vue'
+import TextField from '../../../shared/ui/TextField.vue'
 import { SAMPLE_MARKDOWN } from './lib/sample'
 
 const markdown = ref('')
@@ -88,21 +90,22 @@ async function doConvert(): Promise<void> {
           <span class="ml-auto text-xs text-faint">{{ charCount }} 字符</span>
         </div>
 
-        <textarea
+        <TextArea
           v-model="markdown"
-          class="input h-72 resize-y font-mono text-[13px] leading-relaxed"
+          class="resize-y"
+          min-height="288px"
           placeholder="# 在此输入 Markdown，或点击“载入示例”"
-          spellcheck="false"
+          aria-label="Markdown 内容"
         />
       </section>
 
       <section class="panel flex flex-wrap items-center gap-3">
         <span class="text-sm text-dim">文件名</span>
-        <input
+        <TextField
           v-model="fileName"
-          class="input max-w-[240px]"
+          class="max-w-[240px]"
           placeholder="document"
-        >
+        />
         <el-button
           type="primary"
           :loading="converting"

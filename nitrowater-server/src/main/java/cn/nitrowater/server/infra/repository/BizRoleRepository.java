@@ -9,7 +9,7 @@ import java.util.Optional;
 public interface BizRoleRepository extends JpaRepository<BizRole, Long> {
 
     /**
-     * @param code role code, e.g. {@code PROBLEM_ADMIN}
+     * @param code role code, e.g. {@code PLUGIN_ADMIN}
      * @return the role with that code
      */
     Optional<BizRole> findByCode(String code);

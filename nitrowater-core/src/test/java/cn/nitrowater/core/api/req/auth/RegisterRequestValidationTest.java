@@ -14,17 +14,17 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Bean Validation contract tests for {@link RegisterRequest}, focused on the password field.
+ * Bean Validation contract tests for {@link RegisterRequest}.
  *
- * <p>{@code StrongPasswordValidator} intentionally returns {@code true} for {@code null}/empty
- * input (it delegates those cases to sibling constraints), so without an explicit
- * {@code @NotBlank} the DTO layer would accept an empty password. These tests pin down the
- * required behavior: null / empty / blank passwords must be rejected by the DTO itself.</p>
+ * <p>Password is optional by design (a user may register with a phone code and add a password
+ * later), so {@code null} / empty / blank values must pass the DTO layer. When a non-blank
+ * password is supplied it must still satisfy {@link cn.nitrowater.lib.common.validation.StrongPassword}.
+ * The DTO also rejects a phone-shaped username so username resolution can never collide with
+ * phone-number resolution.</p>
  */
 class RegisterRequestValidationTest {
 
@@ -61,7 +61,7 @@ class RegisterRequestValidationTest {
     @ParameterizedTest(name = "password={0}")
     @NullAndEmptySource
     @ValueSource(strings = {" ", "   ", "\t", "\n"})
-    void blankPasswordIsRejectedByDto(String password) {
+    void blankPasswordIsAcceptedByDto(String password) {
         RegisterRequest req = validRequest();
         req.setPassword(password);
 
@@ -71,17 +71,13 @@ class RegisterRequestValidationTest {
                 .map(ConstraintViolation::getMessageTemplate)
                 .collect(Collectors.toSet());
 
-        assertFalse(passwordTemplates.isEmpty(),
-                "password '" + password + "' must be rejected at the DTO layer, got: " + passwordTemplates);
-        assertTrue(violations.stream()
-                        .filter(v -> "password".equals(v.getPropertyPath().toString()))
-                        .anyMatch(v -> v.getConstraintDescriptor().getAnnotation()
-                                instanceof jakarta.validation.constraints.NotBlank),
-                "expected a @NotBlank violation but got templates: " + passwordTemplates);
+        assertTrue(passwordTemplates.isEmpty(),
+                "optional password '" + password + "' must not be rejected at the DTO layer, got: "
+                        + passwordTemplates);
     }
 
     @Test
-    void blankPasswordViolationIsReportedOnPasswordFieldOnly() {
+    void blankPasswordProducesNoViolations() {
         RegisterRequest req = validRequest();
         req.setPassword("");
 
@@ -89,8 +85,22 @@ class RegisterRequestValidationTest {
                 .map(v -> v.getPropertyPath().toString())
                 .collect(Collectors.toSet());
 
-        assertEquals(Set.of("password"), properties,
-                "valid request with empty password must only violate the password field");
+        assertTrue(properties.isEmpty(),
+                "valid request with an empty optional password must pass, got: " + properties);
+    }
+
+    @Test
+    void phoneShapedUsernameIsRejected() {
+        RegisterRequest req = validRequest();
+        req.setUsername("13800138000");
+
+        Set<String> usernameTemplates = validator().validate(req).stream()
+                .filter(v -> "username".equals(v.getPropertyPath().toString()))
+                .map(ConstraintViolation::getMessageTemplate)
+                .collect(Collectors.toSet());
+
+        assertFalse(usernameTemplates.isEmpty(),
+                "a phone-shaped username must be rejected to keep identifier resolution unambiguous");
     }
 
     @Test

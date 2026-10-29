@@ -11,9 +11,11 @@
  * - downloads       : `GET /api/public/resources?app=…&group=<key>` (see `fetchPluginResources`).
  * The download list is fetched eagerly (not on tab switch) so 下载最新版 works from either tab.
  */
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { useRoute } from 'vue-router'
+import { useAuth } from '../../auth/useAuth'
 import {
   fetchPlugin,
   fetchPluginResources,
@@ -22,7 +24,11 @@ import {
   type PluginResource,
 } from './catalog'
 
+/** Lazy: the editor (and `md-editor-v3`) must never enter the public bundle. */
+const PluginEditorDrawer = defineAsyncComponent(() => import('./PluginEditorDrawer.vue'))
+
 const route = useRoute()
+const { isAdmin } = useAuth()
 
 const TABS = [
   { value: 'intro', label: '介绍' },
@@ -41,9 +47,17 @@ const loadingRes = ref(true)
 const resError = ref(false)
 
 const tab = ref<TabValue>('intro')
+const editorOpen = ref(false)
 
+/**
+ * Sanitized readme HTML. `readme` is author-authored, but a compromised admin account must not be
+ * able to turn the public detail page into a stored-XSS vector, so every render goes through
+ * DOMPurify.
+ */
 const mdHtml = computed(() =>
-  plugin.value?.readme ? (marked.parse(plugin.value.readme) as string) : '',
+  plugin.value?.readme
+    ? DOMPurify.sanitize(marked.parse(plugin.value.readme) as string, { USE_PROFILES: { html: true } })
+    : '',
 )
 const latest = computed(() => files.value[0] ?? null)
 
@@ -77,6 +91,23 @@ async function load(): Promise<void> {
   }
   loadingPlugin.value = false
   loadingRes.value = false
+}
+
+/** Refreshes data in place after an inline edit, keeping the current tab (no scroll jump). */
+async function refresh(): Promise<void> {
+  const k = key.value
+  if (!k) return
+  const [pluginResult, filesResult] = await Promise.allSettled([
+    fetchPlugin(k),
+    fetchPluginResources(k),
+  ])
+  if (pluginResult.status === 'fulfilled') {
+    plugin.value = pluginResult.value
+  }
+  if (filesResult.status === 'fulfilled') {
+    files.value = filesResult.value
+    resError.value = false
+  }
 }
 
 watch(key, load, { immediate: true })
@@ -184,6 +215,14 @@ function fmtDate(iso: string | null): string {
             rel="noreferrer"
             class="text-[13.5px] text-accent transition hover:opacity-80"
           >赞助 ↗</a>
+          <button
+            v-if="isAdmin"
+            type="button"
+            class="btn"
+            @click="editorOpen = true"
+          >
+            编辑
+          </button>
           <a
             :href="SUBMIT_PLUGIN_URL"
             target="_blank"
@@ -324,6 +363,13 @@ function fmtDate(iso: string | null): string {
         </p>
       </template>
     </div>
+
+    <PluginEditorDrawer
+      :open="editorOpen"
+      :plugin-key="key"
+      @close="editorOpen = false"
+      @saved="refresh"
+    />
   </div>
 </template>
 

@@ -10,6 +10,10 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'home', component: HomeView },
+    // NitroBot is a product-level assistant, not a per-plugin tab: it has its own header entry and
+    // searches every indexed corpus (VeloChatX + NitroWater). It renders a full-bleed chat shell
+    // (own sidebar + top bar), so the site header is hidden there.
+    { path: '/chat', name: 'chat', component: () => import('../features/ai/NitroBotView.vue'), meta: { layout: 'chat' } },
     // Plugin center: nested layout with its own sidebar (plugin list + search box); the selected
     // plugin's single-page 说明 renders in the content area (global header hidden there).
     {
@@ -18,26 +22,12 @@ const router = createRouter({
       meta: { layout: 'plugins' },
       children: [
         { path: '', name: 'plugins', component: () => import('../features/plugins/PluginsOverview.vue') },
+        // Legacy per-plugin chat URL: keep old links working after NitroBot moved to /chat.
+        { path: ':key/chat', redirect: '/chat' },
         { path: ':key', name: 'plugin-detail', component: () => import('../features/plugins/PluginDetailView.vue') },
       ],
     },
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
-    // The coding playground is a standalone top-level page (global header, no tools sidebar):
-    // browse problems and submit for judging, gated by login on the backend.
-    {
-      path: '/playground',
-      component: () => import('../features/playground/PlaygroundLayout.vue'),
-      meta: { layout: 'playground' },
-      children: [
-        { path: '', name: 'playground', component: () => import('../features/playground/PlaygroundProblems.vue') },
-        // Literal paths must precede `:id` so they are not captured as a problem id.
-        { path: 'sets', name: 'playground-sets', component: () => import('../features/playground/PlaygroundSets.vue') },
-        { path: 'sets/:id', name: 'playground-set-detail', component: () => import('../features/playground/PlaygroundSetDetail.vue') },
-        { path: 'square', name: 'playground-square', component: () => import('../features/playground/PlaygroundSquare.vue') },
-        { path: 'submissions', name: 'playground-submissions', component: () => import('../features/playground/PlaygroundSubmissions.vue') },
-        { path: ':id', name: 'playground-problem', component: () => import('../features/playground/PlaygroundProblem.vue') },
-      ],
-    },
     // Admin console: nested layout with its own sidebar (global header hidden). Access is
     // gated by role inside AdminLayout; the resource server enforces ROLE_ADMIN anyway.
     {
@@ -45,14 +35,10 @@ const router = createRouter({
       component: () => import('../features/admin/AdminLayout.vue'),
       meta: { layout: 'admin' },
       children: [
-        { path: '', redirect: '/admin/problems' },
-        { path: 'problems', name: 'admin-problems', component: () => import('../features/admin/AdminProblems.vue') },
-        { path: 'problems/:id', name: 'admin-problem-edit', component: () => import('../features/admin/AdminProblemEdit.vue') },
-        { path: 'tags', name: 'admin-tags', component: () => import('../features/admin/AdminTags.vue') },
-        { path: 'sets', name: 'admin-sets', component: () => import('../features/admin/AdminSets.vue') },
+        { path: '', redirect: '/admin/plugins' },
         { path: 'plugins', name: 'admin-plugins', component: () => import('../features/admin/AdminPlugins.vue') },
-        { path: 'editorials', name: 'admin-editorials', component: () => import('../features/admin/AdminEditorials.vue') },
         { path: 'resources', name: 'admin-resources', component: () => import('../features/admin/AdminResources.vue') },
+        { path: 'ai', name: 'admin-ai', component: () => import('../features/admin/AdminAi.vue') },
       ],
     },
     {
@@ -61,6 +47,10 @@ const router = createRouter({
       meta: { layout: 'tools' },
       children: [
         { path: '', name: 'tools', component: () => import('../features/tools/ToolsView.vue') },
+        { path: 'motd', name: 'tool-motd', component: () => import('../features/tools/motd/MotdTool.vue') },
+        { path: 'server-properties', name: 'tool-server-properties', component: () => import('../features/tools/server-properties/ServerPropertiesTool.vue') },
+        { path: 'server-icon', name: 'tool-server-icon', component: () => import('../features/tools/server-icon/ServerIconTool.vue') },
+        { path: 'start-script', name: 'tool-start-script', component: () => import('../features/tools/start-script/StartScriptTool.vue') },
         { path: 'java-to-ts', name: 'tool-java-to-ts', component: () => import('../features/tools/java-to-ts/JavaToTsTool.vue') },
         { path: 'zip', name: 'tool-zip', component: () => import('../features/tools/zip/ZipTool.vue') },
         { path: 'tree', name: 'tool-tree', component: () => import('../features/tools/tree/TreeTool.vue') },

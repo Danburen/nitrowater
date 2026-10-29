@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Shared sidebar shell for top-level sections (工具箱 / 演练场).
+ * Shared sidebar shell for top-level sections (工具箱 / 插件中心).
  *
  * Left column (desktop): a back-to-portal arrow + a brand block (logo mark + section title,
  * both link home) + a collapse toggle, then the section nav and a footer with theme + session.
@@ -17,10 +17,12 @@ interface NavItem {
   to: string
   /** 24x24 stroke SVG path data. */
   icon?: string
+  /** Optional group heading; a header is rendered whenever this differs from the previous item. */
+  group?: string
 }
 
 const props = defineProps<{
-  /** Section name shown next to the logo mark (工具箱 / 演练场). */
+  /** Section name shown next to the logo mark (工具箱 / 插件中心). */
   title: string
   /** Nav entries (routed). */
   nav: NavItem[]
@@ -179,30 +181,44 @@ function active(to: string): boolean {
           role="separator"
         />
 
-        <router-link
-          v-for="item in nav"
+        <template
+          v-for="(item, index) in nav"
           :key="item.to"
-          :to="item.to"
-          class="flex items-center gap-2 rounded-[9px] px-3 py-2 text-sm transition"
-          :class="[active(item.to) ? 'bg-accent/10 font-medium text-accent' : 'text-dim hover:bg-soft hover:text-ink', collapsed ? 'justify-center px-2' : '']"
-          :title="collapsed ? item.label : undefined"
         >
-          <svg
-            class="size-4 shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+          <div
+            v-if="item.group && (index === 0 || nav[index - 1]?.group !== item.group)"
+            class="px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-faint"
+            :class="collapsed ? 'px-2' : ''"
           >
-            <path :d="item.icon || 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01'" />
-          </svg>
-          <span
-            v-if="!collapsed"
-            class="truncate"
-          >{{ item.label }}</span>
-        </router-link>
+            <span v-if="!collapsed">{{ item.group }}</span>
+            <div
+              v-else
+              class="h-px bg-line"
+            />
+          </div>
+          <router-link
+            :to="item.to"
+            class="flex items-center gap-2 rounded-[9px] px-3 py-2 text-sm transition"
+            :class="[active(item.to) ? 'bg-accent/10 font-medium text-accent' : 'text-dim hover:bg-soft hover:text-ink', collapsed ? 'justify-center px-2' : '']"
+            :title="collapsed ? item.label : undefined"
+          >
+            <svg
+              class="size-4 shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path :d="item.icon || 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01'" />
+            </svg>
+            <span
+              v-if="!collapsed"
+              class="truncate"
+            >{{ item.label }}</span>
+          </router-link>
+        </template>
       </nav>
 
       <!-- Footer: theme + session -->

@@ -22,7 +22,9 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>Responsibilities: validate the request (known language, size), apply the tier's resource
  * limits, invoke {@link PistonClient}, and collapse the two-stage outcome into one result the
- * front-end can render. All Piston specifics stay behind {@link PistonClient}.</p>
+ * front-end can render. Captured output is capped at {@code maxOutputBytes} per stream so a
+ * runaway program cannot flood the response. All Piston specifics stay behind
+ * {@link PistonClient}.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -51,7 +53,7 @@ public class SandboxService {
                     "Code exceeds the maximum size of " + properties.maxCodeBytes() + " bytes");
         }
 
-        // The prelude lets callers skip boilerplate imports (mirrors online judges).
+        // The prelude lets callers skip boilerplate imports.
         ExecSpec spec = new ExecSpec(
                 target.pistonLanguage(),
                 target.version(),
@@ -84,21 +86,50 @@ public class SandboxService {
      * dedicated compile stage (Java, Python) still surface {@code CE} with the compiler output,
      * instead of masquerading as a runtime error.</p>
      */
-    private static RunResponse toResponse(String pistonLanguage, ExecResult result) {
+    private RunResponse toResponse(String pistonLanguage, ExecResult result) {
         String diagnostic = CompileErrors.diagnostic(pistonLanguage, result);
         if (diagnostic != null) {
             ExecResult.Stage compile = result.compile() != null ? result.compile() : result.run();
             Long wallTime = compile == null ? null : compile.wallTimeMs();
             Long memory = compile == null ? null : compile.memoryBytes();
             Integer exitCode = compile == null ? null : compile.code();
-            return new RunResponse(null, diagnostic, "CE", exitCode, wallTime, memory, "compilation failed");
+            return new RunResponse(null, truncate(diagnostic), "CE", exitCode, wallTime, memory,
+                    "compilation failed");
         }
         ExecResult.Stage run = result.run() != null ? result.run() : result.compile();
         if (run == null) {
             return new RunResponse(null, null, "SE", null, null, null, "No execution result returned");
         }
         String status = run.status() == null ? "OK" : run.status();
-        return new RunResponse(run.stdout(), run.stderr(), status, run.code(),
+        return new RunResponse(truncate(run.stdout()), truncate(run.stderr()), status, run.code(),
                 run.wallTimeMs(), run.memoryBytes(), run.message());
+    }
+
+    /**
+     * Caps a captured stream at {@code maxOutputBytes}, appending a marker when it was cut.
+     *
+     * <p>The cut is made on a code-point boundary so a multi-byte character is never split; the
+     * comparison uses UTF-8 bytes because that is what leaves the service.</p>
+     */
+    private String truncate(String text) {
+        if (text == null) {
+            return null;
+        }
+        int max = properties.maxOutputBytes();
+        if (text.getBytes(StandardCharsets.UTF_8).length <= max) {
+            return text;
+        }
+        int bytes = 0;
+        int end = 0;
+        while (end < text.length()) {
+            int codePoint = text.codePointAt(end);
+            int size = codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
+            if (bytes + size > max) {
+                break;
+            }
+            bytes += size;
+            end += Character.charCount(codePoint);
+        }
+        return text.substring(0, end) + "\n...[output truncated]";
     }
 }

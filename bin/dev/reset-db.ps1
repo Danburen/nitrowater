@@ -16,7 +16,7 @@
 #   .\bin\dev\reset-db.ps1 -Restart                # drop then restart owning services (Flyway replays)
 #
 # Owning services: account -> account(:8090) | biz -> server(:8081) | resource -> resource(:8093)
-# After a biz reset run: .\bin\dev\seed-test-users.ps1 and .\bin\dev\seed-demo-problem.ps1 (or just: .\bin\dev\dev-seed.ps1)
+# After a biz reset run: .\bin\dev\seed-test-users.ps1 (or just: .\bin\dev\dev-seed.ps1)
 #
 # NOTE: no [CmdletBinding()] here on purpose - the "-Db" parameter would otherwise be
 #       ambiguous with the automatic common parameter "-Debug" and fail to bind.
@@ -96,5 +96,5 @@ if ($Restart) {
     }
 } else {
     Write-Warn 'Services stopped. Start them again (bin\start-all.ps1, or re-run with -Restart) to let Flyway rebuild.'
-    Write-Warn 'Then re-seed: bin\dev\seed-test-users.ps1 (+ bin\dev\seed-demo-problem.ps1 for biz), or run bin\dev\dev-seed.ps1.'
+    Write-Warn 'Then re-seed: bin\dev\seed-test-users.ps1, or run bin\dev\dev-seed.ps1.'
 }

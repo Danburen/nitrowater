@@ -16,7 +16,7 @@
 1. **时间列统一 `TIMESTAMP(3)`**（毫秒精度）；`DATETIME(3)` 仅在 `TIMESTAMP` 不适用（如超出 1970–2038）时作为**不得已**选择，且须先与用户确认。**唯一例外**：生日/纯日期语义字段用 `DATE`。
    - 配合 datasource `connectionTimeZone=UTC&preserveInstants=true`，JPA 实体用 `java.time.Instant`。
    - ⚠️ MySQL `TIMESTAMP` 范围 1970–2038；若某列需要 2038 之后（罕见），先与用户确认再破例。
-   - **例外（vendor schema）**：第三方库自带的 DDL **原样保留**，不强行套本项目约定——如 Spring Authorization Server 官方表（`V1_1` 的 `oauth2_registered_client`/`oauth2_authorization`/`oauth2_authorization_consent`，含裸 `timestamp` 列）。改动会偏离上游 schema，且被 `JdbcRegisteredClientRepository`/`JdbcOAuth2AuthorizationService` 直接读写。
+   - **例外（vendor schema）**：第三方库自带的 DDL **原样保留**，不强行套本项目约定——如 Spring Authorization Server 官方表（`V1__sso_baseline.sql` 中的 `oauth2_registered_client`/`oauth2_authorization`/`oauth2_authorization_consent`，含裸 `timestamp` 列）。改动会偏离上游 schema，且被 `JdbcRegisteredClientRepository`/`JdbcOAuth2AuthorizationService` 直接读写。
 2. **枚举一律"整数编码 + 映射"**：DB 列 `TINYINT UNSIGNED`，JPA 用 `@Converter(autoApply = true)`。
    - 枚举自带 `short value` + `static fromValue(int)`；实体字段标 `@Column(..., columnDefinition="tinyint UNSIGNED")`。
    - **禁止** `@Enumerated(EnumType.STRING/ORDINAL)`、`@Convert(disableConversion=true)`。
@@ -27,7 +27,7 @@
 5. **跨库/跨服务引用用 `uuid`（CHAR(36)），不用自增 `id`**（`id` 仅服务内部主键用）。
    - 跨库**不建物理 FK**，只存逻辑键（如 `uid`、`*_resource_uuid`）。
    - `resource.uuid` 为对外唯一键（`UNIQUE`），可作引用目标。
-6. Flyway：**已应用的迁移冻结**（改名/改内容 → checksum 校验失败导致启动失败）；新变更走新版本（`V1_2__...`）。
+6. Flyway：**已应用的迁移冻结**（改名/改内容 → checksum 校验失败导致启动失败）；新变更走新版本（account 当前基线为 `V1__sso_baseline.sql`，下一条为 `V1_1__...`）。
    - dev 阶段允许"**改基线 + 重置库**"：drop schema 后由 Flyway 重放（无生产数据，随意）。
    - 每个服务管自己的库（`nitrowater_account` / `nitrowater_biz` / `nitrowater_resource`），`ddl-auto=none`。
 

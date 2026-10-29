@@ -1,7 +1,11 @@
 package cn.nitrowater.bff.web;
 
+import cn.nitrowater.bff.security.SessionEpochFilter;
+
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +21,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.servlet.HandlerMapping;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Locale;
@@ -59,14 +64,16 @@ public class ApiProxyController {
                 || path.equals("/api/resources")
                 || path.startsWith("/api/resources/")
                 || path.startsWith("/api/public/resource")
-                // File-management console (resource-owned); must win over the generic /api/admin/**
-                // that otherwise routes to the business API.
+                // File-management console + plugin artifacts (resource-owned); must win over the
+                // generic /api/admin/** that otherwise routes to the business API.
                 || path.equals("/api/admin/resources")
-                || path.startsWith("/api/admin/resources/");
+                || path.startsWith("/api/admin/resources/")
+                || path.equals("/api/admin/plugin-resources")
+                || path.startsWith("/api/admin/plugin-resources/");
     }
 
     @RequestMapping("/api/**")
-    public ResponseEntity<byte[]> proxy(HttpServletRequest request, Authentication authentication) throws IOException {
+    public ResponseEntity<Resource> proxy(HttpServletRequest request, Authentication authentication) throws IOException {
         String path = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
         String query = request.getQueryString();
         String target = query == null || query.isEmpty() ? path : path + "?" + query;
@@ -79,11 +86,12 @@ public class ApiProxyController {
                                 .build())
                 : null;
 
-        byte[] body = request.getInputStream().readAllBytes();
+        HttpMethod method = HttpMethod.valueOf(request.getMethod());
+        long contentLength = request.getContentLengthLong();
 
         RestClient restClient = isResourcePath(path) ? resourceRestClient : serverRestClient;
         RestClient.RequestBodySpec spec = restClient
-                .method(HttpMethod.valueOf(request.getMethod()))
+                .method(method)
                 .uri(target);
         spec.headers(headers -> ProxyHeaders.forEachForwardedHeader(request, headers::add));
         if (client != null && client.getAccessToken() != null) {
@@ -92,8 +100,11 @@ public class ApiProxyController {
         // Stamp the real client address for downstream per-IP rate limiting. The BFF is the only
         // edge in this topology; if a trusted reverse proxy fronts it, use that proxy's value instead.
         spec.header("X-Forwarded-For", request.getRemoteAddr());
-        if (body.length > 0) {
-            spec.body(body);
+        // Stream the request body instead of buffering it: a 64 MB jar must not be copied into the
+        // BFF heap. A known Content-Length lets the JDK client send a fixed-length body (the resource
+        // service requires it for uploads); an unknown length falls back to chunked encoding.
+        if (contentLength != 0 && (contentLength > 0 || hasRequestBody(method))) {
+            spec.body(new StreamingResource(request.getInputStream(), contentLength));
         }
 
         return spec.exchange((req, res) -> {
@@ -106,8 +117,50 @@ public class ApiProxyController {
                     responseHeaders.put(name, values);
                 }
             });
-            byte[] responseBody = res.getBody().readAllBytes();
+            // Returning an InputStreamResource keeps RestClient from closing the downstream
+            // response before Spring MVC has streamed it to the browser (see its streaming-result
+            // handling). The custom contentLength lets the converter preserve Content-Length.
+            InputStream responseStream = res.getBody();
+            Resource responseBody = (responseStream != null)
+                    ? new StreamingResource(responseStream, res.getHeaders().getContentLength())
+                    : null;
+            if (res.getStatusCode().value() == 401 && request.getUserPrincipal() != null) {
+                // The resource server rejected our access token: the session's credentials are dead,
+                // so stop pretending we are still signed in.
+                SessionEpochFilter.invalidate(request);
+                responseHeaders.set("X-Auth-Reason", "upstream_unauthorized");
+                responseHeaders.add(HttpHeaders.SET_COOKIE, SessionCookies.expired().toString());
+            }
             return ResponseEntity.status(res.getStatusCode()).headers(responseHeaders).body(responseBody);
         });
+    }
+
+    /**
+     * @param method HTTP method of the proxied request
+     * @return whether the method can carry a request body when its length is not declared
+     */
+    private static boolean hasRequestBody(HttpMethod method) {
+        return method == HttpMethod.POST || method == HttpMethod.PUT || method == HttpMethod.PATCH;
+    }
+
+    /**
+     * A one-shot streaming body with a pre-computed length. {@link InputStreamResource} alone reports
+     * an unknown length, which would make the JDK client use chunked encoding and would make Spring
+     * MVC omit the response length; this subclass keeps the length known without reading the stream
+     * twice.
+     */
+    private static final class StreamingResource extends InputStreamResource {
+
+        private final long contentLength;
+
+        private StreamingResource(InputStream inputStream, long contentLength) {
+            super(inputStream);
+            this.contentLength = contentLength;
+        }
+
+        @Override
+        public long contentLength() {
+            return contentLength;
+        }
     }
 }

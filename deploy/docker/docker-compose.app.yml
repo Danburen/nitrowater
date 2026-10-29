@@ -83,7 +83,26 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
       SPRING_DATA_REDIS_HOST: redis
       PISTON_BASE_URL: http://piston:2000
-    mem_limit: 640m
+      # ---- Documentation assistant (Spring AI) ----
+      # Qdrant runs in docker-compose.infra.yml on the shared network.
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6334"
+      AI_CHAT_API_KEY: ${AI_CHAT_API_KEY:-${GLM_API_KEY:-not-configured}}
+      AI_CHAT_BASE_URL: ${AI_CHAT_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-glm-5.3-flash}
+      AI_EMBEDDING_API_KEY: ${AI_EMBEDDING_API_KEY:-${GLM_API_KEY:-not-configured}}
+      AI_EMBEDDING_BASE_URL: ${AI_EMBEDDING_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-embedding-3}
+      AI_EMBEDDING_DIMENSIONS: ${AI_EMBEDDING_DIMENSIONS:-1024}
+      # Web search uses DeepSeek's search API (`DEEPSEEK_API_KEY`); inactive when the key is absent.
+      AI_WEB_SEARCH_ENABLED: ${AI_WEB_SEARCH_ENABLED:-true}
+      AI_WEB_SEARCH_API_KEY: ${AI_WEB_SEARCH_API_KEY:-${DEEPSEEK_API_KEY:-}}
+      AI_WEB_SEARCH_ENDPOINT: ${AI_WEB_SEARCH_ENDPOINT:-https://api.deepseek.com/v1/tools/search}
+      AI_WEB_SEARCH_TIMEOUT_MS: ${AI_WEB_SEARCH_TIMEOUT_MS:-20000}
+      # Documentation corpora come from the classpath (ai/docs/<corpus>) and are configured under
+      # app.ai.collections; published sites (deploy/plugin-docs) are served by the docs container,
+      # so the server needs neither the mount nor the legacy AI_DOCS_* variables.
+    mem_limit: 768m
     restart: unless-stopped
     networks:
       - nitrowater-net

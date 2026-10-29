@@ -23,7 +23,7 @@ spring:
       ddl-auto: none
     open-in-view: false
 
-  # -------- Redis：仅用于代码运行器匿名限流（不是会话存储）--------
+  # -------- Redis：仅用于代码运行器限流（不是会话存储）--------
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -35,6 +35,68 @@ spring:
   # -------- 业务表迁移（业务库 nitrowater_biz；V1 baseline）--------
   flyway:
     enabled: true
+
+  # -------- Spring AI: documentation assistant (RAG) --------
+  # Chat and embeddings speak the OpenAI-compatible protocol but are allowed to use different
+  # vendors (Spring AI composes request URLs as base-url + /chat/completions or /embeddings).
+  #   chat      -> DeepSeek (https://api.deepseek.com); deepseek-reasoner has no tool calling, so
+  #                the agent stays on deepseek-chat.
+  #   embedding -> ZhipuAI GLM (https://open.bigmodel.cn/api/paas/v4). DeepSeek exposes no
+  #                embeddings endpoint, and changing the embedding model would invalidate every
+  #                vector already stored in Qdrant (full re-index required).
+  # Keys: AI_CHAT_API_KEY / DEEPSEEK_API_KEY for chat, GLM_API_KEY / AI_EMBEDDING_API_KEY for
+  # embeddings.
+  ai:
+    # The OpenAI starter also auto-configures image/audio/moderation models. They are unused here
+    # and require credentials of their own, so switch them off (the chat/embedding models are
+    # selected by their own properties below).
+    model:
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
+    openai:
+      api-key: ${AI_CHAT_API_KEY:${DEEPSEEK_API_KEY:not-configured}}
+      chat:
+        api-key: ${AI_CHAT_API_KEY:${DEEPSEEK_API_KEY:not-configured}}
+        base-url: ${AI_CHAT_BASE_URL:https://api.deepseek.com}
+        model: ${AI_CHAT_MODEL:deepseek-chat}
+        temperature: ${AI_CHAT_TEMPERATURE:0.2}
+        max-tokens: ${AI_CHAT_MAX_TOKENS:1200}
+        # DeepSeek supports stream_options.include_usage; the usage rides on the last content chunk.
+        stream-usage: true
+        timeout: 90s
+        max-retries: 2
+      embedding:
+        api-key: ${AI_EMBEDDING_API_KEY:${GLM_API_KEY:not-configured}}
+        base-url: ${AI_EMBEDDING_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+        model: ${AI_EMBEDDING_MODEL:embedding-3}
+        # embedding-3 supports `dimensions` (256/512/1024/2048, default 2048). Keep 1024 to match
+        # the existing Qdrant collection; switching the embedding vendor/model requires a full
+        # re-index (POST /api/admin/ai/reindex). When unset, the size is probed from the model.
+        dimensions: ${AI_EMBEDDING_DIMENSIONS:1024}
+        timeout: 30s
+        max-retries: 2
+    # Agent tool-loop guardrails (Spring AI's built-in tool-calling limits). Exceeding a limit
+    # returns an error response to the model instead of throwing.
+    tools:
+      limits:
+        # runCode gets one call beyond its 3-run budget: that 4th call is how the tool itself
+        # returns `retry_exhausted` instead of the framework rejecting it first.
+        max-total-tool-calls: ${AI_AGENT_MAX_TOOL_CALLS:10}
+        max-calls-per-tool-default: ${AI_AGENT_MAX_CALLS_PER_TOOL:3}
+        max-calls-per-tool:
+          runCode: 4
+        on-limit-exceeded: RETURN_ERROR_RESPONSE
+    # Qdrant is the third-party vector index. initialize-schema=false keeps the service bootable
+    # when Qdrant is down; DocsIndexService creates the collection on the first index run.
+    vectorstore:
+      qdrant:
+        host: ${QDRANT_HOST:localhost}
+        port: ${QDRANT_PORT:6334}
+        collection-name: ${AI_COLLECTION:nitrowater_velochatx_docs}
+        initialize-schema: false
 
   # -------- OAuth2 Resource Server：校验 SSO(AS) 签发的 JWT（JWKS 验签）--------
   # issuer 必须等于 AS 的 issuer（= nitrowater-account 的 jwt.issuer）。生产设 JWT_ISSUER=https://auth.nitrowater.cn。
@@ -53,23 +115,70 @@ app:
   security:
     jwt:
       audiences: nitrowater-server
+  # -------- Documentation assistant: corpus, retrieval and quotas --------
+  # The indexer is idempotent: a full re-index deletes the corpus and re-embeds it; deterministic
+  # ids keep point ids stable.
+  ai:
+    enabled: ${AI_ENABLED:true}
+    chunk-size: ${AI_CHUNK_SIZE:500}
+    min-chunk-size-chars: ${AI_MIN_CHUNK_SIZE_CHARS:100}
+    max-chunks-per-doc: ${AI_MAX_CHUNKS_PER_DOC:40}
+    top-k: ${AI_TOP_K:6}
+    similarity-threshold: ${AI_SIMILARITY_THRESHOLD:0.35}
+    max-question-chars: ${AI_MAX_QUESTION_CHARS:2000}
+    max-history-turns: ${AI_MAX_HISTORY_TURNS:4}
+    ingest-on-startup: ${AI_INGEST_ON_STARTUP:true}
+    per-user-per-minute: ${AI_PER_USER_PER_MINUTE:20}
+    # Documentation corpora. Each entry is a logical corpus; location may be a filesystem path or
+    # a classpath: prefix. `public-base-url` empty means markdown-only (citations carry no URL).
+    collections:
+      - corpus: velochatx
+        location: classpath:ai/docs/velochatx
+        # Published by bin/dev/sync-docs.ps1 into deploy/plugin-docs (mounted by the docs nginx).
+        public-base-url: /plugin/velochatx/docs/
+      - corpus: nitrowater
+        location: classpath:ai/docs/nitrowater
+        # Markdown-only corpus: no published site, so citations carry no URL.
+        public-base-url: ''
+    # ---- Agent: skills + tools ----
+    # External skills are markdown files at <skills-dir>/<name>/SKILL.md; built-in skills live on
+    # the classpath (resources/ai/skills). External files override a same-named built-in.
+    skills-dir: ${AI_SKILLS_DIR:deploy/ai-skills}
+    # Web search is DeepSeek's search API. The tool is only advertised when a key is present and
+    # the user opted in for the turn (`AiStatusResp.webSearchEnabled` reflects the real state).
+    web-search:
+      enabled: ${AI_WEB_SEARCH_ENABLED:true}
+      # Chat, embeddings and search each use their own vendor key.
+      api-key: ${AI_WEB_SEARCH_API_KEY:${DEEPSEEK_API_KEY:}}
+      endpoint: ${AI_WEB_SEARCH_ENDPOINT:https://api.deepseek.com/v1/tools/search}
+      # `searchDocs` falls back to one web search per turn when the local corpus has no match.
+      auto-fallback: ${AI_WEB_SEARCH_AUTO_FALLBACK:true}
+      auto-fallback-count: ${AI_WEB_SEARCH_AUTO_FALLBACK_COUNT:3}
+      timeout-ms: ${AI_WEB_SEARCH_TIMEOUT_MS:20000}
   # -------- 代码沙箱（Piston）--------
   # 业务服务直连 Piston（不设独立模块）；仅登录用户可用（匿名只跑浏览器本地 WASM）。
+  # 执行采用「单用户串行 + 全局并发 + 有界排队」：超过队列上限或等待超时才返回 429。
   sandbox:
     base-url: ${PISTON_BASE_URL:http://localhost:2000}
     connect-timeout-ms: 2000
-    read-timeout-ms: 30000          # 需 > compile+run 之和，否则长跑会被截断
+    read-timeout-ms: 40000          # 必须 > compile+run（20000+10000），留 10s 余量
     max-code-bytes: 65536
-    global-concurrency: 4           # 同时最多 4 个在途执行（保护 Piston）
+    global-concurrency: 2           # 同时最多 2 个在途执行（保护 Piston）
     compile-timeout-ms: 20000
-    per-ip-per-minute: 30           # 登录用户 per-IP 限流
+    per-user-per-minute: 10         # 每个登录用户每分钟最多 10 次
+    per-user-per-day: 200           # 每个登录用户每天最多 200 次
+    max-queue: 20                   # 全局最多排队 20 个请求
+    queue-wait-ms: 15000            # 单次请求最长排队等待 15s
+    # Agent runCode: ask before blocking when the queue is long; otherwise wait up to this budget.
+    agent-queue-wait-ms: 15000
+    agent-queue-ask-waiting: 3
+    agent-queue-ask-ms: 5000
+    agent-queue-estimate-run-ms: 3000
     run-timeout-ms: 10000
+    max-output-bytes: 65536         # stdout/stderr 各自最多回传 64KB
     # MUST be <= the Piston container's PISTON_RUN_MEMORY_LIMIT, else Piston rejects the
     # request with 400 ("run_memory_limit cannot exceed the configured limit of ...").
-    memory-limit-bytes: 268435456   # 256MB（单位 bytes），与 Piston 上限 / problem 默认 262144KB 对齐
-  # -------- 判题流水线（后台判题线程池）--------
-  judge:
-    workers: 4                      # 并发判题线程数 = 在途沙箱执行数上限（保护 Piston）
+    memory-limit-bytes: 268435456   # 256MB（单位 bytes）
 
 
 logging:

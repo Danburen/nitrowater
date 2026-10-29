@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Shared page header shell used inside a SectionLayout (both 工具箱 tools and 演练场 pages).
+ * Shared page header shell used inside a SectionLayout (工具箱 tool pages).
  *
  * Renders a compact title bar (title + optional info tooltip + an `actions` slot on the right)
  * above the page body. With `fill` the body fills the available height and never scrolls the

@@ -1,0 +1,74 @@
+[
+  {
+    "icon": "code",
+    "title": "写代码并运行",
+    "desc": "描述需求，直接跑一遍验证",
+    "prompt": "写一段 Python 代码统计 CSV 各列的缺失率，并实际运行验证结果。"
+  },
+  {
+    "icon": "bug",
+    "title": "排查一段报错",
+    "desc": "贴上报错，我定位根因并给出修法",
+    "prompt": "下面这段报错是什么原因？请给出根因和最小修复（报错内容我贴在下面）："
+  },
+  {
+    "icon": "bulb",
+    "title": "解释一个概念",
+    "desc": "用通俗语言讲清楚复杂问题",
+    "prompt": "用通俗的语言解释什么是「反向代理」，并给一个实际例子。"
+  },
+  {
+    "icon": "translate",
+    "title": "翻译并润色",
+    "desc": "中英互译，语气更自然",
+    "prompt": "把下面这段文字翻译成地道的英文并润色（请把我的原文贴在这里）："
+  },
+  {
+    "icon": "book",
+    "title": "查站点文档",
+    "desc": "NitroWater / VeloChatX 安装与架构",
+    "prompt": "NitroWater 的 BFF 为什么不让浏览器持有 token？"
+  },
+  {
+    "icon": "terminal",
+    "title": "写一条命令脚本",
+    "desc": "PowerShell / Bash / SQL 都行",
+    "prompt": "写一个 PowerShell 脚本：把某个目录下所有超过 30 天的 .log 文件压缩成 zip 后删除原文件，并打印汇总。"
+  },
+  {
+    "icon": "server",
+    "title": "Minecraft 服务端配置",
+    "desc": "server.properties / 启动脚本 / 优化",
+    "prompt": "帮我写一份面向 20 人小服的 server.properties 关键项配置说明，并解释每一项的取舍。"
+  },
+  {
+    "icon": "plugin",
+    "title": "插件与 JAR 体检",
+    "desc": "plugin.yml、依赖、兼容性",
+    "prompt": "如何检查一个 Minecraft 插件 JAR 是否存在依赖缺失或版本不兼容的问题？给我一份检查清单。"
+  },
+  {
+    "icon": "chart",
+    "title": "数据处理与分析",
+    "desc": "清洗、聚合、出结论",
+    "prompt": "我有一份每日活跃用户 CSV，请给出一套分析思路（留存、活跃时段、异常检测），并写出对应的 Python 代码。"
+  },
+  {
+    "icon": "wrench",
+    "title": "设计方案评审",
+    "desc": "给出取舍、风险与替代方案",
+    "prompt": "帮我评审一个技术方案：需求是多实例部署下做全局限流。请指出风险并给出 2-3 种可行替代方案（方案我贴在下面）："
+  },
+  {
+    "icon": "file",
+    "title": "写文档与总结",
+    "desc": "README、变更说明、会议纪要",
+    "prompt": "把下面这次的改动整理成一段可发布的变更说明，面向使用者而不是开发者（改动内容我贴在下面）："
+  },
+  {
+    "icon": "globe",
+    "title": "查最新资料",
+    "desc": "联网检索并给出处",
+    "prompt": "查一下 Spring Boot 4 对虚拟线程的默认配置有什么变化，并给出官方文档出处。"
+  }
+]

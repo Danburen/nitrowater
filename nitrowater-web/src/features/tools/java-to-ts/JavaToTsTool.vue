@@ -7,6 +7,7 @@ import { CopyDocument, Delete } from '@element-plus/icons-vue'
 import { ref } from 'vue'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import TextArea from '../../../shared/ui/TextArea.vue'
 
 const javaCode = ref('')
 const tsCode = ref('')
@@ -274,10 +275,11 @@ async function copy(text: string, okMsg: string): Promise<void> {
             </el-tooltip>
           </div>
         </div>
-        <textarea
+        <TextArea
           v-model="javaCode"
-          class="textarea min-h-[320px]"
+          min-height="320px"
           placeholder="粘贴 Java 类代码，例如：&#10;public class RoleResp {&#10;    private Integer id;&#10;    private String name;&#10;}"
+          aria-label="Java 代码"
         />
         <div class="flex flex-wrap items-center gap-4 text-sm text-dim">
           <label class="inline-flex cursor-pointer items-center gap-2">
@@ -320,11 +322,12 @@ async function copy(text: string, okMsg: string): Promise<void> {
             复制结果
           </el-button>
         </div>
-        <textarea
+        <TextArea
           v-model="tsCode"
           readonly
-          class="textarea min-h-[320px]"
+          min-height="320px"
           placeholder="生成的 TypeScript 代码将显示在这里"
+          aria-label="TypeScript 输出"
         />
       </section>
     </div>

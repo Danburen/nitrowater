@@ -139,6 +139,13 @@ app:
   # redirect. It must point at the portal, never at /admin/.
   sso:
     default-redirect: "${SSO_DEFAULT_REDIRECT:http://localhost:5173}"
+  # Hosted login 是顶层表单 POST：成功后 302 到待处理的 /oauth2/authorize，再 302 到客户端的
+  # redirect_uri（跨域回跳是 OIDC 设计本身）。Chrome 会按 form-action 校验整条重定向链，所以回调
+  # 域必须显式列出，否则导航被中止（此时会话已建立 → 表现为"停在登录页、刷新却已登录"）。
+  # 只接受 scheme://host[:port]：不支持通配符、路径、逗号；非法值启动即失败。
+  # 新增对外应用时，把它的 redirect_uri 域加进来（与 app.oidc.bff-redirect-uris 对齐）。
+  csp:
+    form-action-origins: "${SSO_FORM_ACTION_ORIGINS:http://localhost:5173,http://localhost:8080,https://nitrowater.cn}"
   cors:
     allowed-origin-patterns: "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn"
   # 头像：OIDC picture claim 由 user.avatar_resource_uuid 派生（稳定读路径，非存储URL）。

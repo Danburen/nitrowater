@@ -1,89 +1,78 @@
 <script setup lang="ts">
-import { tools } from './catalog'
+import { toolCategories, readyToolsIn } from './catalog'
+
+/** Two labelled groups, server tools first. */
+const groups = toolCategories.map((category) => ({
+  ...category,
+  tools: readyToolsIn(category.key),
+}))
 </script>
 
 <template>
   <div class="h-full overflow-y-auto p-5">
-    <header class="mb-5">
+    <header class="mb-6">
       <h1 class="text-lg font-semibold tracking-tight text-ink">
         在线工具箱
       </h1>
       <p class="mt-1 text-sm text-dim">
-        纯前端本地计算，文件与数据不会上传服务器。
+        开服工具优先，通用功能并存；文件与数据默认不上传服务器。
       </p>
     </header>
 
-    <div class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
-      <component
-        :is="tool.to ? 'router-link' : 'div'"
-        v-for="tool in tools"
-        :key="tool.key"
-        :to="tool.to"
-        class="group flex gap-3 rounded-[14px] border border-line bg-card p-4 transition hover:border-line-strong"
-        :class="{ 'opacity-70': tool.status === 'soon' }"
-      >
-        <span class="grid size-10 shrink-0 place-items-center rounded-xl border border-accent/25 bg-gradient-to-br from-accent/15 to-accent-2/15 text-accent">
-          <svg
-            class="size-5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path :d="tool.icon" />
-          </svg>
-        </span>
-        <span class="min-w-0">
-          <span class="flex items-center gap-2">
-            <span class="font-medium text-ink">{{ tool.title }}</span>
-            <span
-              v-if="tool.status === 'soon'"
-              class="rounded-full border border-line px-2 py-0.5 text-[10px] uppercase tracking-wide text-faint"
-            >soon</span>
-          </span>
-          <span class="mt-0.5 block text-[13px] leading-relaxed text-dim">{{ tool.desc }}</span>
-          <span class="mt-2 flex flex-wrap gap-1.5">
-            <span
-              v-for="tag in tool.tags"
-              :key="tag"
-              class="tag"
-            >{{ tag }}</span>
-          </span>
-        </span>
-      </component>
-    </div>
+    <section
+      v-for="group in groups"
+      :key="group.key"
+      class="mb-8 last:mb-0"
+    >
+      <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 class="text-[15px] font-semibold text-ink">
+          {{ group.label }}
+        </h2>
+        <span class="text-[12.5px] text-dim">{{ group.desc }}</span>
+      </div>
 
-    <!-- Divider + shortcut to the standalone coding playground -->
-    <div class="mt-6 border-t border-line pt-5">
-      <router-link
-        to="/playground"
-        class="flex items-center gap-3 rounded-[14px] border border-accent/25 bg-gradient-to-br from-accent/10 to-accent-2/10 px-4 py-3.5 transition hover:border-accent/40"
-      >
-        <span class="grid size-10 shrink-0 place-items-center rounded-xl border border-accent/25 bg-gradient-to-br from-accent/15 to-accent-2/15 text-accent">
-          <svg
-            class="size-5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M6 3h9l5 5v13H6zM15 3v5h5M9 15l2 2 4-4" />
-          </svg>
-        </span>
-        <span class="min-w-0">
-          <span class="flex items-center gap-2">
-            <span class="font-medium text-ink">编程演练场</span>
-            <span class="tag">ACM · 需登录</span>
+      <div class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
+        <component
+          :is="tool.to ? 'router-link' : 'div'"
+          v-for="tool in group.tools"
+          :key="tool.key"
+          :to="tool.to"
+          class="group flex gap-3 rounded-[14px] border border-line bg-card p-4 transition hover:border-line-strong"
+          :class="{ 'opacity-70': tool.status === 'soon' }"
+        >
+          <span class="grid size-10 shrink-0 place-items-center rounded-xl border border-accent/25 bg-gradient-to-br from-accent/15 to-accent-2/15 text-accent">
+            <svg
+              class="size-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path :d="tool.icon" />
+            </svg>
           </span>
-          <span class="mt-0.5 block text-[13px] leading-relaxed text-dim">ACM 模式在线判题：浏览题目、提交代码、查看评测结果。</span>
-        </span>
-        <span class="ml-auto shrink-0 text-accent">进入 →</span>
-      </router-link>
-    </div>
+          <span class="min-w-0">
+            <span class="flex items-center gap-2">
+              <span class="font-medium text-ink">{{ tool.title }}</span>
+              <span
+                v-if="tool.status === 'soon'"
+                class="rounded-full border border-line px-2 py-0.5 text-[10px] uppercase tracking-wide text-faint"
+              >soon</span>
+            </span>
+            <span class="mt-0.5 block text-[13px] leading-relaxed text-dim">{{ tool.desc }}</span>
+            <span class="mt-2 flex flex-wrap gap-1.5">
+              <span
+                v-for="tag in tool.tags"
+                :key="tag"
+                class="tag"
+              >{{ tag }}</span>
+            </span>
+          </span>
+        </component>
+      </div>
+    </section>
 
     <router-link
       to="/about#credits"

@@ -73,14 +73,17 @@ public class ResourceService {
     private final FileStorageRegistry storageRegistry;
     private final ResourceProperties properties;
     private final FileTypeValidator validator;
+    private final PluginArtifactPolicy pluginArtifactPolicy;
     private final PresignedUrlCache readUrlCache;
 
     public ResourceService(ResourceRepository repository, FileStorageRegistry storageRegistry,
-            ResourceProperties properties, FileTypeValidator validator, PresignedUrlCache readUrlCache) {
+            ResourceProperties properties, FileTypeValidator validator,
+            PluginArtifactPolicy pluginArtifactPolicy, PresignedUrlCache readUrlCache) {
         this.repository = repository;
         this.storageRegistry = storageRegistry;
         this.properties = properties;
         this.validator = validator;
+        this.pluginArtifactPolicy = pluginArtifactPolicy;
         this.readUrlCache = readUrlCache;
     }
 
@@ -208,10 +211,24 @@ public class ResourceService {
     @Transactional
     public ResourceMeta publishSystem(String app, String groupKey, String originalName, String version,
             String contentType, InputStream in, long size) {
+        return publishSystem(app, groupKey, originalName, version, contentType, in, size,
+                properties.maxSizeBytes());
+    }
+
+    /**
+     * Publishes a system resource with an explicit size cap (used by the admin plugin upload, whose
+     * jars are larger than the end-user upload limit).
+     *
+     * @param maxBytes maximum accepted stored size for this publication
+     * @see #publishSystem(String, String, String, String, String, InputStream, long)
+     */
+    @Transactional
+    public ResourceMeta publishSystem(String app, String groupKey, String originalName, String version,
+            String contentType, InputStream in, long size, long maxBytes) {
         String group = blankToNull(groupKey);
-        if (size > properties.maxSizeBytes()) {
+        if (size > maxBytes) {
             throw new ResourceException(HttpStatus.CONTENT_TOO_LARGE, "too_large",
-                    "File exceeds the maximum size of " + properties.maxSizeBytes() + " bytes");
+                    "File exceeds the maximum size of " + maxBytes + " bytes");
         }
         ResourceType type = validator.typeByExtension(originalName)
                 .orElseThrow(() -> new ResourceException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "unsupported_type",
@@ -250,7 +267,7 @@ public class ResourceService {
         FileStorage storage = storageRegistry.get(backend);
         storage.put(resource.getBucketKey(), in, size, mimeType);
         long storedSize = storage.size(resource.getBucketKey());
-        if (storedSize > properties.maxSizeBytes()) {
+        if (storedSize > maxBytes) {
             storage.remove(resource.getBucketKey());
             throw new ResourceException(HttpStatus.CONTENT_TOO_LARGE, "too_large", "File exceeds maximum size");
         }
@@ -262,6 +279,67 @@ public class ResourceService {
         resource.setUpdatedAt(Instant.now());
         readUrlCache.evict(resource.getUuid());
         return toMeta(repository.save(resource));
+    }
+
+    /**
+     * Publishes (or re-publishes) a plugin artifact uploaded from the admin UI.
+     *
+     * <p>Applies the strict {@link PluginArtifactPolicy} (jar-only name allow-list, ZIP magic and the
+     * dedicated size cap) and delegates to {@link #publishSystem} so the download URL stays stable
+     * across versions.</p>
+     *
+     * @param pluginKey plugin key (also the resource group)
+     * @param originalName client-supplied file name
+     * @param version logical version, or {@code null}
+     * @param in content stream (caller closes)
+     * @param size declared content length
+     * @return the activated resource metadata
+     */
+    @Transactional
+    public ResourceMeta publishPluginArtifact(String pluginKey, String originalName, String version,
+            InputStream in, long size) {
+        String key = pluginArtifactPolicy.sanitizeKey(pluginKey);
+        String name = pluginArtifactPolicy.sanitizeName(originalName);
+        pluginArtifactPolicy.requireSize(size);
+        return publishSystem(PluginArtifactPolicy.PLUGIN_APP, key, name, version,
+                MediaType.APPLICATION_OCTET_STREAM_VALUE, in, size, pluginArtifactPolicy.maxBytes());
+    }
+
+    /**
+     * Lists a plugin's active artifacts, newest first, as public download links.
+     *
+     * @param pluginKey plugin key (also the resource group)
+     * @return the active artifacts, newest first
+     */
+    @Transactional(readOnly = true)
+    public List<ResourceMeta> listPluginArtifacts(String pluginKey) {
+        String key = pluginArtifactPolicy.sanitizeKey(pluginKey);
+        return repository.findByAppAndGroupKeyAndStatusOrderByCreatedAtDesc(
+                        PluginArtifactPolicy.PLUGIN_APP, key, ResourceStatus.ACTIVE)
+                .stream()
+                .map(ResourceService::toListItem)
+                .toList();
+    }
+
+    /**
+     * Deletes one plugin artifact after verifying that it belongs to the given plugin.
+     *
+     * <p>Unlike {@link #adminDelete}, a plain {@code ROLE_ADMIN} may remove system-published plugin
+     * jars; the group check prevents deleting an arbitrary resource through this path.</p>
+     *
+     * @param pluginKey plugin key (also the resource group)
+     * @param uuid resource identifier
+     */
+    @Transactional
+    public void deletePluginArtifact(String pluginKey, String uuid) {
+        String key = pluginArtifactPolicy.sanitizeKey(pluginKey);
+        Resource resource = require(uuid);
+        if (!PluginArtifactPolicy.PLUGIN_APP.equals(resource.getApp())
+                || !Objects.equals(resource.getGroupKey(), key)) {
+            throw new ResourceException(HttpStatus.NOT_FOUND, "not_found",
+                    "Resource does not belong to this plugin");
+        }
+        deleteWithPolicy(uuid, null, true);
     }
 
     /**

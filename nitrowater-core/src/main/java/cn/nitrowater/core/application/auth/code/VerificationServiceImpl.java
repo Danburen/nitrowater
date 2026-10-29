@@ -14,11 +14,13 @@ import cn.nitrowater.core.api.req.auth.SecurityVerifyCodeDto;
 import cn.nitrowater.core.api.req.auth.SendCodeReq;
 import cn.nitrowater.core.api.req.auth.VerifyCodeDto;
 import cn.nitrowater.core.api.resp.auth.CodeResult;
+import cn.nitrowater.core.application.auth.AuthIdentifierUtil;
 import cn.nitrowater.core.domain.EncryptionDataKey;
+import cn.nitrowater.core.domain.user.AccountStatus;
+import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.domain.user.UserDatum;
 import cn.nitrowater.core.exception.BizException;
 import cn.nitrowater.core.exception.InvalidVerifySceneException;
-import cn.nitrowater.core.exception.RegisterChannelUnsupportedException;
 import cn.nitrowater.core.exception.threshold.RateLimitException;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
 import cn.nitrowater.core.infrastructure.persistence.user.UserDatumRepo;
@@ -79,14 +81,25 @@ public class VerificationServiceImpl implements VerificationService {
         if(! List.of(VerifyScene.LOGIN, VerifyScene.REGISTER, VerifyScene.FORGOT_PASSWORD).contains(dto.getScene())) {
             throw new InvalidVerifySceneException();
         }
-        if (dto.getChannel() == VerifyChannel.EMAIL && dto.getScene() == VerifyScene.REGISTER) {
-            throw new RegisterChannelUnsupportedException();
-        }
-        String target = dto.getTarget();
         VerifyChannel channel = dto.getChannel();
-        // For LOGIN and FORGOT_PASSWORD: only send code if target is registered.
-        // Return 200 either way to not reveal registration status.
-        if (dto.getScene() != VerifyScene.REGISTER && !isTargetRegistered(target, channel)) {
+        String target = channel == VerifyChannel.EMAIL
+                ? AuthIdentifierUtil.normalizeEmail(dto.getTarget())
+                : AuthIdentifierUtil.normalizePhone(dto.getTarget());
+
+        boolean registered = isTargetRegistered(target, channel);
+        // Decide whether a code may actually be sent, without telling the caller why not:
+        //  - LOGIN: the account must exist, be ACTIVE, and not be a password-only SYSTEM/TEST one.
+        //  - REGISTER: the phone/email must still be free (no point spending an SMS on a taken one).
+        //  - FORGOT_PASSWORD: the target must exist.
+        boolean shouldSend = switch (dto.getScene()) {
+            case LOGIN -> registered && isCodeLoginAllowed(target, channel);
+            case REGISTER -> !registered;
+            case FORGOT_PASSWORD -> registered;
+            default -> false;
+        };
+        if (!shouldSend) {
+            // Return 200 with a throwaway key. The caller cannot distinguish "unregistered" from
+            // "suspended" or "password-only account", which is deliberate.
             return CodeResult.builder()
                     .sendSuccess(true)
                     .target(target)
@@ -107,11 +120,37 @@ public class VerificationServiceImpl implements VerificationService {
      * Used by {@link #sendCodeForAnonymous} to decide whether to actually send a code.
      */
     private boolean isTargetRegistered(String target, VerifyChannel channel) {
+        return findUserDatum(target, channel) != null;
+    }
+
+    /**
+     * Whether quick login is allowed for the account bound to this target.
+     *
+     * <p>System/test accounts are password-only even when an email is attached to them. The
+     * anonymous send path folds this into the same dummy success response, so it is not an
+     * account-type oracle.</p>
+     */
+    private boolean isCodeLoginAllowed(String target, VerifyChannel channel) {
+        UserDatum ud = findUserDatum(target, channel);
+        if (ud == null) {
+            return false;
+        }
+        User user = ud.getUser();
+        return user != null
+                && user.getUserType().isCodeLoginAllowed()
+                && user.getAccountStatus() == AccountStatus.ACTIVE;
+    }
+
+    /** Looks up the datum row by the channel's own key, normalizing the target first. */
+    private UserDatum findUserDatum(String target, VerifyChannel channel) {
+        String normalized = channel == VerifyChannel.EMAIL
+                ? AuthIdentifierUtil.normalizeEmail(target)
+                : AuthIdentifierUtil.normalizePhone(target);
         EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
-        String hash = HashUtil.toSha256HmacString(target, hmacKey.getEncryptedKey());
+        String hash = HashUtil.toSha256HmacString(normalized, hmacKey.getEncryptedKey());
         return switch (channel) {
-            case SMS -> userDatumRepo.findByPhoneHash(hash).isPresent();
-            case EMAIL -> userDatumRepo.findByEmailHash(hash).isPresent();
+            case SMS -> userDatumRepo.findByPhoneHash(hash).orElse(null);
+            case EMAIL -> userDatumRepo.findByEmailHash(hash).orElse(null);
         };
     }
     

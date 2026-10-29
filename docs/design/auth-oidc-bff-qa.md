@@ -449,16 +449,16 @@ Account（Spring Authorization Server）验证 code、client_id/client_secret、
   JdbcOAuth2AuthorizationService 是 SAS 提供的类（Spring Authorization Server 的 JDBC 实现）。当 SAS 需要保存/读取 OAuth2Authorization 时，它会调用这个 service 的内部方法（save()、findById()、findByAuthorizationCode() 等），这些方法内部执行 SQL 向 oauth2_authorization 表写入/读取数据。
   所以“封装到库里面的”：是 Spring Authorization Server 的 JAR 包（spring-security-oauth2-authorization-server）里实现的 JDBC 持久化逻辑。
   数据库表结构在 Flyway 里：
-- oauth2_registered_client（V1_1__oauth2_oidc_role.sql）—— 客户端注册信息
-- oauth2_authorization（V1_1__oauth2_oidc_role.sql）—— 授权码、Token 状态等都存在这里（AT/RT/id_token 的值也以 BLOB 形式存储在这张表的相关字段里）
-- oauth2_authorization_consent（V1_1__oauth2_oidc_role.sql）—— 授权同意（本项目设为 requireAuthorizationConsent=false 所以基本不用）
+- oauth2_registered_client（V1__sso_baseline.sql）—— 客户端注册信息
+- oauth2_authorization（V1__sso_baseline.sql）—— 授权码、Token 状态等都存在这里（AT/RT/id_token 的值也以 BLOB 形式存储在这张表的相关字段里）
+- oauth2_authorization_consent（V1__sso_baseline.sql）—— 授权同意（本项目设为 requireAuthorizationConsent=false 所以基本不用）
   你在 AuthorizationServerConfig:159-175 对 JdbcOAuth2AuthorizationService 设置了自定义的 JsonMapperOAuth2AuthorizationRowMapper 和 ParametersMapper，目的是让它能正确序列化/反序列化 SsoUserPrincipal（因为 SAS 默认的 Jackson 配置不允许反序列化 cn.nitrowater.account.* 包下的自定义类型，代码里通过 validatorBuilder.allowIfSubType("cn.nitrowater.account.") 放宽了限制，见 authorizationJsonMapper():177-184）。
   所以持久化是“框架做的 + 你配置了 JDBC 实现 + 自定义了序列化策略”。
 4. 三个 Token（AT/RT/id_token）如何存储与交换（最关键）
    前面讲过 BFF 层面是存到 HttpSession（Redis）。Account（SAS）层面呢？
    4.1 Account 签发时：Token 写到哪里？
    Account 在 /oauth2/token 端点签发 AT/RT/id_token 时，SAS 的 OAuth2TokenGenerator（内部组件）会生成这些 Token，并把它们一并写入 oauth2_authorization 表对应的那一行记录里。
-   以 oauth2_authorization 表结构为例（V1_1 SQL）：
+   以 oauth2_authorization 表结构为例（V1 基线 SQL）：
    字段    存储内容
    access_token_value    Access Token 的值（通常是 JWT 字符串，存成 BLOB）
    access_token_issued_at / access_token_expires_at / access_token_metadata / access_token_type / access_token_scopes    AT 元数据

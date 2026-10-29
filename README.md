@@ -9,17 +9,18 @@
 
 > 🌐 English | [简体中文](docs/readme/zh.md)
 
-A **multi-module backend platform** with a **composite showcase site** (portal · toolbox · coding playground · plugin center · docs) and a **standalone SSO / OIDC identity center**.
+A **multi-module platform** for Minecraft server owners and the plugin / server community: a **one-stop server-owner toolbox** (MOTD, server.properties, server-icon, start scripts) plus portal, plugin center and docs, with a **standalone SSO / OIDC identity center**.
 
 ## Features
 
 - **Unified SSO / OIDC** — a standalone identity center (`nitrowater-account`) offering login / register / captcha and an OpenID Connect provider (authorization-code, refresh token, RP-initiated logout), plus an admin console.
 - **BFF (Token Handler)** — the browser holds **no token**; a confidential OIDC client keeps access/refresh tokens server-side, auto-refreshes them, and proxies business, resource and plugin-doc traffic.
-- **Business API / Resource Server** — validates the SSO-issued JWT against JWKS; backs the problem bank (bilingual problems, tags, problem sets, editorials), submissions and the plugin center.
-- **Coding playground** — a backend compile → sandbox → judge service (AC/WA/TLE/RE/CE) driven by self-hosted **Piston**; LeetCode-style function-mode harnesses for Java / Python / C / C++.
+- **Business API / Resource Server** — validates the SSO-issued JWT against JWKS; backs the plugin center and the server-oriented toolbox.
+- **Code runner** — logged-in users run snippets through a backend compile → sandbox → run pipeline driven by self-hosted **Piston**, with per-user / global concurrency, a bounded queue and per-minute / per-day quotas; anonymous visitors keep the browser-WASM runner.
 - **Resource service** — a standalone `nitrowater-resource` providing pluggable storage (SeaweedFS/S3 · COS · local), presigned access, visibility/ownership rules and an admin file manager; it also hosts plugin JARs.
-- **Toolbox** — a single entry point for the 7 migrated `wtools` utilities (Java→TS, ZIP, tree viewer, list-tree, code runner, MP4→GIF, Markdown→Word).
-- **Composite showcase site** — portal, toolbox, playground, plugin center and docs under one same-origin front-end.
+- **Documentation assistant (RAG + agent)** — a Spring AI assistant over the VeloChatX docs: markdown sources are chunked, embedded and stored in a **Qdrant** vector index; answers are grounded in retrieved chunks with clickable citations and stream through the BFF. An optional **agent mode** adds Spring AI tool calling (`searchDocs`, `loadSkill`, optional `webSearch`), user-selectable markdown **skills**, and an admin catalog at `/admin/ai` (index status, skills, tools).
+- **Toolbox** — 11 utilities split into two sections: **Minecraft server tools** first (MOTD, server.properties, server-icon, start scripts), then **general tools** (code runner, plugin ZIP, plugin tree, list-tree, Java→TS, MP4→GIF, Markdown→Word).
+- **Composite showcase site** — portal, toolbox, plugin center and docs under one same-origin front-end.
 
 ## Modules
 
@@ -29,17 +30,18 @@ A **multi-module backend platform** with a **composite showcase site** (portal �
 | `nitrowater-core` | Shared library: entities, repositories, auth services, security utils. |
 | `nitrowater-account` | SSO / OIDC identity center (auth API + OIDC provider + hosted login + admin console). |
 | `nitrowater-bff` | BFF / token handler (confidential OIDC client + session + `/api/**` proxy). |
-| `nitrowater-server` | Business API + OAuth2 resource server (problems, submissions, judge, plugins, sandbox). |
+| `nitrowater-server` | Business API + OAuth2 resource server (plugins, server-oriented toolbox, sandbox runner). |
 | `nitrowater-resource` | Resource service (file upload/read/admin + plugin JAR hosting). |
 | `nitrowater-web` | Front-end (Vue 3 + TypeScript + Vite + Tailwind). |
 
 ## Tech Stack
 
 - **Backend** — Java 25, Spring Boot 4.1.1, Spring Security 7 + Spring Authorization Server 7 (OIDC), JPA + MySQL 8, Redis, Flyway, Jackson 3.
-- **Sandbox** — self-hosted [Piston](https://github.com/engineer-man/piston) (Docker) for compile/run/judge.
+- **AI** — Spring AI 2.0 (OpenAI-compatible chat + embeddings) with a Qdrant vector store.
+- **Sandbox** — self-hosted [Piston](https://github.com/engineer-man/piston) (Docker) for compile/run.
 - **Storage** — self-hosted SeaweedFS (S3-compatible) with optional Tencent COS / local backend.
 - **Frontend** — Vue 3 + TypeScript + Vite, **Tailwind CSS v4** (`@tailwindcss/vite`) for styling, vue-router; Element Plus kept available for complex widgets; ESLint (flat config).
-- **Docs** — VitePress (`velochatx-docs`).
+- **Docs** — VeloChatX ships a VitePress site (`velochatx-docs`); NitroWater docs are a markdown-only corpus for the assistant.
 
 ## Getting Started
 

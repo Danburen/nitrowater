@@ -17,8 +17,7 @@ import java.time.Instant;
  * Business-side mirror of an account user.
  *
  * <p>{@code uid} logically references {@code nitrowater_account.user.uid} (no cross-DB FK).
- * Profile fields are snapshots copied from account on first touch / login; {@code points} is a
- * balance cache whose source of truth is {@link UserPointLog}.</p>
+ * Profile fields are snapshots copied from account on first touch / login.</p>
  */
 @Getter
 @Setter
@@ -51,10 +50,6 @@ public class BizUser {
     /** When the profile snapshot was last refreshed from account. */
     @Column(name = "profile_synced_at")
     private Instant profileSyncedAt;
-
-    /** Points balance cache (source of truth = {@link UserPointLog}). */
-    @Column(name = "points", nullable = false)
-    private Integer points = 0;
 
     @Column(name = "status", nullable = false, columnDefinition = "tinyint UNSIGNED")
     private UserStatus status = UserStatus.ACTIVE;

@@ -44,6 +44,12 @@ $Versions = @{
 Write-Step "Fetching package index via proxy $Proxy ..."
 $indexUrl = "${Proxy}https://github.com/engineer-man/piston/releases/download/pkgs/index"
 $raw = (Invoke-WebRequest -Uri $indexUrl -UseBasicParsing -TimeoutSec 60).Content
+# PowerShell 7 returns byte[] when the proxy serves the index as octet-stream.
+# Decode explicitly, otherwise the byte values are joined as text and Piston's
+# /api/v2/packages crashes on a malformed package entry (`version.raw` null).
+if ($raw -is [byte[]]) {
+    $raw = [System.Text.Encoding]::UTF8.GetString($raw)
+}
 $lines = ($raw -split "`n") | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_ -ne '' }
 if ($lines.Count -eq 0) { throw "Empty index from $indexUrl" }
 

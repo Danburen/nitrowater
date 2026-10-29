@@ -10,8 +10,14 @@ import cn.nitrowater.lib.common.cache.RedisKeyBuilder;
 import cn.nitrowater.lib.common.exceptions.AuthException;
 import cn.nitrowater.lib.utils.DateUtil;
 import cn.nitrowater.core.api.auth.LoginResult;
+import cn.nitrowater.core.api.auth.VerifyChannel;
+import cn.nitrowater.core.api.auth.VerifyScene;
 import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.req.auth.PwdLoginReq;
+import cn.nitrowater.core.api.req.auth.VerifyCodeDto;
+import cn.nitrowater.core.application.auth.AuthIdentifierUtil;
+import cn.nitrowater.core.application.auth.code.VerificationService;
+import cn.nitrowater.core.domain.user.AccountStatus;
 import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.exception.notfound.NotFoundException;
 import cn.nitrowater.core.exception.threshold.AttemptLimitExceededException;
@@ -21,6 +27,7 @@ import cn.nitrowater.core.application.auth.LoginService;
 import cn.nitrowater.core.application.user.UserCoreService;
 
 import java.time.Duration;
+import java.util.Locale;
 
 import static cn.nitrowater.lib.common.RedisKeyPrefix.THRESHOLD;
 
@@ -34,6 +41,7 @@ public class LoginServiceImpl implements LoginService {
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
     private final RedisHelperHolder redisHelper;
     private final UserCoreService userCoreService;
+    private final VerificationService verificationService;
 
     private static final int LOGIN_MAX_ATTEMPTS = 5;
     private static final long LOGIN_LOCK_MINUTES = 15;
@@ -53,9 +61,24 @@ public class LoginServiceImpl implements LoginService {
         return RedisKeyBuilder.build(THRESHOLD, "fail", "login", "daily", username);
     }
 
+    /**
+     * Canonical lockout key for a login identifier, so case/whitespace variants of the same
+     * email, phone or username cannot each get their own fresh attempt budget.
+     */
+    private static String loginIdentifierKey(String identifier) {
+        String value = identifier == null ? "" : identifier.trim();
+        if (AuthIdentifierUtil.isEmail(value)) {
+            return AuthIdentifierUtil.normalizeEmail(value);
+        }
+        if (AuthIdentifierUtil.isPhone(value)) {
+            return AuthIdentifierUtil.normalizePhone(value);
+        }
+        return value.toLowerCase(Locale.ROOT);
+    }
+
     @Override
     public LoginResult login(PwdLoginReq body, String verifyUuidKey) {
-        String identifier = body.getIdentifier();
+        String identifier = loginIdentifierKey(body.getIdentifier());
         String shortFailKey = loginTempFailKey(identifier);
         String dailyFailKey = loginDailyFailKey(identifier);
         checkShortTermLockout(shortFailKey);
@@ -71,6 +94,40 @@ public class LoginServiceImpl implements LoginService {
             throw e;
         }
         redisHelper.del(shortFailKey);
+        // TODO(SSO): stats recording / login ban check / online last-active update cut — business
+        // services not migrated yet.
+        return new LoginResult(u);
+    }
+
+    @Override
+    public LoginResult loginByCode(VerifyCodeDto body, String verifyUuidKey) {
+        if (body.getScene() != VerifyScene.LOGIN) {
+            throw new AuthException(AuthCode.INVALID_VERIFY_SCENE);
+        }
+        VerifyChannel channel = body.getChannel();
+        String normalized = channel == VerifyChannel.EMAIL
+                ? AuthIdentifierUtil.normalizeEmail(body.getTarget())
+                : AuthIdentifierUtil.normalizePhone(body.getTarget());
+
+        // Prove control of the target FIRST. A code is only ever sent for registered, code-login
+        // eligible, active accounts, so this makes every rejected target look like a bad code
+        // instead of an account-existence / status oracle.
+        verificationService.verifyCode(normalized, VerifyScene.LOGIN, channel, verifyUuidKey, body.getCode());
+
+        Long userUid;
+        try {
+            userUid = userCoreService.resolveUidByTarget(normalized, channel);
+        } catch (NotFoundException e) {
+            throw new AuthException(AuthCode.VERIFY_TARGET_UNSUPPORTED);
+        }
+        User u = userCoreService.getUser(userUid);
+        if (!u.getUserType().isCodeLoginAllowed()) {
+            // System/test accounts are password-only, even if a mailbox is attached to them.
+            throw new AuthException(AuthCode.USERNAME_OR_PASSWORD_INCORRECT);
+        }
+        if (u.getAccountStatus() != AccountStatus.ACTIVE) {
+            throw new AuthException(AuthCode.ACCOUNT_DISABLED);
+        }
         // TODO(SSO): stats recording / login ban check / online last-active update cut — business
         // services not migrated yet.
         return new LoginResult(u);
@@ -110,8 +167,17 @@ public class LoginServiceImpl implements LoginService {
             throw new AuthException(AuthCode.USERNAME_OR_PASSWORD_INCORRECT);
         }
         User uu = userCoreService.getUser(userUid);
-        if (!encoder.matches(body.getPassword(), uu.getPasswordHash()))
+        // Passwordless accounts (registered with only a phone/email code) must not turn a null
+        // hash into an IllegalArgumentException -> 500; they simply cannot use password login.
+        if (body.getPassword() == null
+                || uu.getPasswordHash() == null
+                || uu.getPasswordHash().isBlank()
+                || !encoder.matches(body.getPassword(), uu.getPasswordHash()))
             throw new AuthException(AuthCode.USERNAME_OR_PASSWORD_INCORRECT);
+        // Checked only after the password matches: a suspended/deactivated account must not become
+        // an existence oracle for anyone who is merely guessing credentials.
+        if (uu.getAccountStatus() != AccountStatus.ACTIVE)
+            throw new AuthException(AuthCode.ACCOUNT_DISABLED);
         return uu;
     }
 }

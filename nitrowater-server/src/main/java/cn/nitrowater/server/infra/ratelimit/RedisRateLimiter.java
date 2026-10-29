@@ -7,10 +7,11 @@ import java.time.Duration;
 import java.util.UUID;
 
 /**
- * Redis-backed rate limiting primitives used by the sandbox endpoints.
+ * Redis-backed rate limiting primitives used by the sandbox and assistant endpoints.
  *
- * <p>Two mechanisms: a sliding-window request counter keyed by client IP, and a global in-flight
- * counter acting as a concurrency gate. Both use TTLs so a crashed holder cannot leak capacity.</p>
+ * <p>Two mechanisms: a sliding-window counter for per-minute quotas and a fixed-window counter for
+ * per-day quotas. Both carry a TTL so a crashed or idle key cannot leak capacity. Assistant token
+ * quotas are separate: they are metered in tokens by {@code AiUsageService}.</p>
  */
 @Component
 public class RedisRateLimiter {
@@ -26,11 +27,11 @@ public class RedisRateLimiter {
     /**
      * Sliding-window admission check: records this request if under the per-minute cap.
      *
-     * @param key the window key (one per client IP / scope)
+     * @param key the window key (one per user / scope)
      * @param limitPerMinute maximum accepted requests within the trailing 60 seconds
      * @return {@code true} if the request is admitted; {@code false} if the cap is reached
      */
-    public boolean allow(String key, int limitPerMinute) {
+    public boolean allowSliding(String key, int limitPerMinute) {
         long now = System.currentTimeMillis();
         redis.opsForZSet().removeRangeByScore(key, 0, now - WINDOW_MS);
         Long count = redis.opsForZSet().zCard(key);
@@ -43,29 +44,18 @@ public class RedisRateLimiter {
     }
 
     /**
-     * Acquires one global concurrency slot, or fails when {@code max} are already in flight.
+     * Fixed-window admission check: increments the counter and fails once the cap is exceeded.
      *
-     * @param key the shared slot counter key
-     * @param max maximum concurrent holders
-     * @return {@code true} if a slot was taken; {@code false} if the gate is full
+     * @param key the counter key (one per user / day)
+     * @param limit maximum accepted requests within the window
+     * @param ttl how long the counter survives after its first hit
+     * @return {@code true} if the request is admitted; {@code false} if the cap is reached
      */
-    public boolean acquire(String key, int max) {
+    public boolean allowFixed(String key, int limit, Duration ttl) {
         Long current = redis.opsForValue().increment(key);
         if (current != null && current == 1L) {
-            redis.expire(key, Duration.ofSeconds(60));
+            redis.expire(key, ttl);
         }
-        if (current != null && current > max) {
-            redis.opsForValue().decrement(key);
-            return false;
-        }
-        return true;
-    }
-
-    /** Releases a previously acquired concurrency slot. */
-    public void release(String key) {
-        Long current = redis.opsForValue().decrement(key);
-        if (current != null && current < 0) {
-            redis.opsForValue().set(key, "0");
-        }
+        return current != null && current <= limit;
     }
 }

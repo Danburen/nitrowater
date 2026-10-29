@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.lib.utils.codec.HashUtil;
+import cn.nitrowater.core.api.auth.VerifyChannel;
+import cn.nitrowater.core.application.auth.AuthIdentifierUtil;
 import cn.nitrowater.core.domain.EncryptionDataKey;
 import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.domain.user.UserDatum;
@@ -51,21 +53,48 @@ public class UserCoreServiceImpl implements UserCoreService {
 
     @Override
     public Long resolveUid(String identifier) {
-        // 1. Try phone (HMAC hash)
+        if (identifier == null || identifier.isBlank()) {
+            throw new NotFoundException("Blank login identifier");
+        }
+        String value = identifier.trim();
         EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
-        String phoneHash = HashUtil.toSha256HmacString(identifier, hmacKey.getEncryptedKey());
-        UserDatum ud = userDatumRepo.findByPhoneHash(phoneHash).orElse(null);
-        if (ud != null) return ud.getUid();
+        String key = hmacKey.getEncryptedKey();
 
-        // 2. Try email (HMAC hash)
-        String emailHash = HashUtil.toSha256HmacString(identifier, hmacKey.getEncryptedKey());
-        ud = userDatumRepo.findByEmailHash(emailHash).orElse(null);
-        if (ud != null) return ud.getUid();
+        if (AuthIdentifierUtil.isEmail(value)) {
+            String emailHash = HashUtil.toSha256HmacString(AuthIdentifierUtil.normalizeEmail(value), key);
+            return userDatumRepo.findByEmailHash(emailHash)
+                    .map(UserDatum::getUid)
+                    .orElseThrow(() -> new NotFoundException("User not found for email: " + value));
+        }
+        if (AuthIdentifierUtil.isPhone(value)) {
+            String phoneHash = HashUtil.toSha256HmacString(AuthIdentifierUtil.normalizePhone(value), key);
+            return userDatumRepo.findByPhoneHash(phoneHash)
+                    .map(UserDatum::getUid)
+                    .orElseThrow(() -> new NotFoundException("User not found for phone: " + value));
+        }
+        return userRepository.findByUsername(value)
+                .map(User::getUid)
+                .orElseThrow(() -> new NotFoundException("User not found for username: " + value));
+    }
 
-        // 3. Try username
-        User u = userRepository.findByUsername(identifier).orElse(null);
-        if (u != null) return u.getUid();
-
-        throw new NotFoundException("User not found for identifier: " + identifier);
+    @Override
+    public Long resolveUidByTarget(String target, VerifyChannel channel) {
+        if (target == null || target.isBlank()) {
+            throw new NotFoundException("Blank verification target");
+        }
+        EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
+        String key = hmacKey.getEncryptedKey();
+        String hash = switch (channel) {
+            case SMS -> HashUtil.toSha256HmacString(AuthIdentifierUtil.normalizePhone(target), key);
+            case EMAIL -> HashUtil.toSha256HmacString(AuthIdentifierUtil.normalizeEmail(target), key);
+        };
+        UserDatum ud = switch (channel) {
+            case SMS -> userDatumRepo.findByPhoneHash(hash).orElse(null);
+            case EMAIL -> userDatumRepo.findByEmailHash(hash).orElse(null);
+        };
+        if (ud == null) {
+            throw new NotFoundException("No account bound to the verification target");
+        }
+        return ud.getUid();
     }
 }

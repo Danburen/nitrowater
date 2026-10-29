@@ -63,6 +63,12 @@ spring:
     resources:
       add-mappings: false
 
+  # SSE (AI chat) keeps a servlet async request open while the model streams. The container
+  # default (30s) is too short for long answers.
+  mvc:
+    async:
+      request-timeout: 180s
+
 # -------- 业务资源服务（RS）--------
 app:
   rs:
@@ -80,6 +86,10 @@ app:
     # 仅供 ApiProxyController 选取 registrationId；OIDC 客户端本身由
     # spring.security.oauth2.client.* 配置（见上）。
     registration-id: nitrowater
+  session:
+    # 每次发布换一个值（git sha / 时间戳）：旧会话在下一次请求时被判失效，/api/** 返回 401
+    # session_expired，浏览器据此重新登录。见 SessionEpochFilter / JsonAuthenticationEntryPoint。
+    epoch: ${APP_SESSION_EPOCH:dev}
   plugin-docs:
     upstream: ${PLUGIN_DOCS_UPSTREAM:http://localhost:8085}
 

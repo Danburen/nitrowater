@@ -23,7 +23,7 @@ public class BizRole {
     @Column(name = "id", nullable = false)
     private Long id;
 
-    /** e.g. {@code PROBLEM_ADMIN} / {@code CONTESTANT}. */
+    /** e.g. {@code PLUGIN_ADMIN} / {@code MEMBER}. */
     @Column(name = "code", nullable = false, length = 64)
     private String code;
 

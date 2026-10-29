@@ -9,6 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Resolves (and lazily creates) the business-side user mirror for an authenticated caller.
@@ -36,6 +39,21 @@ public class BizUserService {
     public BizUser resolve(Jwt jwt) {
         Long uid = uidOf(jwt);
         return repository.findByUid(uid).orElseGet(() -> create(uid, jwt));
+    }
+
+    /**
+     * Looks up the display profiles for a batch of uids (used by admin usage reporting).
+     *
+     * @param uids account uids
+     * @return uid to mirror row, containing only the rows that exist
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, BizUser> profiles(Collection<Long> uids) {
+        if (uids == null || uids.isEmpty()) {
+            return Map.of();
+        }
+        return repository.findByUidIn(uids).stream()
+                .collect(Collectors.toMap(BizUser::getUid, user -> user, (left, right) -> left));
     }
 
     /** @return the caller's numeric uid (the {@code uid} claim, falling back to {@code sub}) */

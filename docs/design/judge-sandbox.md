@@ -1,5 +1,9 @@
 # 判题沙箱设计（Java · ACM + LeetCode 双模式）
 
+> **⚠ 已废弃（2026-10-27）**：演练场（题库/题单/题解/提交/判题）已整体下线，本文仅作历史设计归档。
+> 当前保留的是**代码运行器**（`POST /api/sandbox/run`，不比对用例），其并发/队列/配额/截断设计见
+> `.ai/PROJECT.md` §5 与 `nitrowater-server` 的 `service/sandbox` + `infra/ratelimit`。
+
 > 适用：`nitrowater-judge`（独立模块/独立部署）。
 > 关联需求：FR-2（演练场后端化）、NFR「安全-判题」、风险 R1（任意代码执行）/R4（Win/Linux 差异）/R7（并发打满）。
 > 状态：设计稿（v0.1）。**安全前置**：沙箱三件套未就绪前，不得对外开放提交入口。

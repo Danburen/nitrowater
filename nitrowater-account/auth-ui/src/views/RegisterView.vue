@@ -1,31 +1,36 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
+import { ElButton, ElIcon, ElInput } from 'element-plus'
+import { ArrowDown, Iphone, Lock, Message, User } from '@element-plus/icons-vue'
 
 import AuthLayout from '@/components/AuthLayout.vue'
+import CaptchaDialog from '@/components/CaptchaDialog.vue'
 import { ApiError, postJson } from '@/api/auth'
 import { getDeviceFp } from '@/composables/useDeviceFp'
-import { newCaptchaUrl } from '@/composables/useCaptcha'
 
 const username = ref('')
 const phone = ref('')
 const smsCode = ref('')
 const password = ref('')
 const email = ref('')
+const emailCode = ref('')
 
 const showOptional = ref(false)
-const showPassword = ref(false)
 const errorMessage = ref('')
 const notice = ref('')
 
 const showCaptcha = ref(false)
 const captchaCode = ref('')
-const captchaUrl = ref(newCaptchaUrl())
-const captchaInput = ref<HTMLInputElement | null>(null)
 const sending = ref(false)
 const submitting = ref(false)
 const countdown = ref(0)
 
+const emailSending = ref(false)
+const emailCountdown = ref(0)
+const showEmailCaptcha = ref(false)
+
 let countdownTimer: ReturnType<typeof setInterval> | null = null
+let emailTimer: ReturnType<typeof setInterval> | null = null
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 function messageOf(error: unknown): string {
@@ -38,24 +43,13 @@ function clearMessages() {
   notice.value = ''
 }
 
-function refreshCaptcha() {
-  captchaUrl.value = newCaptchaUrl()
-}
-
 function openCaptcha() {
   if (!phone.value.trim()) {
     errorMessage.value = '请先填写手机号'
     return
   }
   clearMessages()
-  captchaCode.value = ''
   showCaptcha.value = true
-  refreshCaptcha()
-  void nextTick(() => captchaInput.value?.focus())
-}
-
-function closeCaptcha() {
-  showCaptcha.value = false
 }
 
 function startCountdown() {
@@ -76,10 +70,6 @@ async function sendCode() {
     errorMessage.value = '请先填写手机号'
     return
   }
-  if (!captchaCode.value.trim()) {
-    errorMessage.value = '请输入图形验证码'
-    return
-  }
 
   sending.value = true
   clearMessages()
@@ -90,15 +80,76 @@ async function sendCode() {
       scene: 'register',
       captcha: captchaCode.value.trim(),
     })
-    closeCaptcha()
     notice.value = '验证码已发送，请留意手机短信'
     startCountdown()
   } catch (error) {
     errorMessage.value = messageOf(error)
-    refreshCaptcha()
   } finally {
     sending.value = false
   }
+}
+
+/** The dialog owns the code input; take the confirmed value and send the SMS in one go. */
+function sendCodeWithCaptcha(code: string) {
+  captchaCode.value = code
+  showCaptcha.value = false
+  void sendCode()
+}
+
+function startEmailCountdown() {
+  emailCountdown.value = 60
+  if (emailTimer) clearInterval(emailTimer)
+  emailTimer = setInterval(() => {
+    emailCountdown.value -= 1
+    if (emailCountdown.value <= 0 && emailTimer) {
+      clearInterval(emailTimer)
+      emailTimer = null
+    }
+  }, 1000)
+}
+
+function openEmailCaptcha() {
+  const mail = email.value.trim()
+  if (!mail) {
+    errorMessage.value = '请先填写邮箱'
+    return
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
+    errorMessage.value = '邮箱格式不正确'
+    return
+  }
+  clearMessages()
+  showEmailCaptcha.value = true
+}
+
+async function sendEmailCode(captcha: string) {
+  const mail = email.value.trim()
+  if (!mail) {
+    errorMessage.value = '请先填写邮箱'
+    return
+  }
+
+  emailSending.value = true
+  clearMessages()
+  try {
+    await postJson<void>('/api/auth/send-code', {
+      target: mail,
+      channel: 'email',
+      scene: 'register',
+      captcha,
+    })
+    notice.value = '邮箱验证码已发送，请查收'
+    startEmailCountdown()
+  } catch (error) {
+    errorMessage.value = messageOf(error)
+  } finally {
+    emailSending.value = false
+  }
+}
+
+function sendEmailCodeWithCaptcha(code: string) {
+  showEmailCaptcha.value = false
+  void sendEmailCode(code)
 }
 
 async function register() {
@@ -118,8 +169,16 @@ async function register() {
     errorMessage.value = '用户名需为 4-20 位字母、数字或下划线'
     return
   }
+  if (/^1[3-9]\d{9}$/.test(name)) {
+    errorMessage.value = '用户名不能是手机号'
+    return
+  }
   if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
     errorMessage.value = '邮箱格式不正确'
+    return
+  }
+  if (mail && !emailCode.value.trim()) {
+    errorMessage.value = '请填写邮箱验证码'
     return
   }
   if (pwd && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,20}$/.test(pwd)) {
@@ -141,6 +200,15 @@ async function register() {
         scene: 'register',
         deviceInfo: { deviceFp: getDeviceFp() },
       },
+      emailVerify: mail
+        ? {
+            channel: 'email',
+            target: mail,
+            code: emailCode.value.trim(),
+            scene: 'register',
+            deviceInfo: { deviceFp: getDeviceFp() },
+          }
+        : null,
     })
     notice.value = '注册成功，正在前往登录…'
     redirectTimer = setTimeout(() => window.location.assign('/login?registered=1'), 800)
@@ -150,14 +218,9 @@ async function register() {
   }
 }
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && showCaptcha.value) closeCaptcha()
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
   if (countdownTimer) clearInterval(countdownTimer)
+  if (emailTimer) clearInterval(emailTimer)
   if (redirectTimer) clearTimeout(redirectTimer)
 })
 </script>
@@ -165,27 +228,13 @@ onUnmounted(() => {
 <template>
   <AuthLayout
     title="创建账号"
-    subtitle="注册 NitroWater 账号，即可访问统一身份中心接入的全部应用。"
+    subtitle="注册后即可登录 NitroWater 及其接入应用。"
   >
     <div
       v-if="notice"
       class="auth-alert-success mb-5"
       role="status"
     >
-      <svg
-        viewBox="0 0 24 24"
-        class="mt-0.5 h-4 w-4 shrink-0"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M20 6L9 17l-5-5"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1.8"
-        />
-      </svg>
       {{ notice }}
     </div>
 
@@ -194,20 +243,6 @@ onUnmounted(() => {
       class="auth-alert-error mb-5"
       role="alert"
     >
-      <svg
-        viewBox="0 0 24 24"
-        class="mt-0.5 h-4 w-4 shrink-0"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M12 8v5M12 16.5h.01M10.3 4.6L2.8 17.4A1.5 1.5 0 004.1 19.7h15.8a1.5 1.5 0 001.3-2.3L13.7 4.6a1.9 1.9 0 00-3.4 0Z"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1.6"
-        />
-      </svg>
       {{ errorMessage }}
     </div>
 
@@ -220,39 +255,16 @@ onUnmounted(() => {
           class="auth-label"
           for="reg-username"
         >用户名</label>
-        <div class="relative">
-          <span class="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-faint">
-            <svg
-              viewBox="0 0 24 24"
-              class="h-4 w-4"
-              fill="none"
-              aria-hidden="true"
-            >
-              <circle
-                cx="12"
-                cy="8"
-                r="3.2"
-                stroke="currentColor"
-                stroke-width="1.6"
-              />
-              <path
-                d="M5.5 19c.7-3 3.2-4.8 6.5-4.8s5.8 1.8 6.5 4.8"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-width="1.6"
-              />
-            </svg>
-          </span>
-          <input
-            id="reg-username"
-            v-model="username"
-            class="auth-input"
-            autocomplete="username"
-            placeholder="4-20 位字母、数字或下划线"
-            maxlength="20"
-            required
-          >
-        </div>
+        <ElInput
+          id="reg-username"
+          v-model="username"
+          size="large"
+          :prefix-icon="User"
+          autocomplete="username"
+          placeholder="4-20 位字母、数字或下划线"
+          maxlength="20"
+          required
+        />
       </div>
 
       <div>
@@ -260,41 +272,16 @@ onUnmounted(() => {
           class="auth-label"
           for="reg-phone"
         >手机号</label>
-        <div class="relative">
-          <span class="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-faint">
-            <svg
-              viewBox="0 0 24 24"
-              class="h-4 w-4"
-              fill="none"
-              aria-hidden="true"
-            >
-              <rect
-                x="7"
-                y="2.5"
-                width="10"
-                height="19"
-                rx="2"
-                stroke="currentColor"
-                stroke-width="1.6"
-              />
-              <path
-                d="M10.5 18.5h3"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-width="1.6"
-              />
-            </svg>
-          </span>
-          <input
-            id="reg-phone"
-            v-model="phone"
-            class="auth-input"
-            autocomplete="tel"
-            inputmode="tel"
-            placeholder="用于接收短信验证码"
-            required
-          >
-        </div>
+        <ElInput
+          id="reg-phone"
+          v-model="phone"
+          size="large"
+          :prefix-icon="Iphone"
+          autocomplete="tel"
+          inputmode="tel"
+          placeholder="用于接收短信验证码"
+          required
+        />
       </div>
 
       <div>
@@ -302,90 +289,44 @@ onUnmounted(() => {
           class="auth-label"
           for="reg-sms"
         >短信验证码</label>
-        <div class="flex items-stretch gap-2">
-          <div class="relative min-w-0 flex-1">
-            <span class="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-faint">
-              <svg
-                viewBox="0 0 24 24"
-                class="h-4 w-4"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4 5.5h16a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1v-11a1 1 0 011-1Z"
-                  stroke="currentColor"
-                  stroke-linejoin="round"
-                  stroke-width="1.6"
-                />
-                <path
-                  d="M3.5 7l8.5 6 8.5-6"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.6"
-                />
-              </svg>
-            </span>
-            <input
-              id="reg-sms"
-              v-model="smsCode"
-              class="auth-input"
-              autocomplete="one-time-code"
-              inputmode="numeric"
-              maxlength="6"
-              placeholder="请输入短信验证码"
-              required
-            >
-          </div>
-          <button
-            type="button"
-            class="auth-button-ghost h-12 shrink-0 px-4"
+        <div class="flex items-center gap-2">
+          <ElInput
+            id="reg-sms"
+            v-model="smsCode"
+            class="min-w-0 flex-1"
+            size="large"
+            :prefix-icon="Message"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            maxlength="6"
+            placeholder="请输入短信验证码"
+            required
+          />
+          <ElButton
+            class="shrink-0"
+            size="large"
             :disabled="sending || countdown > 0"
             @click="openCaptcha"
           >
             {{ countdown > 0 ? `${countdown}s 后重发` : '获取验证码' }}
-          </button>
+          </ElButton>
         </div>
       </div>
 
-      <div class="rounded-xl border border-line bg-soft/35">
+      <div class="overflow-hidden rounded-lg border border-line">
         <button
           type="button"
-          class="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left text-[13px] text-dim transition hover:text-ink focus:outline-none"
+          class="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-[13px] text-dim transition hover:text-ink focus:outline-none"
           :aria-expanded="showOptional"
           @click="showOptional = !showOptional"
         >
-          <span class="flex items-center gap-2">
-            <svg
-              viewBox="0 0 24 24"
-              class="h-4 w-4"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M12 5v14M5 12h14"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-width="1.6"
-              />
-            </svg>
-            补充信息（选填）
-          </span>
-          <svg
-            viewBox="0 0 24 24"
-            class="h-4 w-4 transition-transform"
+          <span>补充信息（选填）</span>
+          <ElIcon
+            class="text-xs text-faint transition-transform"
             :class="showOptional ? 'rotate-180' : ''"
-            fill="none"
-            aria-hidden="true"
           >
-            <path
-              d="M6 9l6 6 6-6"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="1.6"
-            />
-          </svg>
+            <ArrowDown />
+          </ElIcon>
         </button>
 
         <div
@@ -397,59 +338,16 @@ onUnmounted(() => {
               class="auth-label"
               for="reg-password"
             >密码</label>
-            <div class="relative">
-              <span class="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-faint">
-                <svg
-                  viewBox="0 0 24 24"
-                  class="h-4 w-4"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M8 11V8a4 4 0 118 0v3M7 11h10a1 1 0 011 1v7a1 1 0 01-1 1H7a1 1 0 01-1-1v-7a1 1 0 011-1Z"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.6"
-                  />
-                </svg>
-              </span>
-              <input
-                id="reg-password"
-                v-model="password"
-                class="auth-input auth-input-plain"
-                :type="showPassword ? 'text' : 'password'"
-                autocomplete="new-password"
-                placeholder="8-20 位，含大小写字母和数字"
-              >
-              <button
-                type="button"
-                class="absolute inset-y-0 right-2 my-auto grid h-8 w-8 place-items-center rounded-lg text-faint transition hover:bg-soft hover:text-ink focus:outline-none focus:ring-4 focus:ring-accent/15"
-                :aria-label="showPassword ? '隐藏密码' : '显示密码'"
-                @click="showPassword = !showPassword"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  class="h-4 w-4"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M2.2 12c1.1-2.6 4.8-6.8 9.8-6.8s8.7 4.2 9.8 6.8c-1.1 2.6-4.8 6.8-9.8 6.8S3.3 14.6 2.2 12Z"
-                    stroke="currentColor"
-                    stroke-linejoin="round"
-                    stroke-width="1.6"
-                  />
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="3"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                  />
-                </svg>
-              </button>
-            </div>
+            <ElInput
+              id="reg-password"
+              v-model="password"
+              size="large"
+              type="password"
+              show-password
+              :prefix-icon="Lock"
+              autocomplete="new-password"
+              placeholder="8-20 位，含大小写字母和数字"
+            />
             <p class="mt-1.5 text-[11px] text-faint">
               设置后可使用用户名 + 密码登录
             </p>
@@ -460,71 +358,59 @@ onUnmounted(() => {
               class="auth-label"
               for="reg-email"
             >邮箱</label>
-            <div class="relative">
-              <span class="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-faint">
-                <svg
-                  viewBox="0 0 24 24"
-                  class="h-4 w-4"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M4 5.5h16a1 1 0 011 1v11a1 1 0 01-1 1H4a1 1 0 01-1-1v-11a1 1 0 011-1Z"
-                    stroke="currentColor"
-                    stroke-linejoin="round"
-                    stroke-width="1.6"
-                  />
-                  <path
-                    d="M3.5 7l8.5 6 8.5-6"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.6"
-                  />
-                </svg>
-              </span>
-              <input
-                id="reg-email"
-                v-model="email"
-                class="auth-input"
-                type="email"
-                autocomplete="email"
-                placeholder="用于接收通知（选填）"
+            <ElInput
+              id="reg-email"
+              v-model="email"
+              size="large"
+              type="email"
+              :prefix-icon="Message"
+              autocomplete="email"
+              placeholder="填写后需验证，可用于快捷登录"
+            />
+          </div>
+
+          <div v-if="email.trim()">
+            <label
+              class="auth-label"
+              for="reg-email-code"
+            >邮箱验证码</label>
+            <div class="flex items-center gap-2">
+              <ElInput
+                id="reg-email-code"
+                v-model="emailCode"
+                class="min-w-0 flex-1"
+                size="large"
+                :prefix-icon="Message"
+                autocomplete="one-time-code"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="请输入邮箱验证码"
+              />
+              <ElButton
+                class="shrink-0"
+                size="large"
+                :disabled="emailSending || emailCountdown > 0"
+                @click="openEmailCaptcha"
               >
+                {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '获取验证码' }}
+              </ElButton>
             </div>
+            <p class="mt-1.5 text-[11px] text-faint">
+              邮箱验证通过后可用于验证码快捷登录
+            </p>
           </div>
         </div>
       </div>
 
-      <button
-        type="submit"
-        class="auth-button mt-2"
-        :disabled="submitting"
+      <ElButton
+        class="mt-2 w-full"
+        size="large"
+        type="primary"
+        native-type="submit"
+        :loading="submitting"
       >
-        <svg
-          v-if="submitting"
-          class="h-4 w-4 animate-spin"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle
-            cx="12"
-            cy="12"
-            r="9"
-            stroke="currentColor"
-            stroke-opacity=".25"
-            stroke-width="3"
-          />
-          <path
-            d="M21 12a9 9 0 00-9-9"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-width="3"
-          />
-        </svg>
         {{ submitting ? '正在创建…' : '创建账号' }}
-      </button>
+      </ElButton>
     </form>
 
     <div class="mt-5 flex items-center justify-between text-sm">
@@ -537,100 +423,22 @@ onUnmounted(() => {
       </RouterLink>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="showCaptcha"
-        class="auth-dialog-mask auth-fade-in"
-        @click.self="closeCaptcha"
-      >
-        <div
-          class="auth-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="captcha-title"
-          @keydown.esc="closeCaptcha"
-        >
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <h3
-                id="captcha-title"
-                class="text-base font-semibold text-ink"
-              >
-                安全验证
-              </h3>
-              <p class="mt-1 text-[12px] text-dim">
-                输入图形验证码后发送短信验证码。
-              </p>
-            </div>
-            <button
-              type="button"
-              class="grid h-8 w-8 place-items-center rounded-lg text-faint transition hover:bg-soft hover:text-ink focus:outline-none focus:ring-4 focus:ring-accent/15"
-              aria-label="关闭"
-              @click="closeCaptcha"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                class="h-4 w-4"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6 6l12 12M18 6L6 18"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-width="1.8"
-                />
-              </svg>
-            </button>
-          </div>
+    <CaptchaDialog
+      v-model="showCaptcha"
+      title="安全验证"
+      description="输入图形验证码后发送短信验证码。"
+      confirm-text="发送验证码"
+      :loading="sending"
+      @submit="sendCodeWithCaptcha"
+    />
 
-          <div class="mt-5 flex items-stretch gap-2">
-            <input
-              ref="captchaInput"
-              v-model="captchaCode"
-              class="w-full rounded-xl border border-line bg-bg/60 px-3.5 text-sm text-ink outline-none transition placeholder:text-faint focus:border-accent focus:ring-4 focus:ring-accent/10"
-              maxlength="6"
-              inputmode="numeric"
-              autocomplete="off"
-              placeholder="图形验证码"
-              @keydown.enter.prevent="sendCode"
-            >
-            <button
-              type="button"
-              class="shrink-0 overflow-hidden rounded-xl border border-line bg-white transition hover:border-line-strong focus:outline-none focus:ring-4 focus:ring-accent/15"
-              title="点击刷新验证码"
-              aria-label="刷新图形验证码"
-              @click="refreshCaptcha"
-            >
-              <img
-                :src="captchaUrl"
-                alt="图形验证码"
-                class="h-12 w-[120px] object-cover"
-                width="120"
-                height="48"
-              >
-            </button>
-          </div>
-
-          <div class="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              class="auth-button-ghost"
-              @click="closeCaptcha"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              class="auth-button w-auto px-5"
-              :disabled="sending"
-              @click="sendCode"
-            >
-              {{ sending ? '发送中…' : '发送验证码' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <CaptchaDialog
+      v-model="showEmailCaptcha"
+      title="安全验证"
+      description="输入图形验证码后发送邮箱验证码。"
+      confirm-text="发送验证码"
+      :loading="emailSending"
+      @submit="sendEmailCodeWithCaptcha"
+    />
   </AuthLayout>
 </template>

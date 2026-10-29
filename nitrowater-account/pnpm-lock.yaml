@@ -62,12 +62,18 @@ importers:
 
   auth-ui:
     dependencies:
+      '@element-plus/icons-vue':
+        specifier: ^2.3.2
+        version: 2.3.2(vue@3.5.44(typescript@6.0.3))
       '@nitrowater/http':
         specifier: workspace:*
         version: link:../packages/http
       '@nitrowater/ui':
         specifier: workspace:*
         version: link:../packages/ui
+      element-plus:
+        specifier: ^2.14.7
+        version: 2.14.7(vue@3.5.44(typescript@6.0.3))
       vue:
         specifier: ^3.5.42
         version: 3.5.44(typescript@6.0.3)

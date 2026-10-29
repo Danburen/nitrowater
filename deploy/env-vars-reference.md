@@ -50,8 +50,42 @@
 | nitrowater-web (Vite dev) | 5173 |
 | MySQL | 3306 |
 | Redis | 6379 |
+| Qdrant (gRPC / REST) | 6334 / 6333 |
 
-## 5. 生产（后续）
+## 5. 文档助手（Spring AI RAG）
+
+| 变量 | 作用 | 默认/说明 |
+|------|------|-----------|
+| `AI_ENABLED` | 总开关；false 时所有 AI 接口返回 503 | `true` |
+| `AI_CHAT_API_KEY` | chat 模型 key；未设置时回退 `GLM_API_KEY` | — |
+| `AI_CHAT_BASE_URL` / `AI_CHAT_MODEL` | OpenAI 兼容 chat 端点 / 模型 | 智谱 `https://open.bigmodel.cn/api/paas/v4` / `glm-5.3-flash` |
+| `AI_EMBEDDING_API_KEY` | embedding key；未设置时回退 `GLM_API_KEY`（与 chat 同一把 key） | — |
+| `GLM_API_KEY` | 智谱开放平台 key（chat / embedding 默认共用） | — |
+| `AI_EMBEDDING_BASE_URL` / `AI_EMBEDDING_MODEL` | OpenAI 兼容 embedding 端点 / 模型 | 智谱 `https://open.bigmodel.cn/api/paas/v4` / `embedding-3` |
+| `AI_EMBEDDING_DIMENSIONS` | 向量维度；embedding-3 支持 256/512/1024/2048（默认 2048）；换模型/维度需换集合名或重建集合 | `1024` |
+| `QDRANT_HOST` / `QDRANT_PORT` | Qdrant gRPC 地址 | `localhost` / `6334` |
+| `AI_COLLECTION` | Qdrant 集合名 | `nitrowater_velochatx_docs` |
+| `AI_INGEST_ON_STARTUP` | 启动时若集合为空则自动索引 | `true` |
+| `AI_PER_USER_PER_MINUTE` / `AI_PER_USER_PER_DAY` | 每用户提问配额（Redis） | `20` / `300` |
+| `AI_SKILLS_DIR` | 外部技能目录（`<name>/SKILL.md`，覆盖同名内置） | `deploy/ai-skills` |
+| `AI_AGENT_MAX_TOOL_CALLS` / `AI_AGENT_MAX_CALLS_PER_TOOL` | Agent 单轮工具调用总上限 / 单工具上限（`runCode` 固定放宽到 4：第 4 次用于返回 `retry_exhausted`） | `10` / `3` |
+| `AI_WEB_SEARCH_ENABLED` | 是否注册 `webSearch` 工具（用户还需单轮勾选「允许联网」） | `true`；未配置 key 时自动停用 |
+| `AI_WEB_SEARCH_API_KEY` | 搜索 key；未设置时回退 `DEEPSEEK_API_KEY` | 空 |
+| `AI_WEB_SEARCH_ENDPOINT` | DeepSeek 搜索地址 | `https://api.deepseek.com/v1/tools/search` |
+| `AI_WEB_SEARCH_TIMEOUT_MS` | 搜索 HTTP 超时 | `20000` |
+
+> 索引是**整库重建**：管理员调用 `POST /api/admin/ai/reindex`（或聊天页右上角「重建索引」）会删除
+> `corpus=velochatx` 的点并重新 embedding。换 embedding 供应商（维度不变，如 Qwen3 → embedding-3）
+> 重建索引即可；换维度需先删除 Qdrant 集合，或改 `AI_COLLECTION`。
+> 当前默认：**智谱 `embedding-3`**（OpenAI 兼容、1024 维、与 chat 共用 `GLM_API_KEY`）。
+> 注意：Spring AI 2.x 的请求 URL = base-url + 固定路径（`/chat/completions`、`/embeddings`），
+> 因此 base-url 必须带版本段（`https://open.bigmodel.cn/api/paas/v4`）。
+> Skills 内置在 classpath；工具目录在管理台 `/admin/ai` 只读展示，用户侧只能选 skill 和「允许联网」。
+> 联网默认开启，但需要 `DEEPSEEK_API_KEY`（或 `AI_WEB_SEARCH_API_KEY`）才真正启用；未配置时
+> `webSearchEnabled=false`，前端不会显示「允许联网」。搜索走 DeepSeek 的
+> `POST /v1/tools/search`，返回 `title/url/snippet/summary`；用户单轮勾选「允许联网」才注册工具。
+
+## 6. 生产（后续）
 
 - `JWT_ISSUER` 设为 `https://auth.nitrowater.cn`（须与 AS 实际对外地址、前端 `VITE_OIDC_AUTHORITY` 三方一致）；
 - JWT 私钥改由环境变量 `JWT_PRIVATE_KEY` 指向挂载路径（`file:/etc/nitrowater/keys/private.key`）；

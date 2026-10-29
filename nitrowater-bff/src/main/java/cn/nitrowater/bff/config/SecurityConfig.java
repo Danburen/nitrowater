@@ -4,16 +4,22 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import cn.nitrowater.bff.security.AccountLoginSuccessHandler;
+import cn.nitrowater.bff.security.JsonAuthenticationEntryPoint;
+import cn.nitrowater.bff.security.MultiAccountAuthorizedClientRepository;
+import cn.nitrowater.bff.security.OidcRpInitiatedLogoutSuccessHandler;
+import cn.nitrowater.bff.security.OidcSessionLogoutHandler;
+import cn.nitrowater.bff.security.SessionEpochFilter;
+import cn.nitrowater.bff.security.UpstreamTokenService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -21,9 +27,6 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
 import org.springframework.security.web.header.writers.StaticHeadersWriter;
 import org.springframework.web.filter.OncePerRequestFilter;
-
-import cn.nitrowater.bff.security.OidcRpInitiatedLogoutSuccessHandler;
-import cn.nitrowater.bff.security.OidcSessionLogoutHandler;
 
 import java.io.IOException;
 
@@ -52,8 +55,12 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
             ClientRegistrationRepository clientRegistrationRepository,
-            OAuth2AuthorizedClientRepository authorizedClientRepository,
-            @Value("${app.oidc.registration-id:nitrowater}") String registrationId) throws Exception {
+            MultiAccountAuthorizedClientRepository authorizedClientRepository,
+            AccountLoginSuccessHandler accountLoginSuccessHandler,
+            OAuth2AuthorizationRequestResolver switchAccountAuthorizationRequestResolver,
+            UpstreamTokenService upstreamTokenService,
+            @Value("${app.oidc.registration-id:nitrowater}") String registrationId,
+            @Value("${app.session.epoch:dev}") String sessionEpoch) throws Exception {
         // Read the raw (unmasked) token from the cookie and accept it verbatim in the header,
         // which is what a same-origin SPA does; the request attribute name is fixed so the
         // CsrfCookieFilter below can force the deferred token to be written to the cookie.
@@ -63,7 +70,7 @@ public class SecurityConfig {
         // Logout: rotate+revoke the server-held tokens (stashing a fresh id_token), then perform
         // RP-Initiated Logout at the Authorization Server so the SSO session is destroyed too.
         OidcSessionLogoutHandler oidcSessionLogoutHandler = new OidcSessionLogoutHandler(
-                clientRegistrationRepository, authorizedClientRepository, registrationId);
+                authorizedClientRepository, upstreamTokenService);
         OidcRpInitiatedLogoutSuccessHandler oidcLogoutSuccessHandler =
                 new OidcRpInitiatedLogoutSuccessHandler(clientRegistrationRepository, registrationId);
 
@@ -82,9 +89,16 @@ public class SecurityConfig {
                         // else is the public SPA surface (index.html, hashed /assets bundles, history-mode
                         // deep links) plus OIDC plumbing (/oauth2/**, /login/**, /logout, /error) and the
                         // anonymous, self-scoped /bff/me.
+                        // Account pool: /add starts a fresh authorization and is public because it
+                        // only redirects; the rest expose or mutate server-side token state.
+                        .requestMatchers("/bff/accounts/add").permitAll()
+                        .requestMatchers("/bff/accounts/**").authenticated()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
-                .oauth2Login(oauth2 -> oauth2.defaultSuccessUrl("/", true))
+                .oauth2Login(oauth2 -> oauth2
+                        .successHandler(accountLoginSuccessHandler)
+                        .authorizationEndpoint(endpoint -> endpoint
+                                .authorizationRequestResolver(switchAccountAuthorizationRequestResolver)))
                 .headers(headers -> headers
                         // Let the resource handlers own Cache-Control for static files (hashed
                         // assets long-cache, index.html no-cache). Spring Security's default
@@ -97,7 +111,7 @@ public class SecurityConfig {
                                 new StaticHeadersWriter("Cache-Control", "no-store"))))
                 .exceptionHandling(ex ->
                         ex.defaultAuthenticationEntryPointFor(
-                                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                                new JsonAuthenticationEntryPoint(),
                                 request -> request.getRequestURI().startsWith("/api/")
                         )
                 )
@@ -110,7 +124,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(csrfRequestHandler))
-                .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class);
+                .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
+                // Drop sessions created by a previous deployment (see app.session.epoch).
+                .addFilterAfter(new SessionEpochFilter(sessionEpoch), SecurityContextHolderFilter.class);
         return http.build();
     }
 

@@ -10,6 +10,7 @@ import { saveAs } from 'file-saver'
 import { useRouter } from 'vue-router'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import TextArea from '../../../shared/ui/TextArea.vue'
 import { getFileIconSVG } from '../lib/fileIcons'
 import {
   countTotalNodes,
@@ -357,10 +358,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <textarea
+        <TextArea
           v-model="rawText"
-          class="textarea min-h-[340px] flex-1"
-          placeholder="在此粘贴树形文本，例如：&#10;project/&#10;├── src/&#10;│   ├── main.py&#10;│   └── utils.py&#10;└── README.md"
+          class="flex-1"
+          min-height="340px"
+          placeholder="在此粘贴目录树文本，例如：&#10;project/&#10;├── src/&#10;│   ├── main.py&#10;│   └── utils.py&#10;└── README.md"
+          aria-label="目录树文本"
         />
 
         <p

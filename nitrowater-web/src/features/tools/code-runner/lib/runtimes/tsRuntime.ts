@@ -7,7 +7,7 @@
  *
  * Emit diagnostics ARE surfaced, so genuine syntax problems still surface as `TSxxxx` errors —
  * but semantic type errors (the ones a real `tsc` would report) are intentionally ignored,
- * matching the behaviour of an online playground.
+ * matching the behaviour of an online sandbox.
  */
 import { loadScriptOnce } from './cdnLoader'
 import { runJavaScriptCode, ensureJsRuntime, isJsRuntimeReady } from './jsRuntime'

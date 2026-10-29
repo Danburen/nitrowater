@@ -1,44 +1,52 @@
 ﻿# ============================================================
-# sync-docs.ps1 - build a plugin-docs site and publish it into the BFF's deploy-owned dir.
+# sync-docs.ps1 - build the VeloChatX docs site and publish it into the docs mount.
 #
-# Plugin docs live OUTSIDE the web build (see deploy/plugin-docs/README.md). This builds the
-# separate VitePress repo with the correct `base`, then mirrors the output into
-# deploy/plugin-docs/<plugin>/. The BFF serves /plugin/<plugin>/** from there AT RUNTIME, so
-# updating docs needs no web build and no BFF restart.
+# The VeloChatX documentation project (sources + VitePress config) lives OUTSIDE this repository
+# and evolves on its own schedule. This repo only accepts the built site, and only at the single
+# place the runtime reads it from:
+#
+#   deploy/plugin-docs/velochatx/docs  ->  /plugin/velochatx/docs/
+#       - mounted read-only by the docs nginx container (:8085)
+#       - forwarded by the BFF as the single edge for /plugin/**
+#       - also the target of the AI citations for the `velochatx` corpus
+#
+# There is deliberately NO copy under nitrowater-server/src/main/resources/static: docs deploy
+# dynamically (rsync/scp + optional container restart), never through a jar rebuild.
+#
+# The AI corpus is curated by hand at
+# nitrowater-server/src/main/resources/ai/docs/velochatx and must keep the same relative paths as
+# the built site so citations resolve.
+#
+# NitroWater documentation has no site at all: it is a markdown-only corpus under
+# ai/docs/nitrowater (public-base-url is empty, citations carry no URL).
 #
 # Usage:
-#   pwsh -File bin\dev\sync-docs.ps1                       # build velochatx-docs + publish
-#   pwsh -File bin\dev\sync-docs.ps1 -SkipBuild            # publish the existing dist only
-#   pwsh -File bin\dev\sync-docs.ps1 -DocsRepo D:\x -Plugin foo
+#   pwsh -File bin\dev\sync-docs.ps1              # build + publish
+#   pwsh -File bin\dev\sync-docs.ps1 -SkipBuild   # publish the existing dist only
+#   pwsh -File bin\dev\sync-docs.ps1 -DocsRepo D:\x
 # ============================================================
 [CmdletBinding()]
 param(
     [string]$DocsRepo = 'D:\Project\webs\velochatx-docs',
-    [string]$Plugin = 'velochatx',
     [switch]$SkipBuild
 )
 
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\..\_common.ps1"
 
-$Root = $RepoRoot
+$Root = RepoRoot
 $Dist = Join-Path $DocsRepo 'docs\.vitepress\dist'
-# Deploy-owned layout: <plugin>/docs/ = the VitePress site (only). Downloadable artifacts (jars) are
-# no longer stored here - they go to the resource service (see bin\dev\sync-res.ps1). The BFF serves the
-# plugin-docs dir at /plugin/<plugin>/**.
-$Out = Join-Path $Root "deploy\plugin-docs\$Plugin\docs"
-# The docs site is mounted one level deeper than the plugin's own namespace.
-$Base = "/plugin/$Plugin/docs/"
+$Base = '/plugin/velochatx/docs/'
+$Out = Join-Path $Root 'deploy\plugin-docs\velochatx\docs'
 
-Write-Step "plugin docs: $Plugin  (base=$Base)"
-
-if (-not (Test-Path -LiteralPath $DocsRepo)) { Write-Err "docs repo not found: $DocsRepo"; exit 1 }
+Write-Step "velochatx docs  (base=$Base)"
 
 if (-not $SkipBuild) {
+    if (-not (Test-Path -LiteralPath $DocsRepo)) { Write-Err "docs repo not found: $DocsRepo"; exit 1 }
+
     # A stale committed .vitepress cache makes `docs:build` mis-report dead links - clear it.
     $cache = Join-Path $DocsRepo 'docs\.vitepress\cache'
     if (Test-Path -LiteralPath $cache) { Remove-Item -Recurse -Force $cache }
-    Write-Ok 'cleared stale .vitepress/cache'
 
     $vp = Join-Path $DocsRepo 'node_modules\vitepress\bin\vitepress.js'
     if (-not (Test-Path -LiteralPath $vp)) { Write-Err "vitepress not installed in $DocsRepo (run npm install there)"; exit 1 }
@@ -58,5 +66,6 @@ if ($LASTEXITCODE -ge 8) { Write-Err "robocopy failed (exit $LASTEXITCODE)"; exi
 
 $files = @(Get-ChildItem -Recurse -File $Out).Count
 $mb = [math]::Round(((Get-ChildItem -Recurse -File $Out | Measure-Object Length -Sum).Sum / 1MB), 1)
-Write-Ok "published -> deploy\plugin-docs\$Plugin\docs  ($files files, $mb MB)"
+Write-Ok "published -> deploy\plugin-docs\velochatx\docs  ($files files, $mb MB)"
 Write-Ok "URL: http://localhost:8080$Base"
+Write-Step 'no jar rebuild needed: the docs container serves this directory directly'

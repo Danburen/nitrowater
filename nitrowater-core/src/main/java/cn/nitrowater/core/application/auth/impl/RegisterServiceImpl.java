@@ -3,6 +3,7 @@ package cn.nitrowater.core.application.auth.impl;
 import cn.nitrowater.core.domain.user.AccountStatus;
 import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.domain.user.UserDatum;
+import cn.nitrowater.core.domain.user.UserType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,7 @@ import cn.nitrowater.core.infrastructure.persistence.user.UserDatumRepo;
 import cn.nitrowater.core.infrastructure.persistence.user.UserRepository;
 import cn.nitrowater.core.infrastructure.security.EncryptedKeyService;
 import cn.nitrowater.core.infrastructure.security.EncryptionHelper;
+import cn.nitrowater.core.application.auth.AuthIdentifierUtil;
 import cn.nitrowater.core.application.auth.RegisterService;
 import cn.nitrowater.core.application.auth.code.VerificationService;
 
@@ -51,62 +53,86 @@ public class RegisterServiceImpl implements RegisterService {
 
     @Transactional
     @Override
-    public User register(RegisterRequest body, String smsCodeKey) {
-        String email = body.getEmail();
-        String phone = body.getPhone();
+    public User register(RegisterRequest body, String smsCodeKey, String emailCodeKey) {
+        String phone = AuthIdentifierUtil.normalizePhone(body.getPhone());
+        String email = StringUtil.isNotBlank(body.getEmail())
+                ? AuthIdentifierUtil.normalizeEmail(body.getEmail())
+                : null;
         EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
+        String hmacSecret = hmacKey.getEncryptedKey();
 
         userRepo.findByUsername(body.getUsername()).ifPresent(_ -> {
             throw new UserNameAlreadyExistException();
         });
-        // Verify phone
-        VerifyCodeDto verify = body.getVerify();
-        if(! verify.getTarget().equals(phone)){
-            throw new AuthException(AuthCode.REAUTHORIZATION_REQUIRED);
-        }
-        verificationService.verifyCode(smsCodeKey, verify);
 
-        userDatumRepo.findByPhoneHash(HashUtil.toSha256HmacString(phone, hmacKey.getEncryptedKey())).ifPresent(
-                _->{
+        // Uniqueness first: a taken phone/email should fail precisely, before a valid code is
+        // consumed. The derived unique indexes in the V1 baseline remain the final race-safe guard.
+        userDatumRepo.findByPhoneHash(HashUtil.toSha256HmacString(phone, hmacSecret)).ifPresent(
+                _ -> {
                     throw new BizException(BaseResponseCode.PHONE_NUMBER_ALREADY_USED);
                 }
         );
-        // Verify email
-        if (StringUtil.isNotBlank(email)) {
-            userDatumRepo.findByEmailHash(HashUtil.toSha256HmacString(email, hmacKey.getEncryptedKey())).ifPresent(
+        if (email != null) {
+            userDatumRepo.findByEmailHash(HashUtil.toSha256HmacString(email, hmacSecret)).ifPresent(
                     _ -> {
                         throw new BizException(BaseResponseCode.EMAIL_ALREADY_USED);
                     }
             );
         }
+        // Phone proof: compare normalized targets, then verify against the SMS-channel code only.
+        VerifyCodeDto phoneVerify = body.getVerify();
+        if (phoneVerify == null
+                || !phone.equals(AuthIdentifierUtil.normalizePhone(phoneVerify.getTarget()))) {
+            throw new AuthException(AuthCode.REAUTHORIZATION_REQUIRED);
+        }
+        verificationService.verifyCode(
+                phone, VerifyScene.REGISTER, VerifyChannel.SMS, smsCodeKey, phoneVerify.getCode());
+        // A mailbox is optional, but claiming one requires proof. Without this check the address
+        // could be attached to an attacker's account before the real owner registers.
+        if (email != null) {
+            VerifyCodeDto emailVerify = body.getEmailVerify();
+            if (emailVerify == null) {
+                throw new AuthException(AuthCode.EMAIL_VERIFY_REQUIRED);
+            }
+            if (!email.equals(AuthIdentifierUtil.normalizeEmail(emailVerify.getTarget()))) {
+                throw new AuthException(AuthCode.REAUTHORIZATION_REQUIRED);
+            }
+            verificationService.verifyCode(
+                    email, VerifyScene.REGISTER, VerifyChannel.EMAIL, emailCodeKey, emailVerify.getCode());
+        }
+
         // Encrypt email, phone, password
-        EncryptionDataKey aesKet = encryptedKeyService.getAesKey();
-        String encryptedPhone = EncryptionHelper.encryptField(phone, aesKet);
+        EncryptionDataKey aesKey = encryptedKeyService.getAesKey();
+        String encryptedPhone = EncryptionHelper.encryptField(phone, aesKey);
         String password = body.getPassword();
 
         // STEP 5: Set user
         User user = new User();
         user.setUsername(body.getUsername());
-        if(StringUtil.isNotBlank( password)) user.setPasswordHash(encoder.encode(password));
+        if (StringUtil.isNotBlank(password)) {
+            user.setPasswordHash(encoder.encode(password));
+        }
         user.setUid(uidGenerator.generateUid());
         user.setAccountStatus(AccountStatus.ACTIVE);
+        user.setUserType(UserType.COMMON);
         // STEP 6: Set user data
         UserDatum ud = new UserDatum();
         ud.setUser(user);
         ud.setUid(user.getUid());
-        ud.setEncryptionKeyId(aesKet.getKeyId());
+        ud.setEncryptionKeyId(aesKey.getKeyId());
         ud.setPhoneEncrypted(encryptedPhone);
-        ud.setPhoneHash(HashUtil.toSha256HmacString(phone, hmacKey.getEncryptedKey()));
-
-        if(StringUtil.isNotBlank(email)) {
-            String encryptedEmail = EncryptionHelper.encryptField(email, aesKet);
-            ud.setEmailEncrypted(encryptedEmail);
-            ud.setEmailHash(HashUtil.toSha256HmacString(email, hmacKey.getEncryptedKey()));
-            ud.setEmailExpireAt(Instant.now().plus(Duration.ofHours(emailUnverifiedExpireHours)));
-        }
-
+        ud.setPhoneHash(HashUtil.toSha256HmacString(phone, hmacSecret));
         ud.setPhoneVerified(true);
-        ud.setEmailVerified(false);
+
+        if (email != null) {
+            ud.setEmailEncrypted(EncryptionHelper.encryptField(email, aesKey));
+            ud.setEmailHash(HashUtil.toSha256HmacString(email, hmacSecret));
+            ud.setEmailVerified(true);
+            // Proven at registration time: no unverified grace period is needed.
+            ud.setEmailExpireAt(null);
+        } else {
+            ud.setEmailVerified(false);
+        }
 
         // TODO(SSO): UserProfile/UserCounter/UserPreference/UserSetting bootstrap cut — business tables not migrated
         user.setUserDatum(ud);

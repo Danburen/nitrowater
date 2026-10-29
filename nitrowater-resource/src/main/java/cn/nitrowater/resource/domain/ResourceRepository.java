@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,6 +41,18 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      */
     Optional<Resource> findFirstByAppAndGroupKeyAndOriginalNameAndSourceTypeOrderByCreatedAtDesc(
             String app, String groupKey, String originalName, SourceType sourceType);
+
+    /**
+     * Finds stale pending rows for the orphan reaper. A pending row is created before a client
+     * uploads its bytes; if the upload is abandoned it would otherwise stay pending forever. The
+     * batch cap keeps one cleanup run bounded.
+     *
+     * @param status lifecycle status to match (normally {@code PENDING})
+     * @param cutoff rows updated before this instant are considered abandoned
+     * @return up to 200 matching rows, oldest update first
+     */
+    List<Resource> findTop200ByStatusAndUpdatedAtBeforeOrderByUpdatedAtAsc(
+            ResourceStatus status, Instant cutoff);
 
     /**
      * Lists every distinct app namespace in the table, for the console's app filter. A super-admin

@@ -7,7 +7,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param defaultBackend backend used when a request does not specify one ({@code s3} / {@code cos} / {@code local})
  * @param presignExpirySeconds default lifetime of presigned upload/download URLs
- * @param maxSizeBytes maximum accepted object size
+ * @param maxSizeBytes maximum accepted object size for end-user uploads
+ * @param pluginMaxSizeBytes maximum accepted plugin artifact size (admin uploads); {@code <= 0} uses
+ *        {@link #DEFAULT_PLUGIN_MAX_SIZE_BYTES}
  * @param readCacheSafetyMarginSeconds TTL margin subtracted from a cached presigned GET URL so it is
  *        never served already-expired (defaults to {@code 60} when {@code null} or {@code <= 0})
  * @param s3 S3-compatible storage settings
@@ -20,6 +22,7 @@ public record ResourceProperties(
         String defaultBackend,
         int presignExpirySeconds,
         long maxSizeBytes,
+        long pluginMaxSizeBytes,
         Integer readCacheSafetyMarginSeconds,
         S3 s3,
         Cos cos,
@@ -28,6 +31,17 @@ public record ResourceProperties(
 
     /** Default read-cache safety margin in seconds. */
     public static final int DEFAULT_CACHE_SAFETY_MARGIN_SECONDS = 60;
+
+    /** Default cap for plugin artifacts (64 MiB): large enough for shaded jars, still bounded. */
+    public static final long DEFAULT_PLUGIN_MAX_SIZE_BYTES = 64L * 1024 * 1024;
+
+    /**
+     * @return the effective plugin artifact size cap: the configured value when positive, else
+     *         {@link #DEFAULT_PLUGIN_MAX_SIZE_BYTES}
+     */
+    public long effectivePluginMaxSizeBytes() {
+        return pluginMaxSizeBytes > 0 ? pluginMaxSizeBytes : DEFAULT_PLUGIN_MAX_SIZE_BYTES;
+    }
 
     /**
      * @return the effective read-cache safety margin: the configured value when positive, else

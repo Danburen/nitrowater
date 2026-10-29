@@ -13,7 +13,11 @@ public enum AuthCode implements ResponseCode {
     CAPTCHA_INVALID("auth.captcha.incorrect"),
     USERNAME_OR_PASSWORD_INCORRECT("auth.credentials_incorrect"),
     VERIFY_TARGET_UNSUPPORTED("auth.target.unsupported"),
-    INVALID_VERIFY_SCENE("auth.invalid.scene"),;
+    INVALID_VERIFY_SCENE("auth.invalid.scene"),
+    /** A mailbox was supplied without its proof, so the account must not be created yet. */
+    EMAIL_VERIFY_REQUIRED("auth.email_verify_required"),
+    /** The account exists but is suspended or deactivated; credentials alone are not enough. */
+    ACCOUNT_DISABLED("auth.account_disabled"),;
 
 
     private final String code;

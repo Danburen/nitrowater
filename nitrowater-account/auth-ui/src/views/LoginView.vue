@@ -1,19 +1,29 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElButton, ElInput } from 'element-plus'
+import { Lock, Message, User } from '@element-plus/icons-vue'
 
 import AuthLayout from '@/components/AuthLayout.vue'
+import CaptchaDialog from '@/components/CaptchaDialog.vue'
+import {
+  ApiError,
+  fetchLoginContext,
+  loginByCode,
+  sendLoginCode,
+  type LoginContext,
+} from '@/api/auth'
 import { getDeviceFp } from '@/composables/useDeviceFp'
-import { newCaptchaUrl } from '@/composables/useCaptcha'
 
 const route = useRoute()
 
 const ERROR_MESSAGES: Record<string, string> = {
   captcha: '验证码不正确，请重新输入',
   credentials: '用户名或密码不正确',
+  disabled: '账号已被禁用，请联系管理员',
   locked: '尝试次数过多，请稍后再试',
   daily: '今日尝试次数过多，请明天再试',
-  server: '登录服务暂时不可用，请稍后重试',
+  server: '登录服务暂时不可用，请稍后再试',
 }
 
 const errorCode = computed(() => {
@@ -21,7 +31,7 @@ const errorCode = computed(() => {
   return typeof raw === 'string' ? raw : ''
 })
 const errorMessage = computed(() =>
-  errorCode.value ? (ERROR_MESSAGES[errorCode.value] ?? '登录失败，请稍后重试') : '',
+  errorCode.value ? (ERROR_MESSAGES[errorCode.value] ?? '登录失败，请稍后再试') : '',
 )
 const registered = computed(() => route.query.registered === '1')
 const redirect = computed(() => {
@@ -29,43 +39,134 @@ const redirect = computed(() => {
   return typeof raw === 'string' ? raw : ''
 })
 
+/** The app that started this login (null for a direct visit to /login). */
+const loginContext = ref<LoginContext | null>(null)
+
 const formRef = ref<HTMLFormElement | null>(null)
-const captchaInput = ref<HTMLInputElement | null>(null)
+const username = ref('')
+const password = ref('')
 const deviceFp = ref('')
-const captchaUrl = ref(newCaptchaUrl())
 const captchaCode = ref('')
-const captchaError = ref('')
 const showCaptcha = ref(false)
-const showPassword = ref(false)
 const submitting = ref(false)
 
-function refreshCaptcha() {
-  captchaUrl.value = newCaptchaUrl()
+type LoginMode = 'password' | 'code'
+const mode = ref<LoginMode>('password')
+
+const codeIdentifier = ref('')
+const loginCode = ref('')
+const codeError = ref('')
+const codeNotice = ref('')
+const sendingCode = ref(false)
+const codeSubmitting = ref(false)
+const codeCountdown = ref(0)
+const showCodeCaptcha = ref(false)
+let codeTimer: ReturnType<typeof setInterval> | null = null
+
+function messageOf(error: unknown): string {
+  if (error instanceof ApiError) return error.message
+  return '请求失败，请稍后重试'
 }
 
-function openCaptcha() {
-  captchaCode.value = ''
-  captchaError.value = ''
-  showCaptcha.value = true
-  refreshCaptcha()
-  void nextTick(() => captchaInput.value?.focus())
+/** Mirrors the server's format-based channel detection. */
+function channelOf(identifier: string): 'sms' | 'email' | null {
+  const value = identifier.trim()
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'email'
+  if (/^1[3-9]\d{9}$/.test(value)) return 'sms'
+  return null
 }
 
-function closeCaptcha() {
-  showCaptcha.value = false
-  captchaCode.value = ''
-  captchaError.value = ''
+function switchMode(next: LoginMode) {
+  mode.value = next
+  codeError.value = ''
+  codeNotice.value = ''
 }
 
-function submitWithCaptcha() {
-  const code = captchaCode.value.trim()
-  if (!code) {
-    captchaError.value = '请输入图形验证码'
+function startCodeCountdown() {
+  codeCountdown.value = 60
+  if (codeTimer) clearInterval(codeTimer)
+  codeTimer = setInterval(() => {
+    codeCountdown.value -= 1
+    if (codeCountdown.value <= 0 && codeTimer) {
+      clearInterval(codeTimer)
+      codeTimer = null
+    }
+  }, 1000)
+}
+
+function openCodeCaptcha() {
+  const target = codeIdentifier.value.trim()
+  if (!target) {
+    codeError.value = '请先填写手机号或邮箱'
     return
   }
+  if (!channelOf(target)) {
+    codeError.value = '请输入正确的手机号或邮箱'
+    return
+  }
+  codeError.value = ''
+  codeNotice.value = ''
+  showCodeCaptcha.value = true
+}
+
+async function sendCodeWithCaptcha(captcha: string) {
+  const target = codeIdentifier.value.trim()
+  const channel = channelOf(target)
+  if (!channel) {
+    codeError.value = '请输入正确的手机号或邮箱'
+    return
+  }
+  showCodeCaptcha.value = false
+  sendingCode.value = true
+  codeError.value = ''
+  codeNotice.value = ''
+  try {
+    await sendLoginCode(target, channel, captcha)
+    codeNotice.value = '验证码已发送，请留意短信或邮箱'
+    startCodeCountdown()
+  } catch (error) {
+    codeError.value = messageOf(error)
+  } finally {
+    sendingCode.value = false
+  }
+}
+
+async function submitCodeLogin() {
+  const target = codeIdentifier.value.trim()
+  const code = loginCode.value.trim()
+  if (!target || !code) {
+    codeError.value = '请填写手机号/邮箱和验证码'
+    return
+  }
+  if (!channelOf(target)) {
+    codeError.value = '请输入正确的手机号或邮箱'
+    return
+  }
+  codeSubmitting.value = true
+  codeError.value = ''
+  try {
+    const result = await loginByCode({
+      identifier: target,
+      code,
+      deviceFp: deviceFp.value,
+      redirect: redirect.value,
+    })
+    window.location.assign(result.redirectUrl)
+  } catch (error) {
+    codeError.value = messageOf(error)
+    codeSubmitting.value = false
+  }
+}
+
+/**
+ * The captcha dialog owns its input; copy the confirmed code into the hidden field and let Vue
+ * flush it before the native form POST (a same-tick submit would send the previous value).
+ */
+async function submitWithCaptcha(code: string) {
   captchaCode.value = code
   showCaptcha.value = false
   submitting.value = true
+  await nextTick()
   formRef.value?.requestSubmit()
 }
 
@@ -76,44 +177,43 @@ function onSubmit(event: Event) {
   }
   event.preventDefault()
   if (formRef.value && !formRef.value.reportValidity()) return
-  openCaptcha()
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && showCaptcha.value) closeCaptcha()
+  showCaptcha.value = true
 }
 
 onMounted(() => {
   deviceFp.value = getDeviceFp()
-  window.addEventListener('keydown', onKeydown)
+  void fetchLoginContext()
+    .then((context) => {
+      loginContext.value = context
+    })
+    .catch(() => {
+      // Context is a nicety; a failure must never block the form.
+    })
 })
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
+onUnmounted(() => {
+  if (codeTimer) clearInterval(codeTimer)
+})
 </script>
 
 <template>
   <AuthLayout
-    title="欢迎回来"
-    subtitle="登录后继续访问 NitroWater 门户、管理台与业务应用。"
+    title="登录"
+    subtitle="使用 NitroWater 账号继续。"
   >
+    <div
+      v-if="loginContext?.clientName"
+      class="auth-alert-info mb-5"
+      role="status"
+    >
+      您正在尝试登录「<strong class="font-medium text-ink">{{ loginContext.clientName }}</strong>」
+    </div>
+
     <div
       v-if="registered"
       class="auth-alert-success mb-5"
       role="status"
     >
-      <svg
-        viewBox="0 0 24 24"
-        class="mt-0.5 h-4 w-4 shrink-0"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M20 6L9 17l-5-5"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1.8"
-        />
-      </svg>
       账号创建成功，请使用新账号登录。
     </div>
 
@@ -122,24 +222,30 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       class="auth-alert-error mb-5"
       role="alert"
     >
-      <svg
-        viewBox="0 0 24 24"
-        class="mt-0.5 h-4 w-4 shrink-0"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M12 8v5M12 16.5h.01M10.3 4.6L2.8 17.4A1.5 1.5 0 004.1 19.7h15.8a1.5 1.5 0 001.3-2.3L13.7 4.6a1.9 1.9 0 00-3.4 0Z"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1.6"
-        />
-      </svg>
       {{ errorMessage }}
     </div>
 
+    <div class="mb-5 flex rounded-lg border border-line p-1 text-sm">
+      <button
+        type="button"
+        class="flex-1 rounded-md px-3 py-2 font-medium transition"
+        :class="mode === 'password' ? 'bg-accent text-white' : 'text-dim hover:text-ink'"
+        @click="switchMode('password')"
+      >
+        密码登录
+      </button>
+      <button
+        type="button"
+        class="flex-1 rounded-md px-3 py-2 font-medium transition"
+        :class="mode === 'code' ? 'bg-accent text-white' : 'text-dim hover:text-ink'"
+        @click="switchMode('code')"
+      >
+        验证码登录
+      </button>
+    </div>
+
     <form
+      v-if="mode === 'password'"
       ref="formRef"
       method="post"
       action="/login"
@@ -167,38 +273,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           class="auth-label"
           for="username"
         >用户名 / 邮箱 / 手机号</label>
-        <div class="relative">
-          <span class="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-faint">
-            <svg
-              viewBox="0 0 24 24"
-              class="h-4 w-4"
-              fill="none"
-              aria-hidden="true"
-            >
-              <circle
-                cx="12"
-                cy="8"
-                r="3.2"
-                stroke="currentColor"
-                stroke-width="1.6"
-              />
-              <path
-                d="M5.5 19c.7-3 3.2-4.8 6.5-4.8s5.8 1.8 6.5 4.8"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-width="1.6"
-              />
-            </svg>
-          </span>
-          <input
-            id="username"
-            name="username"
-            class="auth-input"
-            autocomplete="username"
-            placeholder="请输入账号"
-            required
-          >
-        </div>
+        <ElInput
+          id="username"
+          v-model="username"
+          name="username"
+          size="large"
+          :prefix-icon="User"
+          autocomplete="username"
+          placeholder="请输入账号"
+          required
+        />
       </div>
 
       <div>
@@ -206,107 +290,104 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           class="auth-label"
           for="password"
         >密码</label>
-        <div class="relative">
-          <span class="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-faint">
-            <svg
-              viewBox="0 0 24 24"
-              class="h-4 w-4"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M8 11V8a4 4 0 118 0v3M7 11h10a1 1 0 011 1v7a1 1 0 01-1 1H7a1 1 0 01-1-1v-7a1 1 0 011-1Z"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.6"
-              />
-            </svg>
-          </span>
-          <input
-            id="password"
-            name="password"
-            class="auth-input auth-input-plain"
-            :type="showPassword ? 'text' : 'password'"
-            autocomplete="current-password"
-            placeholder="请输入密码"
-            required
+        <ElInput
+          id="password"
+          v-model="password"
+          name="password"
+          size="large"
+          type="password"
+          show-password
+          :prefix-icon="Lock"
+          autocomplete="current-password"
+          placeholder="请输入密码"
+          required
+        />
+      </div>
+
+      <ElButton
+        class="mt-2 w-full"
+        size="large"
+        type="primary"
+        native-type="submit"
+        :loading="submitting"
+      >
+        {{ submitting ? '正在登录…' : '登录' }}
+      </ElButton>
+    </form>
+
+    <form
+      v-else
+      class="space-y-4"
+      @submit.prevent="submitCodeLogin"
+    >
+      <div
+        v-if="codeNotice"
+        class="auth-alert-success"
+        role="status"
+      >
+        {{ codeNotice }}
+      </div>
+
+      <div
+        v-if="codeError"
+        class="auth-alert-error"
+        role="alert"
+      >
+        {{ codeError }}
+      </div>
+
+      <div>
+        <label
+          class="auth-label"
+          for="code-identifier"
+        >手机号 / 邮箱</label>
+        <ElInput
+          id="code-identifier"
+          v-model="codeIdentifier"
+          size="large"
+          :prefix-icon="User"
+          autocomplete="username"
+          placeholder="输入手机号或邮箱"
+        />
+      </div>
+
+      <div>
+        <label
+          class="auth-label"
+          for="login-code"
+        >验证码</label>
+        <div class="flex items-center gap-2">
+          <ElInput
+            id="login-code"
+            v-model="loginCode"
+            class="min-w-0 flex-1"
+            size="large"
+            :prefix-icon="Message"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            maxlength="6"
+            placeholder="6 位验证码"
+          />
+          <ElButton
+            class="shrink-0"
+            size="large"
+            :disabled="sendingCode || codeCountdown > 0"
+            @click="openCodeCaptcha"
           >
-          <button
-            type="button"
-            class="absolute inset-y-0 right-2 my-auto grid h-8 w-8 place-items-center rounded-lg text-faint transition hover:bg-soft hover:text-ink focus:outline-none focus:ring-4 focus:ring-accent/15"
-            :aria-label="showPassword ? '隐藏密码' : '显示密码'"
-            @click="showPassword = !showPassword"
-          >
-            <svg
-              v-if="showPassword"
-              viewBox="0 0 24 24"
-              class="h-4 w-4"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M3 3l18 18M10.6 10.7A3 3 0 0014 14.2M9.9 5.4A10.8 10.8 0 0112 5.2c5 0 8.7 4.2 9.8 6.8a12.7 12.7 0 01-2.7 3.7M6.7 6.8A13.7 13.7 0 002.2 12c1.1 2.6 4.8 6.8 9.8 6.8 1.2 0 2.3-.2 3.3-.7"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.6"
-              />
-            </svg>
-            <svg
-              v-else
-              viewBox="0 0 24 24"
-              class="h-4 w-4"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M2.2 12c1.1-2.6 4.8-6.8 9.8-6.8s8.7 4.2 9.8 6.8c-1.1 2.6-4.8 6.8-9.8 6.8S3.3 14.6 2.2 12Z"
-                stroke="currentColor"
-                stroke-linejoin="round"
-                stroke-width="1.6"
-              />
-              <circle
-                cx="12"
-                cy="12"
-                r="3"
-                stroke="currentColor"
-                stroke-width="1.6"
-              />
-            </svg>
-          </button>
+            {{ codeCountdown > 0 ? `${codeCountdown}s 后重发` : '获取验证码' }}
+          </ElButton>
         </div>
       </div>
 
-      <button
-        type="submit"
-        class="auth-button mt-2"
-        :disabled="submitting"
+      <ElButton
+        class="mt-2 w-full"
+        size="large"
+        type="primary"
+        native-type="submit"
+        :loading="codeSubmitting"
       >
-        <svg
-          v-if="submitting"
-          class="h-4 w-4 animate-spin"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle
-            cx="12"
-            cy="12"
-            r="9"
-            stroke="currentColor"
-            stroke-opacity=".25"
-            stroke-width="3"
-          />
-          <path
-            d="M21 12a9 9 0 00-9-9"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-width="3"
-          />
-        </svg>
-        {{ submitting ? '正在登录…' : '登录' }}
-      </button>
+        {{ codeSubmitting ? '正在登录…' : '登录' }}
+      </ElButton>
     </form>
 
     <div class="mt-5 flex items-center justify-between text-sm">
@@ -319,113 +400,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </RouterLink>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="showCaptcha"
-        class="auth-dialog-mask auth-fade-in"
-        @click.self="closeCaptcha"
-      >
-        <div
-          class="auth-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="login-captcha-title"
-          aria-describedby="login-captcha-desc"
-        >
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <h3
-                id="login-captcha-title"
-                class="text-base font-semibold text-ink"
-              >
-                安全验证
-              </h3>
-              <p
-                id="login-captcha-desc"
-                class="mt-1 text-[12px] text-dim"
-              >
-                请输入图形验证码后继续登录。
-              </p>
-            </div>
-            <button
-              type="button"
-              class="grid h-8 w-8 place-items-center rounded-lg text-faint transition hover:bg-soft hover:text-ink focus:outline-none focus:ring-4 focus:ring-accent/15"
-              aria-label="关闭"
-              @click="closeCaptcha"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                class="h-4 w-4"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6 6l12 12M18 6L6 18"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-width="1.8"
-                />
-              </svg>
-            </button>
-          </div>
+    <CaptchaDialog
+      v-model="showCaptcha"
+      title="安全验证"
+      description="请输入图形验证码后继续登录。"
+      confirm-text="继续登录"
+      @submit="submitWithCaptcha"
+    />
 
-          <div class="mt-5 flex items-stretch gap-2">
-            <input
-              ref="captchaInput"
-              v-model="captchaCode"
-              class="w-full rounded-xl border border-line bg-bg/60 px-3.5 text-sm text-ink outline-none transition placeholder:text-faint focus:border-accent focus:ring-4 focus:ring-accent/10"
-              :class="captchaError ? 'border-danger/60' : ''"
-              maxlength="6"
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck="false"
-              placeholder="图形验证码"
-              :aria-invalid="Boolean(captchaError)"
-              @input="captchaError = ''"
-              @keydown.enter.prevent="submitWithCaptcha"
-            >
-            <button
-              type="button"
-              class="shrink-0 overflow-hidden rounded-xl border border-line bg-white transition hover:border-line-strong focus:outline-none focus:ring-4 focus:ring-accent/15"
-              title="点击刷新验证码"
-              aria-label="刷新图形验证码"
-              @click="refreshCaptcha"
-            >
-              <img
-                :src="captchaUrl"
-                alt="图形验证码"
-                class="h-12 w-[120px] object-cover"
-                width="120"
-                height="48"
-              >
-            </button>
-          </div>
-          <p
-            v-if="captchaError"
-            class="mt-2 text-[12px] text-danger"
-            role="alert"
-          >
-            {{ captchaError }}
-          </p>
-
-          <div class="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              class="auth-button-ghost"
-              @click="closeCaptcha"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              class="auth-button w-auto px-5"
-              @click="submitWithCaptcha"
-            >
-              继续登录
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <CaptchaDialog
+      v-model="showCodeCaptcha"
+      title="安全验证"
+      description="输入图形验证码后发送登录验证码。"
+      confirm-text="发送验证码"
+      :loading="sendingCode"
+      @submit="sendCodeWithCaptcha"
+    />
   </AuthLayout>
 </template>

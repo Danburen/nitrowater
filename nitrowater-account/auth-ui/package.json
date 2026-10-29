@@ -12,8 +12,10 @@
     "typecheck": "vue-tsc -b"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "@nitrowater/http": "workspace:*",
     "@nitrowater/ui": "workspace:*",
+    "element-plus": "^2.14.7",
     "vue": "^3.5.42",
     "vue-router": "^5.4.0"
   },

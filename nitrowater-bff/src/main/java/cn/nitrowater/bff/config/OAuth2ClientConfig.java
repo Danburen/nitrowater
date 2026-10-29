@@ -1,5 +1,7 @@
 package cn.nitrowater.bff.config;
 
+import cn.nitrowater.bff.security.MultiAccountAuthorizedClientRepository;
+import cn.nitrowater.bff.security.SwitchAccountAuthorizationRequestResolver;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -7,7 +9,9 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProvider
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
-import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 
 /**
@@ -21,10 +25,24 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
 @Configuration
 public class OAuth2ClientConfig {
 
-    /** Persists AT/RT in the (Redis-backed) HTTP session, keyed by principal + registration. */
+    /** Persists AT/RT in the (Redis-backed) HTTP session, keyed by registration + account subject. */
     @Bean
-    public OAuth2AuthorizedClientRepository authorizedClientRepository() {
-        return new HttpSessionOAuth2AuthorizedClientRepository();
+    public MultiAccountAuthorizedClientRepository authorizedClientRepository() {
+        return new MultiAccountAuthorizedClientRepository();
+    }
+
+    /**
+     * Decorates the standard resolver so {@code ?switch=1} becomes {@code prompt=login}.
+     *
+     * <p>Without this, the Authorization Server would silently reuse the current SSO session and
+     * the user could never add a second account.</p>
+     */
+    @Bean
+    public OAuth2AuthorizationRequestResolver switchAccountAuthorizationRequestResolver(
+            ClientRegistrationRepository clientRegistrationRepository) {
+        return new SwitchAccountAuthorizationRequestResolver(
+                new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository,
+                        OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI));
     }
 
     @Bean

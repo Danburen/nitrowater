@@ -1,4 +1,4 @@
-﻿HELP.md
+HELP.md
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar
@@ -114,3 +114,7 @@ demo/__pycache__/
 # LOCAL storage backend (nitrowater-resource, app.resource.backend=local) writes
 # uploaded objects here at runtime - generated data, never source.
 /deploy/resource-storage/
+# Docs are never build inputs for the jar: NitroWater is a markdown-only corpus (ai/docs), and
+# published sites are deploy artifacts handled dynamically. Anything under static/docs is a stale
+# local build - never commit it. See deploy/plugin-docs/ + bin/dev/sync-docs.ps1.
+/nitrowater-server/src/main/resources/static/docs/

@@ -7,8 +7,9 @@
 >   - 2026-10-07 v1.2：**纳入 VeloChatX/velochatx-docs 整合诉求**（复合展示站：导航 + 工具箱 + 演练场 + 文档）；确认 `nitrowater-web`（Vue3+Vite，2026-10-07 新建）为前端融合落点；补充 `nitrowater-account` 落地缺口清单与 SSO 下一步分步方案（§9.1）；新增 N4–N6 决策点。
 >   - 2026-10-07 v1.3：**Phase 1 落地完成**（account 编译绿、IDEA 启动通过；SSO 库 `nitrowater` 建成 6 表）；新增 **§9.2 Phase 2（OIDC）融合方案**（token 映射、waterfun 无感登录对接、依赖清单、CORS 白名单）；新增 N7–N8 决策点。
 >   - 2026-10-07 v1.4：**Phase 2.4/2.5 落地**——① 登录主体升级为 `SsoUserPrincipal`（承载 uid/登录名/昵称/userType/状态/设备），`SsoAuthenticationProvider` 不再用裸 `User`、角色由 userType 派生；`OAuth2TokenCustomizer` 保证 `sub=uid` 并输出 `preferred_username/name/roles/did`。② OIDC 客户端与授权/同意改为 **JDBC 持久化（方案 A：Spring AS 标准表）**，新增 `V1_1__oauth2_oidc_role.sql`，客户端启动幂等播种；数据源 URL 按官方建议补 `preserveInstants/connectionTimeZone`。新增 §9.2.8、§9.2.9 与 N9。
+>   - 2026-10-27 v1.5：**项目定位收缩为 Minecraft 插件/服务器专业化平台**——演练场（题库/题单/题解/提交/判题，§FR-2 及 §7.2 判题 API）整体下线；代码运行器保留并加严（单用户/全局并发、有界队列、分钟/日配额、输出截断）；工具箱改为「服务器工具 → 通用工具」两栏；biz 库仅保留用户镜像/角色/插件中心。下文涉及演练场的历史设计仅作归档参考。
 > - **文档性质**：实训第二周 —— 项目设计需求文档
-> - **状态**：待评审
+> - **状态**：待评审（v1.5 已按最新定位收缩）
 > - **关联文档**：
 >   - `D:\Project\waterfun\docs\auth-sso-migration-plan.md`（WaterFun 认证抽离 & SSO 迁移方案，本文 SSO 章节的上游依据）
 >   - `D:\Project\waterfun\docs\reference\auth-login-flow.md`（现有登录链路参考）
@@ -362,7 +363,7 @@ nitrowater（Gradle monorepo）
 
 ### 8.1 SSO 库（`nitrowater_account`，与业务库 `nitrowater_biz` 物理隔离）
 
-实际落地：单一基线 `V1__sso_baseline.sql`（6 表）+ `V1_1__oauth2_oidc_role.sql`（5 表：3 OIDC + 2 RBAC）。
+实际落地：单一基线 `V1__sso_baseline.sql`（11 表：6 核心 + 3 OIDC + 2 RBAC）。原 `V1_1`/`V1_2`/`V1_3` 已在 dev 阶段折叠进基线。
 
 | 表                     | 来源         | 说明                                     |
 | --------------------- | ---------- | -------------------------------------- |
@@ -375,12 +376,12 @@ nitrowater（Gradle monorepo）
 | `oauth2_registered_client`     | 新建（Spring AS 标准表） | OIDC 接入客户端（Phase 2.5）                  |
 | `oauth2_authorization`         | 新建（Spring AS 标准表） | OIDC 授权状态：token/授权码/会话（Phase 2.5）       |
 | `oauth2_authorization_consent` | 新建（Spring AS 标准表） | OIDC 授权同意（Phase 2.5）                    |
-| `role`                         | 新建（RBAC）             | 角色词汇表：code/name/builtin；内置 USER/ADMIN 播种（V1_1）|
-| `user_role`                    | 新建（RBAC）             | 用户-角色映射：uid+role_id 复合 PK，FK→user/role 级联（V1_1）|
+| `role`                         | 新建（RBAC）             | 角色词汇表：code/name/builtin；内置 USER/ADMIN/SUPER_ADMIN 播种（V1）|
+| `user_role`                    | 新建（RBAC）             | 用户-角色映射：uid+role_id 复合 PK，FK→user/role 级联（V1）|
 
 > 命名调整（决策 N9）：账号表沿用 waterfun `user`；客户端/授权/同意改用 **Spring AS 标准表**，退役原计划的 `sso_account`/`oidc_client`/`oidc_session`。
 > DDL 细节与校验标准见上游方案 §4.2、§8。
-> RBAC（V1_1）：采用角色制 `role`/`user_role`；`role`/`user_role` 为**角色权威源**，`user.userType` 退为账号类别/展示；细粒度权限（`permission`/`role_permission`）**暂不建**，待出现"角色→权限"消费方时再加子版本迁移。
+> RBAC（V1 基线）：采用角色制 `role`/`user_role`；`role`/`user_role` 为**角色权威源**，`user.userType` 退为账号类别/展示；细粒度权限（`permission`/`role_permission`）**暂不建**，待出现"角色→权限"消费方时再加子版本迁移。
 
 ### 8.2 业务库（`nitrowater_biz`，与 SSO 库 `nitrowater` **物理隔离**）
 
@@ -518,10 +519,10 @@ nitrowater（Gradle monorepo）
 #### 9.2.9 Phase 2.5 落地结果（JDBC 持久化，方案 A）
 
 - **存储**：`JdbcRegisteredClientRepository` + `JdbcOAuth2AuthorizationService` + `JdbcOAuth2AuthorizationConsentService`，替换原内存实现，重启不丢。
-- **表**：`V1_1__oauth2_oidc_role.sql` 建 `oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`（官方 7.1.1 DDL）。
+- **表**：`V1__sso_baseline.sql` 建 `oauth2_registered_client` / `oauth2_authorization` / `oauth2_authorization_consent`（官方 7.1.1 DDL，已折叠原 V1_1）。
 - **客户端**：启动幂等播种 `nitrowater-web`（公共客户端 + PKCE，auth-code + refresh，redirect `http://localhost:5173/auth/callback`）。
 - **连接串**：按官方建议补 `preserveInstants=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true` 以保证令牌时间精度。
-- **校验**：临时库应用 V1_1 DDL 通过（MySQL 8）；`nitrowater` 库当前为 Flyway baseline v1（版本 1），下次启动自动应用 V1_1（版本 1.1）。
+- **校验**：临时库与 `nitrowater_account` 均从空库应用 V1 通过（MySQL 8）；当前 `flyway_schema_history` 仅有版本 1，不再有 V1_1/V1_2/V1_3 子版本。
 
 #### 9.2.10 Phase 2.6 落地结果（前端 OIDC 客户端 + issuer 统一）
 

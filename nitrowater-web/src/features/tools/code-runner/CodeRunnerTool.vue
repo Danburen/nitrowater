@@ -25,6 +25,7 @@ import { useAuth } from '../../../auth/useAuth'
 import { apiFetch } from '../../../auth/bff'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import TextArea from '../../../shared/ui/TextArea.vue'
 import CodeEditor from './CodeEditor.vue'
 import {
   DEFAULT_LANGUAGE_ID,
@@ -304,11 +305,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
           <summary class="cursor-pointer select-none text-xs text-faint">
             标准输入（可选，供 input() / readline() 读取）
           </summary>
-          <textarea
+          <TextArea
             v-model="stdin"
-            class="mt-2 w-full resize-y rounded-md border border-line bg-soft p-2 font-mono text-xs text-ink outline-none focus:border-accent"
-            rows="3"
+            class="mt-2 text-xs"
+            min-height="72px"
+            :rows="3"
             placeholder="运行时按需读取；此处内容会被一次读入。"
+            aria-label="标准输入"
           />
         </details>
       </section>

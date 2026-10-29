@@ -1,6 +1,6 @@
 package cn.nitrowater.server.infra.ratelimit;
 
-import cn.nitrowater.server.config.properties.SandboxProperties;
+import cn.nitrowater.server.service.sandbox.SandboxExecutionGuard;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
@@ -8,64 +8,68 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
+import java.security.Principal;
 
 /**
- * Enforces rate limits on the sandbox run endpoint.
+ * Enforces quotas and admission control on the sandbox run endpoint.
  *
- * <p>Two gates are applied before the handler runs: a per-client-IP sliding window and a global
- * concurrency gate. The client IP is taken from {@code X-Forwarded-For} (populated by the BFF);
- * a global slot acquired here is released in {@link #afterCompletion}.</p>
+ * <p>Admission is delegated to {@link SandboxExecutionGuard} so the HTTP endpoint and the agent's
+ * {@code runCode} tool share the same per-minute/day quotas and the same global queue. The acquired
+ * lease is released in {@link #afterCompletion}.</p>
+ *
+ * <p>The endpoint is login-only, so quotas are keyed by user rather than IP; the BFF terminates
+ * the browser connection and would otherwise make every caller share one address.</p>
  */
 @Component
 public class SandboxRateLimitInterceptor implements HandlerInterceptor {
 
-    private static final String SLOT_KEY = "nitrowater:sandbox:inflight";
-    private static final String RATE_KEY_PREFIX = "nitrowater:sandbox:rate:";
-    private static final String SLOT_ATTRIBUTE = "nitrowater.sandbox.slot";
+    private static final String LEASE_ATTRIBUTE = "nitrowater.sandbox.lease";
 
-    private final RedisRateLimiter limiter;
-    private final SandboxProperties properties;
+    private final SandboxExecutionGuard guard;
 
-    public SandboxRateLimitInterceptor(RedisRateLimiter limiter, SandboxProperties properties) {
-        this.limiter = limiter;
-        this.properties = properties;
+    public SandboxRateLimitInterceptor(SandboxExecutionGuard guard) {
+        this.guard = guard;
     }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws IOException {
-        if (!limiter.allow(RATE_KEY_PREFIX + clientIp(request), properties.perIpPerMinute())) {
-            reject(response, "rate_limited", "Too many requests, please slow down");
+        String uid = userId(request);
+        if (uid == null) {
+            reject(response, HttpStatus.UNAUTHORIZED, "unauthorized", "Login is required to run code");
             return false;
         }
-        if (!limiter.acquire(SLOT_KEY, properties.globalConcurrency())) {
-            reject(response, "busy", "Sandbox is busy, please retry shortly");
+
+        try {
+            request.setAttribute(LEASE_ATTRIBUTE, guard.admit(uid));
+            return true;
+        } catch (SandboxExecutionGuard.GuardException ex) {
+            reject(response, ex.status(), ex.code(), ex.getMessage());
             return false;
         }
-        request.setAttribute(SLOT_ATTRIBUTE, Boolean.TRUE);
-        return true;
     }
 
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
             Object handler, Exception ex) {
-        if (Boolean.TRUE.equals(request.getAttribute(SLOT_ATTRIBUTE))) {
-            limiter.release(SLOT_KEY);
+        if (request.getAttribute(LEASE_ATTRIBUTE) instanceof SandboxGate.Lease lease) {
+            lease.close();
         }
     }
 
-    /** The originating client IP, honouring the single-trust-hop {@code X-Forwarded-For} set by the BFF. */
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+    /** The authenticated user id, taken from the JWT {@code sub} exposed as the principal name. */
+    private static String userId(HttpServletRequest request) {
+        Principal principal = request.getUserPrincipal();
+        if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
+            return null;
         }
-        return request.getRemoteAddr();
+        return principal.getName();
     }
 
-    /** Writes a 429 JSON body and stops the chain. */
-    private static void reject(HttpServletResponse response, String code, String message) throws IOException {
-        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+    /** Writes a JSON error body and stops the chain. */
+    private static void reject(HttpServletResponse response, HttpStatus status, String code, String message)
+            throws IOException {
+        response.setStatus(status.value());
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"error\":\"" + code + "\",\"message\":\"" + message + "\"}");
     }

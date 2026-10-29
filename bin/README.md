@@ -10,7 +10,7 @@
 | 脚本 | 用途 |
 |------|------|
 | `start-all.ps1`（或双击 `start-all.bat`） | **构建 + 启动**：`gradlew :<module>:bootJar` → infra → 4 个后端 jar |
-| `start-infra.ps1` | 仅 infra：MySQL(3306, 系统服务) / Redis(6379) / SeaweedFS(8333) / Piston(2000) / docs(8085) |
+| `start-infra.ps1` | 仅 infra：MySQL(3306, 系统服务) / Redis(6379) / Qdrant(6334) / SeaweedFS(8333) / Piston(2000) / docs(8085) |
 | `stop-all.ps1`（或双击 `stop-all.bat`） | 停后端 + infra 容器 + 跟踪进程；**默认不动 :5173**（加 `-WithWeb` 才停） |
 | `_common.ps1` | 共享 helper（被其余脚本点源，不直接运行） |
 
@@ -66,7 +66,7 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
 |---|---|---|
 | account（SSO/OIDC） | 8090 | http://localhost:8090 |
 | bff（门户 / SPA / 代理） | 8080 | http://localhost:8080 |
-| server（业务 API + 判题） | 8081 | `/api/**`（经 BFF 访问） |
+| server（业务 API + 沙箱运行器） | 8081 | `/api/**`（经 BFF 访问） |
 | resource（资源/插件 jar） | 8093 | `/api/resource/**`（经 BFF 访问） |
 | docs（插件文档 nginx） | 8085 | `/plugin/**`（经 BFF 访问） |
 | Vite dev（可选） | 5173 | http://localhost:5173 |
@@ -75,13 +75,11 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
 
 | 脚本 | 用途 |
 |------|------|
-| `bin\dev\dev-seed.ps1` | 一键：reset → 播种用户 / 题目 / 资源（`-Skip*` 分段；幂等） |
+| `bin\dev\dev-seed.ps1` | 一键：reset → 播种用户 / 资源（`-Skip*` 分段；幂等） |
 | `bin\dev\reset-db.ps1` | **破坏性**：drop 库让 Flyway 从 V1 重放（`-Restart` 顺带重启归属服务） |
 | `bin\dev\seed-test-users.ps1` | 测试用户 `testadmin` / `testuser1` / `testuser`（密码 `Passw0rd123`） |
-| `bin\dev\seed-demo-problem.ps1` | 「两数之和」ACM 模式 + 2 用例（铸造管理员 JWT 后建题） |
-| `bin\dev\seed-func-problem.ps1` | 「两数之和」LeetCode 函数模式（`two-sum-func`，走 harness） |
 | `bin\dev\seed-res.ps1` | 经 `/internal/resource/publish` 发资源夹具（`smoke-plugin`、`samples`） |
-| `bin\dev\sync-docs.ps1` | 构建插件文档（VitePress）并镜像到 `deploy\plugin-docs\<plugin>\docs` |
+| `bin\dev\sync-docs.ps1` | 构建 VeloChatX 文档站（VitePress），同时镜像到 `deploy\plugin-docs\velochatx\docs`（/plugin/**）与 `static\docs\velochatx`（/docs/**） |
 | `bin\dev\sync-res.ps1` | 把插件 jar 发布到资源服务（`:8093` 直连，不经 BFF） |
 | `bin\dev\install-piston-langs.ps1` | 给 Piston **一次性**装语言运行时（经 `ghproxy.net`） |
 

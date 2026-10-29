@@ -57,6 +57,7 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.session.ConcurrentSessionFilter;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
@@ -64,6 +65,7 @@ import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import cn.nitrowater.account.security.PromptLoginFilter;
 import cn.nitrowater.account.security.SsoUserPrincipal;
 
 import jakarta.servlet.FilterChain;
@@ -104,6 +106,12 @@ public class AuthorizationServerConfig {
      */
     public static final String BFF_CLIENT_ID = "nitrowater-bff";
 
+    /**
+     * Display name of the BFF client, shown on the hosted login page while this app is logging
+     * in ("you are signing in to ..."). Editable afterwards in the admin console.
+     */
+    public static final String BFF_CLIENT_NAME = "NitroWater 门户";
+
     /** Encodes the confidential client secret; SAS verifies with a delegating encoder. */
     private static final PasswordEncoder CLIENT_SECRET_ENCODER =
             PasswordEncoderFactories.createDelegatingPasswordEncoder();
@@ -115,17 +123,6 @@ public class AuthorizationServerConfig {
     private static final String[] UNPROTECTED_PATHS = {
             "/login", "/register", "/api/auth/**", "/auth/**", "/error",
             "/favicon.ico", "/favicon.svg", "/admin/favicon.svg"};
-
-    /**
-     * CSP for our own pages. The inline bootstrap scripts force {@code 'unsafe-inline'} for scripts
-     * and styles; the remaining win is confining loads to this origin and forbidding framing,
-     * plugins and off-site form posts.
-     */
-    private static final String CONTENT_SECURITY_POLICY =
-            "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; "
-                    + "object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; "
-                    + "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
-                    + "connect-src 'self'";
 
     /** AS 端点链（/oauth2/**、/.well-known/**、/userinfo 等）。未登录的 HTML 请求跳 /login。 */
     @Bean
@@ -147,6 +144,13 @@ public class AuthorizationServerConfig {
                 // A revoked (expired) SSO session must not be able to walk /oauth2/authorize and
                 // mint fresh tokens, so the same expiry check guards the OIDC endpoints.
                 .addFilterBefore(expiredSessionFilter(sessionRegistry), ConcurrentSessionFilter.class)
+                // SAS 7.1 accepts but ignores prompt=login/select_account; enforce it ourselves so
+                // the BFF can add a second account without reusing the current SSO session.
+                // `OAuth2AuthorizationEndpointFilter` has no registered order, so anchor after the
+                // security-context loader instead: this runs early enough and still has the
+                // authenticated principal available.
+                .addFilterAfter(new PromptLoginFilter(requestCache, sessionRegistry),
+                        SecurityContextHolderFilter.class)
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.defaultAuthenticationEntryPointFor(
                         new LoginUrlAuthenticationEntryPoint("/login"),
@@ -161,7 +165,8 @@ public class AuthorizationServerConfig {
             RequestCache requestCache,
             SessionRegistry sessionRegistry,
             SsoLoginSuccessHandler ssoLoginSuccessHandler,
-            SsoLoginFailureHandler ssoLoginFailureHandler)
+            SsoLoginFailureHandler ssoLoginFailureHandler,
+            CspPolicy cspPolicy)
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
         csrfRequestHandler.setCsrfRequestAttributeName("_csrf");
@@ -169,9 +174,9 @@ public class AuthorizationServerConfig {
         http
                 .requestCache(c -> c.requestCache(requestCache))
                 .cors(c -> c.configurationSource(cors))
-                // Static strings: the cost is one header write per response.
+                // Static string, built once: the cost is one header write per response.
                 .headers(h -> h
-                        .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(cspPolicy.directives()))
                         .referrerPolicy(r -> r.policy(
                                 ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
                         .frameOptions(f -> f.deny()))
@@ -375,6 +380,7 @@ public class AuthorizationServerConfig {
             String redirectUrisCsv, String postLogoutRedirectUrisCsv) {
         RegisteredClient.Builder builder = RegisteredClient.withId(id)
                 .clientId(BFF_CLIENT_ID)
+                .clientName(BFF_CLIENT_NAME)
                 .clientSecret(CLIENT_SECRET_ENCODER.encode(secret))
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)

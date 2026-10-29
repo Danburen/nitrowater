@@ -6,15 +6,39 @@
  * tokens server-side and answers `/bff/me` with the identity.
  */
 
+export interface BffAccount {
+  uid: string
+  username?: string | null
+  name?: string | null
+  roles?: string[]
+  picture?: string | null
+  active?: boolean
+}
+
 export interface BffSession {
   authenticated: boolean
   uid?: string | null
   username?: string | null
   name?: string | null
+  picture?: string | null
   roles?: string[]
   did?: string | null
   issuer?: string | null
   expiresAt?: number | null
+  accounts?: BffAccount[]
+  activeUid?: string | null
+}
+
+/** How the BFF answered a session probe. */
+export type SessionState = 'authenticated' | 'anonymous' | 'unavailable'
+
+export interface SessionProbe {
+  state: SessionState
+  session: BffSession | null
+  /** True when the server said the previous session is gone (stale cookie) rather than "never logged in". */
+  expired?: boolean
+  /** Diagnostic detail when {@code state} is {@code unavailable}. */
+  reason?: string
 }
 
 /** Reads a cookie by name (used for the CSRF token the BFF exposes). */
@@ -25,7 +49,7 @@ function readCookie(name: string): string | null {
 }
 
 /** CSRF header for mutating requests (the BFF exposes XSRF-TOKEN as a readable cookie). */
-function csrfHeaders(): Record<string, string> {
+export function csrfHeaders(): Record<string, string> {
   const token = readCookie('XSRF-TOKEN')
   return token ? { 'X-XSRF-TOKEN': token } : {}
 }
@@ -45,7 +69,7 @@ const POST_LOGIN_KEY = 'nitrowater:post-login'
  * e.g. logging in from the code-runner after an earlier visit to {@code /admin} would land on the
  * (unauthorized) admin console instead of coming back to the tool.</p>
  *
- * @param returnTo in-app path to navigate to after login (e.g. {@code /playground}); defaults to
+ * @param returnTo in-app path to navigate to after login (e.g. {@code /tools/code-runner}); defaults to
  *                 the current in-app location
  */
 export function login(returnTo?: string): void {
@@ -84,19 +108,117 @@ export function logout(): void {
   form.submit()
 }
 
-/** Asks the BFF who the current user is. Never carries a token. */
-export async function fetchSession(): Promise<BffSession> {
-  const res = await fetch('/bff/me', {
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json' },
-  })
-  if (!res.ok) return { authenticated: false }
-  return (await res.json()) as BffSession
+/**
+ * Asks the BFF who the current user is. Never carries a token.
+ *
+ * <p>A failed probe is not the same as "signed out": a 5xx or a network error means the auth
+ * service is unreachable, and reporting that as anonymous would silently log the user out of the
+ * UI while their session may still be valid.</p>
+ */
+export async function fetchSession(): Promise<SessionProbe> {
+  try {
+    const res = await fetch('/bff/me', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    })
+    if (res.ok) {
+      const body = (await res.json()) as BffSession & { expired?: boolean }
+      return body.authenticated
+        ? { state: 'authenticated', session: body }
+        : { state: 'anonymous', session: null, expired: body.expired === true }
+    }
+    if (res.status >= 500) {
+      return { state: 'unavailable', session: null, reason: `HTTP ${res.status}` }
+    }
+    return { state: 'anonymous', session: null }
+  } catch (error) {
+    return { state: 'unavailable', session: null, reason: error instanceof Error ? error.message : '网络错误' }
+  }
+}
+
+/**
+ * Starts a fresh authorization with `prompt=login`, so the user can sign in as a second account
+ * without disturbing the accounts already held by this session.
+ */
+export function addAccount(): void {
+  // The BFF lands on `/` after the new login; resume the page the user was on.
+  sessionStorage.setItem(POST_LOGIN_KEY, window.location.pathname + window.location.search)
+  window.location.assign('/bff/accounts/add')
+}
+
+/**
+ * Switches to an account already present in the server-side pool.
+ *
+ * The BFF rebuilds the security context in place and rotates the session id; a full reload then
+ * discards any in-memory state (AI chat transcript, admin filters) that belonged to the previous
+ * account.
+ */
+export async function activateAccount(uid: string): Promise<void> {
+  const res = await apiFetch(`/bff/accounts/${encodeURIComponent(uid)}/activate`, { method: 'POST' })
+  if (!res.ok) throw new Error(`activate account failed: ${res.status}`)
+  window.location.reload()
+}
+
+export interface AccountRemoval {
+  accounts: BffAccount[]
+  activeUid: string | null
+  needLogout: boolean
+}
+
+/**
+ * Removes one account and revokes its refresh token.
+ *
+ * When the last account is removed the BFF keeps the security context so a top-level logout can
+ * still perform RP-Initiated Logout; this helper does that automatically.
+ */
+export async function removeAccount(uid: string): Promise<AccountRemoval> {
+  const res = await apiFetch(`/bff/accounts/${encodeURIComponent(uid)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`remove account failed: ${res.status}`)
+  const result = (await res.json()) as AccountRemoval
+  if (result.needLogout) {
+    logout()
+    return result
+  }
+  window.location.reload()
+  return result
+}
+
+/**
+ * Global "session is gone" signal.
+ *
+ * <p>Any 401 from a protected endpoint means the BFF no longer has credentials — the usual causes
+ * are an expired session, a Redis restart, or a new deployment invalidating the epoch. Listeners
+ * (see {@code useAuth}) flip the UI into its expired state so the user is told once, instead of
+ * seeing unrelated errors on each page.</p>
+ */
+type AuthExpiredListener = () => void
+const authExpiredListeners = new Set<AuthExpiredListener>()
+let lastExpiredAt = 0
+const EXPIRED_DEBOUNCE_MS = 3000
+
+/**
+ * @param listener callback invoked when a session loss is detected
+ * @return unsubscribe function
+ */
+export function onAuthExpired(listener: AuthExpiredListener): () => void {
+  authExpiredListeners.add(listener)
+  return () => authExpiredListeners.delete(listener)
+}
+
+/** Notifies listeners once per burst (parallel requests commonly fail together). */
+export function notifyAuthExpired(): void {
+  const now = Date.now()
+  if (now - lastExpiredAt < EXPIRED_DEBOUNCE_MS) return
+  lastExpiredAt = now
+  for (const listener of authExpiredListeners) listener()
 }
 
 /**
  * fetch() against the BFF (same origin) that attaches the CSRF header on mutating requests.
  * Use this for business API calls (`/api/**`), which the BFF proxies to the resource server.
+ *
+ * <p>A 401 on a protected endpoint is reported to {@link onAuthExpired} subscribers. Anonymous
+ * endpoints are excluded: the public sandbox runner legitimately answers without a session.</p>
  */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase()
@@ -106,5 +228,7 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
       headers.set(key, value)
     }
   }
-  return fetch(input, { ...init, headers, credentials: 'same-origin' })
+  const response = await fetch(input, { ...init, headers, credentials: 'same-origin' })
+  if (response.status === 401 && !input.startsWith('/api/public/')) notifyAuthExpired()
+  return response
 }

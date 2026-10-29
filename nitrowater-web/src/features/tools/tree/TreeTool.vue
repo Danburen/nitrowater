@@ -9,7 +9,10 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EChartsOption, EChartsType } from 'echarts'
 import { toast } from '../../../shared/ui/toast'
 import { useTheme } from '../../../shared/theme/useTheme'
+import FieldShell from '../../../shared/ui/FieldShell.vue'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import TextArea from '../../../shared/ui/TextArea.vue'
+import TextField from '../../../shared/ui/TextField.vue'
 import { countNodes, parseTreeJson } from '../lib/tree/buildTree'
 import type { TreeNode } from '../lib/tree/buildTree'
 import { chartPalette } from '../lib/tree/chartPalette'
@@ -423,24 +426,28 @@ onBeforeUnmount(() => {
           class="grid gap-2 rounded-[10px] border border-line bg-soft p-3"
         >
           <div class="grid grid-cols-2 gap-2">
-            <label class="flex flex-col gap-1 text-[12px] text-dim">
-              标签字段
-              <input
+            <FieldShell
+              label="标签字段"
+              html-for="tree-label-field"
+            >
+              <TextField
+                id="tree-label-field"
                 v-model="labelField"
-                class="input"
                 placeholder="name"
                 @change="onConfigChange"
-              >
-            </label>
-            <label class="flex flex-col gap-1 text-[12px] text-dim">
-              子级字段
-              <input
+              />
+            </FieldShell>
+            <FieldShell
+              label="子级字段"
+              html-for="tree-children-field"
+            >
+              <TextField
+                id="tree-children-field"
                 v-model="childrenField"
-                class="input"
                 placeholder="children"
                 @change="onConfigChange"
-              >
-            </label>
+              />
+            </FieldShell>
           </div>
           <div class="grid grid-cols-2 gap-2">
             <label class="flex flex-col gap-1 text-[12px] text-dim">
@@ -482,10 +489,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <textarea
+        <TextArea
           v-model="jsonInput"
-          class="textarea min-h-[300px] flex-1"
+          class="flex-1"
+          min-height="300px"
           placeholder="在此粘贴 JSON 数据..."
+          aria-label="JSON 数据"
         />
 
         <p

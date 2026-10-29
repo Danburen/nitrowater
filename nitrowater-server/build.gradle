@@ -38,6 +38,18 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     runtimeOnly 'com.mysql:mysql-connector-j'
 
+    // --- Spring AI (RAG over the VeloChatX docs) ---
+    // Chat/embedding speak the OpenAI-compatible protocol, so any vendor (DeepSeek, DashScope,
+    // SiliconFlow, OpenAI, ...) works by pointing the base URL at it. Qdrant is the third-party
+    // vector index; the Markdown reader and token splitter also come from Spring AI.
+    implementation platform('org.springframework.ai:spring-ai-bom:2.0.2')
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    implementation 'org.springframework.ai:spring-ai-starter-vector-store-qdrant'
+    implementation 'org.springframework.ai:spring-ai-markdown-document-reader'
+    // --- Web search result extraction: strip HTML down to readable text before it reaches the
+    // agent. Small, no transitive surprises. ---
+    implementation 'org.jsoup:jsoup:1.18.3'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
@@ -47,6 +59,12 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// Same working directory as the jar launchers (repo root) so the relative AI docs dir
+// (deploy/plugin-docs/...) resolves consistently under bootRun and `java -jar`.
+tasks.named('bootRun') {
+    workingDir = rootProject.projectDir
 }
 
 // 固定 bootJar 名称，便于根多目标 Dockerfile 提取。

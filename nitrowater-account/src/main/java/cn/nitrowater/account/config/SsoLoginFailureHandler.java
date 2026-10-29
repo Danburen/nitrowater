@@ -51,7 +51,8 @@ public class SsoLoginFailureHandler extends SimpleUrlAuthenticationFailureHandle
      * Classifies the authentication failure for the login page.
      *
      * @param exception failure raised by Spring Security
-     * @return {@code captcha}, {@code credentials}, {@code locked}, {@code daily} or {@code server}
+     * @return {@code captcha}, {@code credentials}, {@code disabled}, {@code locked},
+     *         {@code daily} or {@code server}
      */
     private static String errorCode(AuthenticationException exception) {
         if (exception instanceof LockedException locked) {
@@ -59,8 +60,15 @@ public class SsoLoginFailureHandler extends SimpleUrlAuthenticationFailureHandle
                     ? "daily" : "locked";
         }
         if (exception instanceof BadCredentialsException bad) {
-            return AuthCode.CAPTCHA_INVALID.getCode().equals(bad.getMessage())
-                    ? "captcha" : "credentials";
+            if (AuthCode.CAPTCHA_INVALID.getCode().equals(bad.getMessage())) {
+                return "captcha";
+            }
+            // Only reached after the password matched, so this reveals nothing a credential
+            // guesser did not already prove. It gives a disabled user an actionable message.
+            if (AuthCode.ACCOUNT_DISABLED.getCode().equals(bad.getMessage())) {
+                return "disabled";
+            }
+            return "credentials";
         }
         return "server";
     }

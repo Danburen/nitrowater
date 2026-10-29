@@ -4,7 +4,7 @@
 #   - backend listeners  : 8090 account, 8080 bff, 8081 server, 8093 resource, 6379 redis
 #   - web listener       : 5173 Vite dev server - ONLY with -WithWeb (you start the frontend
 #                          yourself, so by default it is left alone)
-#   - docker containers  : nitrowater-piston, nitrowater-seaweedfs, nitrowater-docs
+#   - docker containers  : nitrowater-piston, nitrowater-seaweedfs, nitrowater-docs, nitrowater-qdrant
 #   - tracked PIDs       : the exact PIDs recorded by the start scripts in bin\.run\*.pid
 #   - MySQL              : left running by default (system service); -StopMysql to stop it
 #
@@ -60,7 +60,7 @@ Write-Step 'Stopping docker containers'
 try {
     & docker info *> $null
     if ($LASTEXITCODE -eq 0) {
-        foreach ($c in @('nitrowater-piston', 'nitrowater-seaweedfs', 'nitrowater-docs')) {
+        foreach ($c in @('nitrowater-piston', 'nitrowater-seaweedfs', 'nitrowater-docs', 'nitrowater-qdrant')) {
             $running = @(& docker ps --format '{{.Names}}')
             if ($running -contains $c) { & docker stop $c | Out-Null; Write-Ok "stopped container $c" }
             else {
@@ -102,7 +102,7 @@ else { Write-Host '  [ - ]  no tracked processes' -ForegroundColor DarkGray }
 # lost. Match on MainWindowTitle (exact, case-insensitive equality) instead of `taskkill /FI
 # WINDOWTITLE eq`, which reports success even when nothing matched - we need real counts.
 $titlesClosed = 0
-foreach ($t in @('NitroWater - docs', 'NitroWater - Redis', 'NitroWater - SeaweedFS', 'NitroWater - Piston')) {
+foreach ($t in @('NitroWater - docs', 'NitroWater - Redis', 'NitroWater - SeaweedFS', 'NitroWater - Piston', 'NitroWater - Qdrant')) {
     $procs = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq $t })
     foreach ($p in $procs) {
         & taskkill /PID $p.Id /T /F *> $null

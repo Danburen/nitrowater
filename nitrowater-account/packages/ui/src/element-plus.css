@@ -1,9 +1,9 @@
 /*
- * Element Plus theme bridge — admin-ui only. Point EP's CSS variables at the shared tokens so
- * EP components (table, dialog, pagination, button, checkbox, input, message) inherit the SAME
- * theme, flipped by :root[data-theme=...] with no separate `html.dark` track. `html:root`
- * (0,1,1) beats EP's own `:root` (0,1,0) regardless of injection order. Derived tints use
- * color-mix().
+ * Element Plus theme bridge — shared by admin-ui and auth-ui. Point EP's CSS variables at the
+ * shared tokens so EP components (table, dialog, pagination, button, checkbox, input, message)
+ * inherit the SAME theme, flipped by :root[data-theme=...] with no separate `html.dark` track.
+ * `html:root` (0,1,1) beats EP's own `:root` (0,1,0) regardless of injection order. Derived
+ * tints use color-mix().
  */
 html:root {
   --el-color-primary: var(--color-accent);

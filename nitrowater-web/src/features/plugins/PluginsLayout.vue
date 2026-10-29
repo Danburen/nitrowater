@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Plugin center shell — the shared SectionLayout (like 工具箱 / 演练场) configured for 插件中心.
+ * Plugin center shell — the shared SectionLayout (like 工具箱) configured for 插件中心.
  *
  * The left sidebar lists the plugins (with a search box supplied via the `sidebar-extra` slot);
  * the selected plugin's single-page 说明 renders in the routed page on the right. The list is read
@@ -13,7 +13,7 @@ import { fetchPlugins, type PluginSummary } from './catalog'
 const plugins = ref<PluginSummary[]>([])
 const query = ref('')
 
-/** Overview entry above the divider (mirrors the tools/playground layout). */
+/** Overview entry above the divider (mirrors the tools layout). */
 const overview = {
   label: '插件中心总览',
   to: '/plugins',

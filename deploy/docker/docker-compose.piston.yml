@@ -1,12 +1,15 @@
 # ============================================================
-# NitroWater 执行基础设施：Piston（判题/运行沙箱）
-# 按需启用（判题阶段）。硬约束：--privileged、Linux 内核、cgroup v2（须禁用 v1）、/piston 卷。
+# NitroWater 执行基础设施：Piston（代码运行沙箱）
+# 按需启用（代码运行器）。硬约束：--privileged、Linux 内核、cgroup v2（须禁用 v1）、/piston 卷。
 # 端口不映射宿主：仅内网 nitrowater-net 可达（server 经 http://piston:2000 调用）。
 # 语言预装：自建镜像 `FROM ghcr.io/engineer-man/piston` + `cli/index.js ppman install java c c++`，
 #           或首启后 `docker exec ... cli/index.js ppman install ...`。
 #
 # 用法：
 #   docker compose -f deploy/docker/docker-compose.piston.yml up -d
+#   （仅适用于 server 也在容器内的部署：此文件不映射宿主端口，容器内用 http://piston:2000）
+#   本机跑 server（java -jar / bootRun）请改用 `.\bin\start-infra.ps1`：它会 -p 2000:2000，
+#   与 application.yml 的默认 PISTON_BASE_URL=http://localhost:2000 对齐。
 # ============================================================
 name: nitrowater-piston
 

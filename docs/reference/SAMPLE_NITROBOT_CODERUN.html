@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NitroBot · Agent 增强版</title>
+  <!-- 引入 Prism.js 核心及语言包 -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+
+  <style>
+      /* ===== 设计令牌 ===== */
+      :root {
+          --bg: #f7f7f8;
+          --bg-sidebar: #f0f0f2;
+          --bg-ai: #ffffff;
+          --bg-user: #e8f0fe;
+          --bg-input: #ffffff;
+          --bg-card: #ffffff;
+          --bg-card-hover: #f5f5f7;
+          --text-primary: #1a1a1e;
+          --text-secondary: #6b6b76;
+          --text-tertiary: #9a9aa5;
+          --border: #e4e4e9;
+          --border-light: #ececf1;
+          --accent: #4f6ef7;
+          --accent-hover: #3d5ae0;
+          --accent-soft: #eef1fe;
+          --danger: #e5484d;
+          --success: #10b981;
+          --radius-sm: 8px;
+          --radius-md: 12px;
+          --radius-lg: 16px;
+          --radius-xl: 20px;
+          --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+          --shadow-md: 0 4px 16px rgba(0,0,0,0.06);
+          --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+          --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+          --sidebar-w: 260px;
+          --input-max: 760px;
+          --content-max: 720px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+          :root {
+              --bg: #1a1a1e; --bg-sidebar: #141416; --bg-ai: #242428; --bg-user: #1e2a4a;
+              --bg-input: #242428; --bg-card: #242428; --bg-card-hover: #2e2e34;
+              --text-primary: #e8e8ec; --text-secondary: #a0a0ab; --text-tertiary: #6b6b76;
+              --border: #333338; --border-light: #2a2a30; --accent: #6b85ff; --accent-hover: #8a9dff; --accent-soft: #1e2440;
+              --success: #34d399; --shadow-sm: 0 1px 3px rgba(0,0,0,0.2); --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
+          }
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; }
+      body { font-family: var(--font-sans); font-size: 15px; line-height: 1.6; color: var(--text-primary); background: var(--bg); display: flex; overflow: hidden; -webkit-font-smoothing: antialiased; }
+      button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+      textarea { font: inherit; resize: none; border: none; outline: none; background: transparent; color: inherit; }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      code { font-family: var(--font-mono); font-size: 0.9em; }
+
+      /* ===== 侧边栏 ===== */
+      .sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); height: 100%; background: var(--bg-sidebar); border-right: 1px solid var(--border-light); display: flex; flex-direction: column; transition: width 0.25s ease, min-width 0.25s ease, opacity 0.2s ease; overflow: hidden; }
+      .sidebar.collapsed { width: 0; min-width: 0; border-right: none; opacity: 0; }
+      .sidebar-header { padding: 14px; display: flex; align-items: center; gap: 8px; }
+      .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; flex: 1; min-width: 0; }
+      .brand-icon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #8a5cf6); display: grid; place-items: center; color: #fff; font-size: 14px; font-weight: 800; flex-shrink: 0; }
+      .sidebar-toggle { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--text-secondary); flex-shrink: 0; transition: background 0.15s; }
+      .sidebar-toggle:hover { background: var(--bg-card-hover); }
+      .sidebar-toggle svg { width: 18px; height: 18px; }
+      .new-chat-btn { margin: 0 14px 10px; padding: 9px 14px; border-radius: var(--radius-md); border: 1px dashed var(--border); display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 14px; font-weight: 500; transition: all 0.15s; white-space: nowrap; }
+      .new-chat-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+      .history-label { padding: 14px 18px 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); white-space: nowrap; }
+      .history-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+      .history-list::-webkit-scrollbar { width: 4px; }
+      .history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+      .history-item { padding: 9px 10px; border-radius: var(--radius-sm); font-size: 13.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 0.12s; cursor: pointer; margin-bottom: 1px; }
+      .history-item:hover { background: var(--bg-card-hover); }
+      .history-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+      .sidebar-footer { padding: 12px 14px; border-top: 1px solid var(--border-light); display: flex; align-items: center; gap: 8px; }
+      .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #f59e0b, #ef4444); display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+      .sidebar-footer .user-info { flex: 1; min-width: 0; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      /* ===== 主区域 ===== */
+      .main { flex: 1; display: flex; flex-direction: column; height: 100%; min-width: 0; position: relative; }
+      .topbar { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--border-light); background: var(--bg); flex-shrink: 0; }
+      .topbar .sidebar-toggle.open { width: 32px; height: 32px; border-radius: 8px; display: none; place-items: center; color: var(--text-secondary); }
+      .topbar .sidebar-toggle.open.visible { display: grid; }
+      .topbar .sidebar-toggle.open:hover { background: var(--bg-card-hover); }
+      .topbar-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .model-badge { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 100px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+      /* ===== 对话滚动区 ===== */
+      .chat-scroll { flex: 1; overflow-y: auto; scroll-behavior: smooth; position: relative; }
+      .chat-scroll::-webkit-scrollbar { width: 6px; }
+      .chat-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+      .chat-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+      .chat-inner { max-width: var(--content-max); margin: 0 auto; padding: 24px 20px 120px; }
+
+      /* ===== 空状态 ===== */
+      .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%; padding: 40px 20px; text-align: center; transition: opacity 0.3s; }
+      .empty-state.hidden { display: none; }
+      .empty-logo { width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, var(--accent), #8a5cf6); display: grid; place-items: center; color: #fff; font-size: 24px; font-weight: 800; margin-bottom: 20px; box-shadow: var(--shadow-md); }
+      .empty-title { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+      .empty-subtitle { font-size: 14.5px; color: var(--text-secondary); margin-bottom: 32px; max-width: 400px; }
+      .suggestion-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; width: 100%; max-width: 560px; }
+      .suggestion-card { text-align: left; padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--border-light); background: var(--bg-card); box-shadow: var(--shadow-sm); transition: all 0.15s ease; display: flex; flex-direction: column; gap: 4px; }
+      .suggestion-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+      .suggestion-card:active { transform: translateY(0); }
+      .suggestion-icon { font-size: 18px; line-height: 1; }
+      .suggestion-text { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+      .suggestion-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; }
+
+      /* ===== 消息 ===== */
+      .message { display: flex; gap: 12px; margin-bottom: 28px; animation: msgIn 0.3s ease both; }
+      @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      .message.user { flex-direction: row-reverse; }
+      .msg-avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+      .message.ai .msg-avatar { background: linear-gradient(135deg, var(--accent), #8a5cf6); color: #fff; }
+      .message.user .msg-avatar { background: linear-gradient(135deg, #f59e0b, #ef4444); color: #fff; }
+      .msg-body { flex: 1; min-width: 0; max-width: 100%; }
+      .message.user .msg-body { display: flex; flex-direction: column; align-items: flex-end; }
+      .msg-name { font-size: 12px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+      .message.user .msg-name { justify-content: flex-end; }
+
+      .bubble { display: inline-block; padding: 12px 16px; border-radius: var(--radius-lg); font-size: 14.5px; line-height: 1.65; max-width: 100%; word-wrap: break-word; overflow-wrap: break-word; }
+      .message.ai .bubble { background: var(--bg-ai); border: 1px solid var(--border-light); border-top-left-radius: 4px; box-shadow: var(--shadow-sm); }
+      .message.user .bubble { background: var(--bg-user); border-top-right-radius: 4px; }
+
+      /* ============================================================
+         Live Card：Agent 执行状态卡片
+         ============================================================ */
+      .live-card {
+          margin-bottom: 12px; padding: 10px 14px; background: var(--bg-card);
+          border: 1px solid var(--border-light); border-radius: var(--radius-md);
+          display: flex; align-items: center; gap: 10px; font-size: 13.5px;
+          color: var(--text-secondary); box-shadow: var(--shadow-sm);
+          animation: msgIn 0.3s ease both; transition: all 0.3s ease;
+      }
+      .live-card-icon { display: grid; place-items: center; width: 20px; height: 20px; color: var(--accent); flex-shrink: 0; }
+      .live-card-icon.spin svg { animation: spin 1.5s linear infinite; }
+      @keyframes spin { 100% { transform: rotate(360deg); } }
+      .live-card-text { flex: 1; }
+      .live-card-text strong { color: var(--text-primary); font-weight: 600; }
+
+      .live-card.done { padding: 6px 12px; background: transparent; border-color: transparent; box-shadow: none; font-size: 12.5px; color: var(--text-tertiary); margin-bottom: 8px; }
+      .live-card.done .live-card-icon { color: var(--success); }
+
+      /* 富文本基础 */
+      .bubble p { margin: 0 0 10px; }
+      .bubble p:last-child { margin-bottom: 0; }
+      .bubble ul, .bubble ol { margin: 6px 0 10px; padding-left: 22px; }
+      .bubble li { margin-bottom: 3px; }
+      .bubble h3 { font-size: 16px; font-weight: 700; margin: 14px 0 8px; }
+      .bubble h3:first-child { margin-top: 0; }
+      .bubble strong { font-weight: 700; }
+      .bubble code.inline { background: var(--accent-soft); color: var(--accent); padding: 1px 5px; border-radius: 5px; font-size: 0.88em; }
+
+      /* ============================================================
+         代码块（无外层边框，融入气泡）
+         ============================================================ */
+      .code-block { margin: 12px 0; border-radius: var(--radius-md); overflow: hidden; background: #1e1e24; }
+      .code-block .code-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #2a2a32; font-size: 12px; color: #a0a0ab; font-family: var(--font-mono); }
+      .code-block .lang-label { display: flex; align-items: center; gap: 6px; }
+      .code-block .code-actions { display: flex; gap: 6px; }
+      .code-block .code-btn { font-size: 11px; color: #a0a0ab; padding: 3px 10px; border-radius: 6px; background: #3a3a44; transition: all 0.12s; display: flex; align-items: center; gap: 4px; }
+      .code-block .code-btn:hover { background: #4a4a54; color: #e8e8ec; }
+      .code-block .code-btn.run-btn { background: var(--accent); color: #fff; }
+      .code-block .code-btn.run-btn:hover { background: var(--accent-hover); }
+      .code-block pre[class*="language-"] { margin: 0 !important; padding: 12px 14px !important; background: transparent !important; font-size: 13px !important; line-height: 1.55 !important; }
+      .code-block code[class*="language-"] { font-family: var(--font-mono) !important; text-shadow: none !important; }
+
+      .code-terminal { display: none; background: #111; padding: 10px 14px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: #a0a0ab; }
+      .code-terminal.active { display: block; }
+      .code-terminal .term-header { display: flex; justify-content: space-between; margin-bottom: 6px; color: #6b6b76; font-size: 11px; }
+      .code-terminal .term-output { white-space: pre-wrap; word-break: break-all; }
+      .code-terminal .term-success { color: var(--success); }
+      .code-terminal .term-error { color: var(--danger); }
+
+      /* ============================================================
+         极简 Inline 引用样式（替代卡片）
+         ============================================================ */
+      .inline-source {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 1px 6px;
+          margin: 0 2px;
+          background: var(--accent-soft);
+          color: var(--accent);
+          border-radius: 4px;
+          font-size: 12.5px;
+          font-weight: 500;
+          text-decoration: none;
+          vertical-align: middle;
+          transition: all 0.15s ease;
+      }
+      .inline-source:hover {
+          background: var(--accent);
+          color: #fff;
+          text-decoration: none;
+      }
+      .inline-source svg {
+          width: 12px;
+          height: 12px;
+      }
+
+      /* 流式光标 & 操作栏 */
+      .cursor-blink { display: inline-block; width: 7px; height: 16px; background: var(--accent); border-radius: 2px; margin-left: 2px; vertical-align: text-bottom; animation: blink 1s step-end infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+      .msg-actions { display: flex; align-items: center; gap: 2px; margin-top: 6px; opacity: 0; transition: opacity 0.15s; }
+      .message:hover .msg-actions, .msg-actions:focus-within { opacity: 1; }
+      .action-btn { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--text-tertiary); transition: all 0.12s; }
+      .action-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+      .action-btn:active { transform: scale(0.92); }
+      .action-btn svg { width: 15px; height: 15px; }
+      .action-btn.active { color: var(--accent); }
+      .stopped-hint { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; display: flex; align-items: center; gap: 4px; }
+
+      /* ===== 输入区 ===== */
+      .composer-wrap { position: absolute; bottom: 0; left: 0; right: 0; padding: 0 20px 18px; background: linear-gradient(to top, var(--bg) 60%, transparent); pointer-events: none; z-index: 10; }
+      .composer { max-width: var(--input-max); margin: 0 auto; pointer-events: auto; }
+      .composer-inner { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow-md); transition: border-color 0.15s, box-shadow 0.15s; overflow: hidden; }
+      .composer-inner:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-md); }
+      .composer-top { display: flex; align-items: flex-end; padding: 10px 12px 6px 14px; gap: 8px; }
+      .composer textarea { flex: 1; min-height: 24px; max-height: 180px; padding: 2px 0; font-size: 14.5px; line-height: 1.55; color: var(--text-primary); }
+      .composer textarea::placeholder { color: var(--text-tertiary); }
+      .composer-toolbar { display: flex; align-items: center; gap: 4px; padding: 0 12px 10px 14px; }
+      .tool-btn { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: var(--text-secondary); transition: all 0.12s; }
+      .tool-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+      .tool-btn svg { width: 18px; height: 18px; }
+      .toolbar-spacer { flex: 1; }
+      .send-btn { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent); color: #fff; transition: all 0.15s; flex-shrink: 0; }
+      .send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+      .send-btn:active:not(:disabled) { transform: scale(0.94); }
+      .send-btn:disabled { background: var(--border); color: var(--text-tertiary); cursor: not-allowed; }
+      .send-btn svg { width: 17px; height: 17px; }
+      .send-btn.stop { background: var(--danger); animation: pulseStop 1.6s ease infinite; }
+      @keyframes pulseStop { 0%, 100% { box-shadow: 0 0 0 0 rgba(229,72,77,0.35); } 50% { box-shadow: 0 0 0 6px rgba(229,72,77,0); } }
+      .composer-hint { text-align: center; font-size: 11.5px; color: var(--text-tertiary); margin-top: 8px; }
+
+      /* 响应式 */
+      @media (max-width: 860px) {
+          .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; box-shadow: var(--shadow-md); }
+          .sidebar.collapsed { box-shadow: none; }
+          .topbar .sidebar-toggle.open { display: grid; }
+          .topbar-title { text-align: left; }
+          .chat-inner { padding: 20px 14px 120px; }
+          .suggestion-grid { grid-template-columns: 1fr; }
+          .composer-wrap { padding: 0 12px 14px; }
+          .empty-title { font-size: 21px; }
+      }
+  </style>
+</head>
+<body>
+
+<!-- 侧边栏 -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="brand">
+      <div class="brand-icon">N</div>
+      <span class="brand-name">NitroBot</span>
+    </div>
+    <button class="sidebar-toggle" id="sidebarToggle" title="收起侧边栏">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+    </button>
+  </div>
+
+  <button class="new-chat-btn" id="newChatBtn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    新建对话
+  </button>
+
+  <div class="history-label">最近对话</div>
+  <div class="history-list" id="historyList">
+    <div class="history-item active">测试代码沙盒与预览</div>
+    <div class="history-item">解释量子纠缠的概念</div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="avatar">U</div>
+    <span class="user-info">用户 9281</span>
+  </div>
+</aside>
+
+<!-- 主区域 -->
+<div class="main">
+  <header class="topbar">
+    <button class="sidebar-toggle open" id="sidebarOpen" title="展开侧边栏">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="topbar-title" id="topbarTitle">新对话</div>
+    <span class="model-badge">Agent 增强版</span>
+  </header>
+
+  <div class="chat-scroll" id="chatScroll">
+    <!-- 空状态 -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-logo">N</div>
+      <h1 class="empty-title">你好，我是 NitroBot</h1>
+      <p class="empty-subtitle">具备代码执行、文档检索与状态展示能力：</p>
+      <div class="suggestion-grid" id="suggestionGrid">
+        <button class="suggestion-card" data-prompt="写一段 Python 代码计算斐波那契数列并运行，同时查一下相关文档">
+          <span class="suggestion-icon">💻</span>
+          <span class="suggestion-text">写代码并查阅文档</span>
+          <span class="suggestion-desc">包含 Live Card 与 Inline 引用</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-inner" id="chatInner"></div>
+  </div>
+
+  <!-- 输入区 -->
+  <div class="composer-wrap">
+    <div class="composer">
+      <div class="composer-inner">
+        <div class="composer-top">
+          <textarea id="input" rows="1" placeholder="输入问题或任务…" aria-label="消息输入框"></textarea>
+        </div>
+        <div class="composer-toolbar">
+          <button class="tool-btn" title="上传附件">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <div class="toolbar-spacer"></div>
+          <button class="send-btn" id="sendBtn" disabled title="发送">
+            <svg id="sendIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            <svg id="stopIcon" style="display:none" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="composer-hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</div>
+    </div>
+  </div>
+</div>
+
+<script>
+    (() => {
+        'use strict';
+
+        const sidebar       = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebarOpen   = document.getElementById('sidebarOpen');
+        const newChatBtn    = document.getElementById('newChatBtn');
+        const historyList   = document.getElementById('historyList');
+        const chatScroll    = document.getElementById('chatScroll');
+        const chatInner     = document.getElementById('chatInner');
+        const emptyState    = document.getElementById('emptyState');
+        const suggestionGrid= document.getElementById('suggestionGrid');
+        const input         = document.getElementById('input');
+        const sendBtn       = document.getElementById('sendBtn');
+        const sendIcon      = document.getElementById('sendIcon');
+        const stopIcon      = document.getElementById('stopIcon');
+        const topbarTitle   = document.getElementById('topbarTitle');
+
+        let isGenerating = false;
+        let abortController = null;
+        let messageCount = 0;
+
+        sidebarToggle.addEventListener('click', () => { sidebar.classList.add('collapsed'); sidebarOpen.classList.add('visible'); });
+        sidebarOpen.addEventListener('click', () => { sidebar.classList.remove('collapsed'); sidebarOpen.classList.remove('visible'); });
+
+        // 修复：新建对话清理逻辑
+        newChatBtn.addEventListener('click', resetChat);
+        historyList.addEventListener('click', (e) => {
+            const item = e.target.closest('.history-item');
+            if (!item) return;
+            historyList.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+            topbarTitle.textContent = item.textContent.trim();
+        });
+
+        function resetChat() {
+            if (isGenerating) stopGeneration();
+            chatInner.innerHTML = '';
+            emptyState.classList.remove('hidden'); // 修复：正确取消 hidden 类
+            messageCount = 0;
+            topbarTitle.textContent = '新对话';
+            historyList.querySelectorAll('.history-item').forEach(el => el.classList.remove('active'));
+            input.value = '';
+            autoResize();
+            updateSendState();
+            input.focus();
+        }
+
+        function autoResize() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 180) + 'px'; }
+        input.addEventListener('input', () => { autoResize(); updateSendState(); });
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendBtn.disabled && !isGenerating) sendMessage(); } });
+        function updateSendState() { sendBtn.disabled = (input.value.trim().length === 0) && !isGenerating; }
+        sendBtn.addEventListener('click', () => { if (isGenerating) stopGeneration(); else if (input.value.trim()) sendMessage(); });
+        suggestionGrid.addEventListener('click', (e) => {
+            const card = e.target.closest('.suggestion-card');
+            if (!card) return;
+            input.value = card.dataset.prompt;
+            input.focus(); autoResize(); updateSendState();
+        });
+
+        function scrollToBottom(force = false) {
+            const nearBottom = chatScroll.scrollHeight - chatScroll.scrollTop - chatScroll.clientHeight < 160;
+            if (force || nearBottom) chatScroll.scrollTop = chatScroll.scrollHeight;
+        }
+
+        function addUserMessage(text) {
+            emptyState.classList.add('hidden');
+            messageCount++;
+            const msg = document.createElement('div');
+            msg.className = 'message user';
+            msg.innerHTML = `
+      <div class="msg-avatar">U</div>
+      <div class="msg-body">
+        <div class="msg-name">你</div>
+        <div class="bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+      </div>`;
+            chatInner.appendChild(msg);
+            if (messageCount === 1) {
+                topbarTitle.textContent = text.length > 24 ? text.slice(0, 24) + '…' : text;
+                const first = document.createElement('div');
+                first.className = 'history-item active';
+                first.textContent = text.length > 24 ? text.slice(0, 24) + '…' : text;
+                historyList.prepend(first);
+            }
+            scrollToBottom(true);
+        }
+
+        function createAIMessage() {
+            const msg = document.createElement('div');
+            msg.className = 'message ai';
+            msg.innerHTML = `
+      <div class="msg-avatar">N</div>
+      <div class="msg-body">
+        <div class="msg-name">NitroBot <span style="font-weight:400;color:var(--text-tertiary)">· Agent</span></div>
+        <div class="live-card" id="liveCard" style="display:none;">
+          <div class="live-card-icon spin"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>
+          <div class="live-card-text" id="liveText">思考中...</div>
+        </div>
+        <div class="bubble" id="activeBubble" style="display:none;"></div>
+        <div class="msg-actions" id="activeActions" style="opacity:0">
+          <button class="action-btn" data-action="copy" title="复制">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>`;
+            chatInner.appendChild(msg);
+            scrollToBottom(true);
+            return msg;
+        }
+
+        chatInner.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.action-btn');
+            if (!btn) return;
+            if (btn.dataset.action === 'copy') {
+                const bubble = btn.closest('.msg-body').querySelector('.bubble');
+                try {
+                    await navigator.clipboard.writeText(bubble.innerText);
+                    const original = btn.innerHTML;
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+                    setTimeout(() => btn.innerHTML = original, 1200);
+                } catch (_) {}
+            }
+        });
+
+        function sendMessage() {
+            const text = input.value.trim();
+            if (!text || isGenerating) return;
+            addUserMessage(text);
+            input.value = ''; autoResize(); updateSendState();
+            startGeneration(text);
+        }
+
+        function updateLiveCard(msgEl, text) {
+            const card = msgEl.querySelector('#liveCard');
+            const textEl = msgEl.querySelector('#liveText');
+            if (!card || !textEl) return;
+            card.style.display = 'flex';
+            card.classList.remove('done');
+            card.querySelector('.live-card-icon').classList.add('spin');
+            textEl.innerHTML = text;
+            scrollToBottom();
+        }
+
+        function completeLiveCard(msgEl, text) {
+            const card = msgEl.querySelector('#liveCard');
+            const textEl = msgEl.querySelector('#liveText');
+            if (!card || !textEl) return;
+            card.classList.add('done');
+            card.querySelector('.live-card-icon').classList.remove('spin');
+            card.querySelector('.live-card-icon').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+            textEl.innerHTML = text;
+        }
+
+        async function startGeneration(userText) {
+            isGenerating = true;
+            abortController = new AbortController();
+            setGeneratingUI(true);
+
+            const aiMsg = createAIMessage();
+            const bubble = aiMsg.querySelector('.bubble');
+            const actions = aiMsg.querySelector('.msg-actions');
+
+            try {
+                updateLiveCard(aiMsg, '正在分析意图并规划任务…');
+                await new Promise(r => setTimeout(r, 600));
+
+                updateLiveCard(aiMsg, '正在<strong>搜索网页</strong>与<strong>查阅文档</strong>…');
+                await new Promise(r => setTimeout(r, 1000));
+
+                updateLiveCard(aiMsg, '正在<strong>编写代码</strong>并执行沙盒验证…');
+                await new Promise(r => setTimeout(r, 800));
+
+                completeLiveCard(aiMsg, '执行完成，耗时 2.4s');
+                bubble.style.display = 'inline-block';
+
+                const reply = pickReply(userText);
+                await streamText(bubble, reply, abortController.signal);
+
+                bubble.querySelector('.cursor-blink')?.remove();
+                actions.style.opacity = '';
+
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    completeLiveCard(aiMsg, '已停止');
+                    bubble.style.display = 'inline-block';
+                    bubble.insertAdjacentHTML('beforeend', '<div class="stopped-hint">已停止生成</div>');
+                    actions.style.opacity = '';
+                } else {
+                    bubble.style.display = 'inline-block';
+                    bubble.innerHTML = `<span style="color:var(--danger)">连接中断，请重试。</span>`;
+                }
+            } finally {
+                isGenerating = false;
+                abortController = null;
+                setGeneratingUI(false);
+                scrollToBottom();
+            }
+        }
+
+        function stopGeneration() { if (abortController) abortController.abort(); }
+
+        function setGeneratingUI(gen) {
+            isGenerating = gen;
+            sendBtn.classList.toggle('stop', gen);
+            sendIcon.style.display = gen ? 'none' : '';
+            stopIcon.style.display = gen ? '' : 'none';
+            sendBtn.disabled = gen ? false : !input.value.trim();
+        }
+
+        function streamText(container, text, signal) {
+            return new Promise((resolve, reject) => {
+                if (signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+                let i = 0;
+                let buffer = '';
+                const chunkSize = 3;
+                const cursor = document.createElement('span');
+                cursor.className = 'cursor-blink';
+                container.appendChild(cursor);
+
+                function step() {
+                    if (signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+                    if (i >= text.length) {
+                        container.innerHTML = renderRich(text);
+                        return resolve();
+                    }
+                    buffer += text.slice(i, i + chunkSize);
+                    i += chunkSize;
+                    container.innerHTML = renderRich(buffer);
+                    container.appendChild(cursor);
+                    scrollToBottom();
+                    const delay = /[。！？，\n]/.test(buffer[buffer.length - 1]) ? 40 : 10;
+                    setTimeout(step, delay);
+                }
+                step();
+            });
+        }
+
+        // === 核心渲染逻辑 ===
+        function renderRich(raw) {
+            const codeBlocks = [];
+            let text = raw.replace(/```(\w*)\n?([\s\S]*?)(?:```|$)/g, (_, lang, code) => {
+                const idx = codeBlocks.length;
+                codeBlocks.push({ lang: lang || 'text', code: code.replace(/\n$/, '') });
+                return `\u0000CODE${idx}\u0000`;
+            });
+
+            text = escapeHtml(text);
+
+            // 2. 提取 Inline 引用（标记格式修改为 [SOURCE: https://..., 文本]）
+            const sources = [];
+            text = text.replace(/\[SOURCE:\s*(https?:\/\/[^\s,]+),\s*([^\]]+)\]/g, (_, url, title) => {
+                const idx = sources.length;
+                sources.push({ url: url.trim(), title: title.trim() });
+                return `\u0000SOURCE${idx}\u0000`;
+            });
+
+            text = text.replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>');
+            text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+            text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            text = text.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+            text = text.replace(/(<li>[\s\S]*?<\/li>)/g, m => `<ul>${m}</ul>`).replace(/<\/ul>\s*<ul>/g, '');
+            text = text.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+            text = text.replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
+            text = `<p>${text}</p>`.replace(/<p>\s*<\/p>/g, '');
+
+            // 还原代码块 DOM
+            text = text.replace(/\u0000CODE(\d+)\u0000/g, (_, idx) => {
+                const { lang, code } = codeBlocks[+idx];
+                const codeId = 'code-' + Math.random().toString(36).substr(2, 9);
+                let highlightedCode = escapeHtml(code);
+                if (window.Prism && Prism.languages[lang]) {
+                    highlightedCode = Prism.highlight(code, Prism.languages[lang], lang);
+                }
+                return `
+      <div class="code-block" id="${codeId}">
+        <div class="code-header">
+          <div class="lang-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>${escapeHtml(lang)}</div>
+          <div class="code-actions">
+            <button class="code-btn copy-btn" onclick="copyCode(this)">复制</button>
+            <button class="code-btn run-btn" onclick="runCode(this, '${codeId}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>运行</button>
+          </div>
+        </div>
+        <pre class="language-${lang}"><code class="language-${lang}">${highlightedCode}</code></pre>
+        <div class="code-terminal">
+          <div class="term-header"><span>终端输出 (沙盒)</span><span class="term-status">运行中...</span></div>
+          <div class="term-output"></div>
+        </div>
+      </div>`;
+            });
+
+            // 还原极简 Inline 引用 DOM
+            text = text.replace(/\u0000SOURCE(\d+)\u0000/g, (_, idx) => {
+                const { url, title } = sources[+idx];
+                return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="inline-source"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${escapeHtml(title)}</a>`;
+            });
+
+            return text;
+        }
+
+        window.copyCode = function(btn) {
+            const code = btn.closest('.code-block').querySelector('code').innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                const old = btn.textContent; btn.textContent = '已复制';
+                setTimeout(() => btn.textContent = old, 1200);
+            });
+        };
+
+        window.runCode = function(btn, blockId) {
+            const block = document.getElementById(blockId);
+            const terminal = block.querySelector('.code-terminal');
+            const output = terminal.querySelector('.term-output');
+            const status = terminal.querySelector('.term-status');
+            const lang = block.querySelector('.lang-label').innerText.trim().toLowerCase();
+
+            terminal.classList.add('active');
+            output.innerHTML = '';
+            status.textContent = '运行中...';
+            status.className = 'term-status';
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                if (lang === 'python' || lang === 'javascript' || lang === 'js') {
+                    status.textContent = '运行成功 (0.12s)';
+                    status.classList.add('term-success');
+                    if (lang === 'python') {
+                        output.innerHTML = `<span style="color:var(--success)">$ python main.py</span>\n[1, 1, 2, 3, 5, 8, 13, 21, 34, 55]\n\n<span style="color:var(--text-tertiary)">Process finished with exit code 0</span>`;
+                    } else {
+                        output.innerHTML = `<span style="color:var(--success)">$ node main.js</span>\nHello from sandbox!\n\n<span style="color:var(--text-tertiary)">Process finished with exit code 0</span>`;
+                    }
+                } else {
+                    status.textContent = '运行失败';
+                    status.classList.add('term-error');
+                    output.innerHTML = `<span style="color:var(--danger)">Error: Unsupported language or execution failed.</span>`;
+                }
+                scrollToBottom();
+            }, 800);
+        };
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function pickReply(userText) {
+            const t = userText.toLowerCase();
+            if (/python|代码|编程|斐波那契/.test(t)) {
+                return `我已经为你编写好了计算斐波那契数列的 Python 代码，并经过沙盒验证，你可以点击下方按钮直接查看结果。
+
+\`\`\`python
+def fibonacci(n: int):
+    if n <= 0: return []
+    if n == 1: return [1]
+    res = [1, 1]
+    while len(res) < n:
+        res.append(res[-1] + res[-2])
+    return res
+
+if __name__ == "__main__":
+    result = fibonacci(10)
+    print(result)
+\`\`\`
+
+顺便我在站点中找到了相关的[SOURCE: https://docs.nitrowater.io/algo/complexity, 算法复杂度分析指南]供你参考。
+
+这段代码的时间复杂度是 O(n)，空间复杂度也是 O(n)。你可以直接点击上方的运行按钮进行测试。`;
+            }
+            return `收到。关于「${escapeHtml(userText)}」，我已经处理了你的请求。\n\n如果需要进一步操作，你可以让我帮你编写并运行测试代码。`;
+        }
+
+        input.focus();
+        updateSendState();
+        const mq = window.matchMedia('(max-width: 860px)');
+        function handleMQ(e) { if (e.matches) { sidebar.classList.add('collapsed'); sidebarOpen.classList.add('visible'); } }
+        mq.addEventListener('change', handleMQ);
+        handleMQ(mq);
+    })();
+</script>
+</body>
+</html>

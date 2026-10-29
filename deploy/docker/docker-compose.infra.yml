@@ -53,6 +53,21 @@ services:
     networks:
       - nitrowater-net
 
+  # Third-party vector index for the documentation assistant (Spring AI Qdrant store).
+  # 6333 = REST + web UI, 6334 = gRPC (what the Java client uses).
+  qdrant:
+    image: qdrant/qdrant:v1.18.3
+    container_name: nitrowater-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - nitrowater-qdrant:/qdrant/storage
+    mem_limit: 384m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
   seaweedfs:
     image: chrislusf/seaweedfs
     container_name: nitrowater-seaweedfs
@@ -79,4 +94,5 @@ networks:
 volumes:
   nitrowater-mysql:
   nitrowater-redis:
+  nitrowater-qdrant:
   nitrowater-seaweedfs:

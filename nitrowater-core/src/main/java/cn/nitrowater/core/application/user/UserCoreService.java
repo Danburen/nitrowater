@@ -1,5 +1,6 @@
 package cn.nitrowater.core.application.user;
 
+import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.exception.notfound.NotFoundException;
 
@@ -28,12 +29,29 @@ public interface UserCoreService {
     User getUser(long userUid);
 
     /**
-     * Resolve a login identifier (phone/email/username) to user UID.
-     * Search order: phone hash → email hash → username.
+     * Resolve a password-login identifier to a user UID.
+     *
+     * <p>The identifier shape selects exactly one lookup: an email-shaped value only matches
+     * {@code email_hash}, a phone-shaped value only matches {@code phone_hash}, and anything
+     * else only matches {@code username}. This removes the cross-namespace ambiguity of the
+     * previous "try all three" order.</p>
      *
      * @param identifier phone number, email address, or username
      * @return user UID
      * @throws NotFoundException if no user matches the identifier
      */
     Long resolveUid(String identifier);
+
+    /**
+     * Resolve a one-time-code login target to a user UID.
+     *
+     * <p>Only the channel's own hash is consulted — usernames are never accepted here, because
+     * quick login must prove control of a phone number or mailbox.</p>
+     *
+     * @param target  phone number or email address
+     * @param channel {@link VerifyChannel#SMS} or {@link VerifyChannel#EMAIL}
+     * @return user UID
+     * @throws NotFoundException if the target is not bound to any account
+     */
+    Long resolveUidByTarget(String target, VerifyChannel channel);
 }
