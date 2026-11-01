@@ -16,7 +16,7 @@
 import { computed } from 'vue'
 import DOMPurify from 'dompurify'
 import { Marked } from 'marked'
-import type { AiSource } from '../api'
+import type { AiSource } from '../../../api/ai'
 import CodeBlockCard from './CodeBlockCard.vue'
 
 type Segment =

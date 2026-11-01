@@ -46,7 +46,8 @@ class ApiProxyControllerTest {
         try {
             String baseUrl = "http://127.0.0.1:" + downstream.getAddress().getPort();
             ApiProxyController controller = new ApiProxyController(
-                    baseUrl, baseUrl, 5_000, mock(OAuth2AuthorizedClientManager.class), "nitrowater");
+                    baseUrl, baseUrl, baseUrl, 5_000L,
+                    mock(OAuth2AuthorizedClientManager.class), "nitrowater");
 
             MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/echo");
             request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, "/api/echo");
@@ -64,6 +65,32 @@ class ApiProxyControllerTest {
             assertThat(receivedContentLength.get()).isEqualTo(String.valueOf(payload.length));
         } finally {
             downstream.stop(0);
+        }
+    }
+
+    @Test
+    void routesAccountPathToTheAccountService() throws Exception {
+        HttpServer account = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        account.createContext("/api/auth/account/me", exchange -> {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        account.start();
+        try {
+            String baseUrl = "http://127.0.0.1:" + account.getAddress().getPort();
+            ApiProxyController controller = new ApiProxyController(
+                    baseUrl, baseUrl, baseUrl, 5_000L,
+                    mock(OAuth2AuthorizedClientManager.class), "nitrowater");
+
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/account/me");
+            request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, "/api/auth/account/me");
+            request.setRemoteAddr("127.0.0.1");
+
+            ResponseEntity<Resource> response = controller.proxy(request, null);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(204);
+        } finally {
+            account.stop(0);
         }
     }
 }

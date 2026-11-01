@@ -46,6 +46,19 @@ public class UserCoreServiceImpl implements UserCoreService {
     }
 
     @Override
+    @Transactional
+    public User updateNickname(long userUid, String nickname) {
+        String value = nickname == null ? "" : nickname.trim();
+        if (value.isEmpty() || value.length() > 12
+                || value.chars().anyMatch(Character::isISOControl)) {
+            throw new BizException(BaseResponseCode.VALIDATION_ERROR, "nickname");
+        }
+        User user = getUser(userUid);
+        user.setNickname(value);
+        return userRepository.save(user);
+    }
+
+    @Override
     public User getUser(long userUid) {
         return userRepository.findUserByUid(userUid)
                 .orElseThrow(() -> new NotFoundException("User UID: " + userUid));

@@ -22,7 +22,7 @@ import {
   SUBMIT_PLUGIN_URL,
   type PluginDetail,
   type PluginResource,
-} from './catalog'
+} from '../../api/plugins'
 
 /** Lazy: the editor (and `md-editor-v3`) must never enter the public bundle. */
 const PluginEditorDrawer = defineAsyncComponent(() => import('./PluginEditorDrawer.vue'))

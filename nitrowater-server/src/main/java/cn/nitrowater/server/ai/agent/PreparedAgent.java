@@ -12,6 +12,8 @@ import reactor.core.publisher.Flux;
  * @param chunks answer stream with optional provider usage metadata
  * @param usageSession quota reservation and usage meter for this turn
  */
-public record PreparedAgent(AgentTrace trace, Flux<AiStreamChunk> chunks,
-        AiUsageTracker usageSession) {
-}
+public record PreparedAgent(
+        AgentTrace trace,
+        Flux<AiStreamChunk> chunks,
+        AiUsageTracker usageSession
+) {}

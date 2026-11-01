@@ -19,6 +19,10 @@ repositories {
 }
 
 dependencies {
+    // Shared JSON envelope (ApiResponse/PageDto) and the response advice.
+    implementation project(':nitrowater-lib')
+    // Shared Spring MVC/Security JSON plumbing (ApiResponseAdvice / GlobalExceptionHandler).
+    implementation project(':nitrowater-core-web')
     // --- web + security（OAuth2 Resource Server：校验 SSO 签发的 JWT）---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security'

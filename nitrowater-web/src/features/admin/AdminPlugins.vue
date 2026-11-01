@@ -1,7 +1,16 @@
 <script setup lang="ts">
-/** Admin · plugins — list + inline create/edit form + delete (plugin-center metadata). */
-import { onMounted, reactive, ref } from 'vue'
-import { toast } from '../../shared/ui/toast'
+/**
+ * Admin — plugins: metadata list plus a create/edit drawer.
+ *
+ * <p>Uses the same chrome as every other admin page ({@link AdminPage} + {@code el-card.admin-card-flush}):
+ * action strip on top, table in the middle, Element Plus dialogs only — no hand-rolled controls.</p>
+ */
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+// Explicit style imports: an explicit API import bypasses the on-demand resolver's CSS injection.
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import AdminPage from './AdminPage.vue'
 import {
   createPlugin,
   deletePlugin,
@@ -9,7 +18,7 @@ import {
   updatePlugin,
   type PluginAdmin,
   type PluginUpsert,
-} from './api'
+} from '../../api/plugins'
 
 /** Server-side key rule (`@Pattern` on PluginUpsertReq). */
 const KEY_RE = /^[a-z0-9][a-z0-9-]*$/
@@ -20,7 +29,9 @@ const saving = ref(false)
 const error = ref('')
 
 const editingId = ref<number | null>(null)
-const showForm = ref(false)
+const drawerOpen = ref(false)
+const editing = computed(() => editingId.value != null)
+const drawerTitle = computed(() => (editing.value ? `编辑插件 #${editingId.value}` : '新建插件'))
 
 /** Form state — tags are edited as a comma-separated string. */
 const form = reactive({
@@ -70,7 +81,7 @@ function resetForm(): void {
 
 function openCreate(): void {
   resetForm()
-  showForm.value = true
+  drawerOpen.value = true
 }
 
 function openEdit(row: PluginAdmin): void {
@@ -88,7 +99,7 @@ function openEdit(row: PluginAdmin): void {
   form.readme = row.readme ?? ''
   form.sortOrder = row.sortOrder
   form.enabled = row.enabled
-  showForm.value = true
+  drawerOpen.value = true
 }
 
 /** Splits a comma / full-width-comma / newline separated tag string. */
@@ -102,17 +113,18 @@ function splitTags(text: string): string[] {
 async function save(): Promise<void> {
   if (saving.value) return
   if (!form.name.trim()) {
-    toast.warning('请填写名称')
+    ElMessage.warning('请填写名称')
     return
   }
-  if (editingId.value == null) {
+  const id = editingId.value
+  if (id == null) {
     const key = form.key.trim()
     if (!key) {
-      toast.warning('请填写 key（小写字母 / 数字 / 连字符）')
+      ElMessage.warning('请填写 key（小写字母 / 数字 / 连字符）')
       return
     }
     if (!KEY_RE.test(key)) {
-      toast.warning('key 只能用小写字母、数字与连字符，且以字母或数字开头')
+      ElMessage.warning('key 只能由小写字母、数字、连字符组成，且不能以连字符或数字开头')
       return
     }
   }
@@ -133,31 +145,39 @@ async function save(): Promise<void> {
       sortOrder: form.sortOrder,
       enabled: form.enabled,
     }
-    if (editingId.value == null) {
+    if (id == null) {
       await createPlugin(payload)
-      toast.success('插件已创建')
+      ElMessage.success('插件已创建')
     } else {
-      await updatePlugin(editingId.value, payload)
-      toast.success('插件已更新')
+      await updatePlugin(id, payload)
+      ElMessage.success('插件已更新')
     }
-    showForm.value = false
+    drawerOpen.value = false
     resetForm()
     await load()
   } catch (e) {
-    toast.error(e instanceof Error ? e.message : String(e))
+    ElMessage.error(e instanceof Error ? e.message : String(e))
   } finally {
     saving.value = false
   }
 }
 
 async function remove(row: PluginAdmin): Promise<void> {
-  if (!window.confirm(`删除插件「${row.name}」？该操作不可撤销。`)) return
+  try {
+    await ElMessageBox.confirm(
+      `删除插件「${row.name}」？该操作不可撤销。`,
+      '确认删除',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   try {
     await deletePlugin(row.id)
-    toast.success('插件已删除')
+    ElMessage.success('插件已删除')
     await load()
   } catch (e) {
-    toast.error(e instanceof Error ? e.message : String(e))
+    ElMessage.error(e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -167,267 +187,313 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1120px] p-4 sm:p-6">
-    <div class="section-head">
-      <div>
-        <h1 class="text-lg font-semibold text-ink">
-          插件
-        </h1>
-        <p class="mt-1 text-[13px] text-dim">
-          插件中心元数据：卡片信息、外链与单页说明（key 创建后不可改）。
-        </p>
-      </div>
-      <button
-        class="btn btn-primary"
+  <AdminPage
+    title="插件"
+    description="插件中心的元数据：卡片信息、标签与单页说明（key 创建后不可改）。"
+  >
+    <template #actions>
+      <el-button
+        :disabled="loading"
+        @click="load"
+      >
+        刷新
+      </el-button>
+      <el-button
+        type="primary"
         @click="openCreate"
       >
         新建插件
-      </button>
-    </div>
+      </el-button>
+    </template>
 
-    <div
+    <el-alert
       v-if="error"
-      class="mb-4 rounded-[10px] border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
-    >
-      {{ error }}
-    </div>
+      :title="error"
+      type="error"
+      show-icon
+      :closable="false"
+    />
 
-    <!-- Form -->
-    <div
-      v-if="showForm"
-      class="panel mb-4"
+    <el-card
+      shadow="never"
+      class="admin-card admin-card-flush"
     >
-      <div class="mb-3 text-sm font-medium text-ink">
-        {{ editingId == null ? '新建插件' : `编辑插件 #${editingId}` }}
-      </div>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">名称 *</span>
-          <input
-            v-model="form.name"
-            class="input"
-            placeholder="如：VeloChatX"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">Key（小写字母 / 数字 / 连字符；创建后不可改）</span>
-          <input
-            v-model="form.key"
-            class="input"
-            :disabled="editingId != null"
-            placeholder="velochatx"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">副标题</span>
-          <input
-            v-model="form.tagline"
-            class="input"
-            placeholder="Velocity 跨服聊天插件"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">排序（升序）</span>
-          <input
-            v-model.number="form.sortOrder"
-            type="number"
-            class="input"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">图标 SVG path（24x24 的 d 属性）</span>
-          <input
-            v-model="form.icon"
-            class="input"
-            placeholder="M4 5h16v11H8l-4 4z"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">标签（逗号分隔）</span>
-          <input
-            v-model="form.tagsText"
-            class="input"
-            placeholder="Velocity, 跨服聊天"
-          >
-        </label>
-        <label class="flex flex-col gap-1 lg:col-span-2">
-          <span class="text-[12px] text-dim">文档站 URL</span>
-          <input
-            v-model="form.docsUrl"
-            class="input"
-            placeholder="/plugin/velochatx/docs/"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">官网 URL（可空，空则不展示）</span>
-          <input
-            v-model="form.homepageUrl"
-            class="input"
-            placeholder="https://…"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">开源仓库 URL（可空）</span>
-          <input
-            v-model="form.repoUrl"
-            class="input"
-            placeholder="https://github.com/…"
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-[12px] text-dim">赞助 URL（可空）</span>
-          <input
-            v-model="form.sponsorUrl"
-            class="input"
-            placeholder="https://…"
-          >
-        </label>
-        <label class="flex items-center gap-2 self-end pb-2">
-          <input
-            v-model="form.enabled"
-            type="checkbox"
-          >
-          <span class="text-[13px] text-ink">启用（前台可见）</span>
-        </label>
-        <label class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
-          <span class="text-[12px] text-dim">卡片简介</span>
-          <textarea
-            v-model="form.summary"
-            class="input min-h-[64px]"
-            placeholder="一句话介绍，用于列表卡片。"
-          />
-        </label>
-        <label class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
-          <span class="text-[12px] text-dim">单页说明 Markdown（详情页「介绍」tab）</span>
-          <textarea
-            v-model="form.readme"
-            class="input min-h-[180px] font-mono text-[12.5px]"
-            placeholder="# 插件名&#10;&#10;说明正文…"
-          />
-        </label>
-      </div>
-      <div class="mt-4 flex items-center gap-2">
-        <button
-          class="btn btn-primary"
-          :disabled="saving"
-          @click="save"
-        >
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
-        <button
-          class="btn"
-          :disabled="saving"
-          @click="showForm = false; resetForm()"
-        >
-          取消
-        </button>
-      </div>
-    </div>
+      <template #header>
+        <div class="admin-toolbar">
+          <div class="flex items-baseline gap-2">
+            <span class="admin-card-title">插件列表</span>
+            <span class="admin-card-meta">共 {{ rows.length }} 个</span>
+          </div>
+        </div>
+      </template>
 
-    <!-- Table -->
-    <div class="panel overflow-x-auto p-0">
-      <table class="w-full text-left text-sm">
-        <thead>
-          <tr class="border-b border-line text-[12px] text-faint">
-            <th class="px-3 py-2 font-normal">
-              ID
-            </th>
-            <th class="px-3 py-2 font-normal">
-              Key
-            </th>
-            <th class="px-3 py-2 font-normal">
-              名称
-            </th>
-            <th class="px-3 py-2 font-normal">
-              标签
-            </th>
-            <th class="px-3 py-2 font-normal">
-              排序
-            </th>
-            <th class="px-3 py-2 font-normal">
-              状态
-            </th>
-            <th class="px-3 py-2 font-normal">
-              操作
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td
-              colspan="7"
-              class="px-3 py-8 text-center text-faint"
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        row-key="id"
+        size="small"
+        stripe
+      >
+        <template #empty>
+          <el-empty
+            description="暂无插件，点击右上角「新建插件」"
+            :image-size="60"
+          />
+        </template>
+        <el-table-column
+          prop="id"
+          label="ID"
+          width="70"
+        />
+        <el-table-column
+          label="名称"
+          min-width="180"
+        >
+          <template #default="{ row }">
+            <div class="text-ink">
+              {{ row.name }}
+            </div>
+            <div
+              v-if="row.tagline"
+              class="text-[12px] text-faint"
             >
-              加载中…
-            </td>
-          </tr>
-          <tr v-else-if="!rows.length">
-            <td
-              colspan="7"
-              class="px-3 py-8 text-center text-faint"
+              {{ row.tagline }}
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="Key"
+          width="150"
+        >
+          <template #default="{ row }">
+            <span class="font-mono text-[12px] text-dim">{{ row.key }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="标签"
+          min-width="200"
+        >
+          <template #default="{ row }">
+            <div
+              v-if="row.tags.length"
+              class="flex flex-wrap gap-1"
             >
-              暂无插件。
-            </td>
-          </tr>
-          <tr
-            v-for="row in rows"
-            :key="row.id"
-            class="border-b border-line/60 last:border-0"
-          >
-            <td class="px-3 py-2 text-dim">
-              {{ row.id }}
-            </td>
-            <td class="px-3 py-2 font-mono text-[12px] text-dim">
-              {{ row.key }}
-            </td>
-            <td class="px-3 py-2">
-              <span class="block text-ink">{{ row.name }}</span>
-              <span
-                v-if="row.tagline"
-                class="block text-[12px] text-faint"
-              >{{ row.tagline }}</span>
-            </td>
-            <td class="px-3 py-2">
-              <span
-                v-if="row.tags.length"
-                class="flex flex-wrap gap-1"
+              <el-tag
+                v-for="tag in row.tags"
+                :key="tag"
+                size="small"
+                type="info"
+                effect="plain"
               >
-                <span
-                  v-for="t in row.tags"
-                  :key="t"
-                  class="tag"
-                >{{ t }}</span>
-              </span>
-              <span
-                v-else
-                class="text-faint"
-              >-</span>
-            </td>
-            <td class="px-3 py-2 text-dim">
-              {{ row.sortOrder }}
-            </td>
-            <td class="px-3 py-2">
-              <span :class="row.enabled ? 'text-ok' : 'text-faint'">{{ row.enabled ? '启用' : '停用' }}</span>
-            </td>
-            <td class="px-3 py-2">
-              <div class="flex gap-2">
-                <button
-                  class="text-accent hover:underline"
-                  @click="openEdit(row)"
-                >
-                  编辑
-                </button>
-                <button
-                  class="text-danger hover:underline"
-                  @click="remove(row)"
-                >
-                  删除
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+                {{ tag }}
+              </el-tag>
+            </div>
+            <span
+              v-else
+              class="text-faint"
+            >—</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="sortOrder"
+          label="排序"
+          width="80"
+          align="center"
+        />
+        <el-table-column
+          label="状态"
+          width="90"
+          align="center"
+        >
+          <template #default="{ row }">
+            <el-tag
+              :type="row.enabled ? 'success' : 'info'"
+              size="small"
+              effect="plain"
+            >
+              {{ row.enabled ? '启用' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="更新时间"
+          width="180"
+        >
+          <template #default="{ row }">
+            {{ row.updatedAt || '—' }}
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="操作"
+          width="130"
+          fixed="right"
+          align="center"
+        >
+          <template #default="{ row }">
+            <div class="flex items-center justify-center gap-1">
+              <el-button
+                link
+                type="primary"
+                size="small"
+                @click="openEdit(row)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                size="small"
+                @click="remove(row)"
+              >
+                删除
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-drawer
+      v-model="drawerOpen"
+      :title="drawerTitle"
+      size="560px"
+      @closed="resetForm"
+    >
+      <el-form
+        label-position="top"
+        :disabled="saving"
+        @submit.prevent
+      >
+        <div class="grid gap-3 sm:grid-cols-2">
+          <el-form-item
+            label="名称"
+            required
+          >
+            <el-input
+              v-model="form.name"
+              placeholder="例如：VeloChatX"
+            />
+          </el-form-item>
+          <el-form-item
+            label="Key（小写字母 / 数字 / 连字符）"
+            :required="!editing"
+          >
+            <el-input
+              v-model="form.key"
+              :disabled="editing"
+              placeholder="velochatx"
+            />
+          </el-form-item>
+          <el-form-item
+            label="一句话简介"
+            class="sm:col-span-2"
+          >
+            <el-input
+              v-model="form.tagline"
+              placeholder="Velocity 聊天增强插件"
+            />
+          </el-form-item>
+          <el-form-item label="排序">
+            <el-input-number
+              v-model="form.sortOrder"
+              :precision="0"
+              controls-position="right"
+              class="!w-full"
+            />
+          </el-form-item>
+          <el-form-item label="启用（前台可见）">
+            <el-switch v-model="form.enabled" />
+          </el-form-item>
+          <el-form-item
+            label="标签（逗号分隔）"
+            class="sm:col-span-2"
+          >
+            <el-input
+              v-model="form.tagsText"
+              placeholder="Velocity, 聊天增强"
+            />
+          </el-form-item>
+          <el-form-item
+            label="图标（SVG path，24×24 的 d 属性）"
+            class="sm:col-span-2"
+          >
+            <el-input
+              v-model="form.icon"
+              placeholder="M4 5h16v11H8l-4 4z"
+            />
+          </el-form-item>
+          <el-form-item
+            label="文档站 URL"
+            class="sm:col-span-2"
+          >
+            <el-input
+              v-model="form.docsUrl"
+              placeholder="/plugin/velochatx/docs/"
+            />
+          </el-form-item>
+          <el-form-item label="首页 URL（可空）">
+            <el-input
+              v-model="form.homepageUrl"
+              placeholder="https://…"
+            />
+          </el-form-item>
+          <el-form-item label="源码仓库 URL（可空）">
+            <el-input
+              v-model="form.repoUrl"
+              placeholder="https://github.com/…"
+            />
+          </el-form-item>
+          <el-form-item
+            label="赞助 URL（可空）"
+            class="sm:col-span-2"
+          >
+            <el-input
+              v-model="form.sponsorUrl"
+              placeholder="https://…"
+            />
+          </el-form-item>
+          <el-form-item
+            label="卡片简介"
+            class="sm:col-span-2"
+          >
+            <el-input
+              v-model="form.summary"
+              type="textarea"
+              :rows="2"
+              placeholder="一句话总结，用于列表卡片。"
+            />
+          </el-form-item>
+          <el-form-item
+            label="单页说明 Markdown"
+            class="sm:col-span-2"
+          >
+            <el-input
+              v-model="form.readme"
+              type="textarea"
+              :rows="10"
+              placeholder="# 插件名&#10;&#10;说明正文。"
+            />
+          </el-form-item>
+        </div>
+      </el-form>
+
+      <template #footer>
+        <div class="admin-actions justify-end">
+          <el-button
+            :disabled="saving"
+            @click="drawerOpen = false"
+          >
+            取消
+          </el-button>
+          <el-button
+            type="primary"
+            :loading="saving"
+            @click="save"
+          >
+            保存
+          </el-button>
+        </div>
+      </template>
+    </el-drawer>
+  </AdminPage>
 </template>

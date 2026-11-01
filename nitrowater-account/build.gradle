@@ -21,10 +21,12 @@ repositories {
 dependencies {
     implementation project(":nitrowater-lib")
     implementation project(':nitrowater-core')
+    implementation project(':nitrowater-core-web')
     // --- web ---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.springframework.security:spring-security-oauth2-jose'
@@ -35,6 +37,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation('com.aliyun:dysmsapi20170525:4.1.1') {
+        exclude group: 'com.squareup.okhttp3', module: 'okhttp'
+    }
     implementation 'org.springframework:spring-aop'
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'

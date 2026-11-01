@@ -1,6 +1,6 @@
 package cn.nitrowater.server.ai.skill;
 
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;

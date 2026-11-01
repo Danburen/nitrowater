@@ -1,7 +1,7 @@
 package cn.nitrowater.account.web;
 
 import cn.nitrowater.lib.api.BaseResponseCode;
-import cn.nitrowater.lib.api.ErrorResponse;
+import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.lib.common.exceptions.AuthException;
 import cn.nitrowater.core.exception.BizException;
 import tools.jackson.databind.exc.InvalidFormatException;
@@ -27,13 +27,12 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * Global exception handler — maps exceptions thrown by the auth controllers to the unified
- * {@link ErrorResponse} envelope ({@code code/message/errors/timestamp}) so the (static and
+ * {@link ApiResponse} envelope ({@code success/code/message/data}) so the (static and
  * SPA) clients can surface meaningful messages instead of Spring's default error page.
  *
  * <p>i18n keys resolve through the core {@code messages*.properties} bundles.</p>
@@ -63,7 +62,7 @@ public class GlobalExceptionHandler {
 
     /** {@code @RequestBody} bean-validation failures. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleValidation(MethodArgumentNotValidException ex) {
         List<String> errors = new ArrayList<>();
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
             errors.add(fieldError.getField() + ": " + msgSrc.getMessage(fieldError, locale()));
@@ -73,7 +72,7 @@ public class GlobalExceptionHandler {
 
     /** {@code @RequestParam} / method-level ({@code @Validated}) constraint violations. */
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleConstraintViolation(ConstraintViolationException ex) {
         List<String> errors = new ArrayList<>();
         for (ConstraintViolation<?> violation : ex.getConstraintViolations()) {
             String msg = msgSrc.getMessage(violation.getMessageTemplate(),
@@ -85,7 +84,7 @@ public class GlobalExceptionHandler {
 
     /** Unreadable request body: malformed JSON, wrong enum value, type mismatch… */
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleNotReadable(HttpMessageNotReadableException ex) {
         Throwable cause = ex.getCause();
         if (cause instanceof InvalidFormatException ife && ife.getTargetType() != null
                 && ife.getTargetType().isEnum()) {
@@ -106,10 +105,10 @@ public class GlobalExceptionHandler {
 
     /** Auth failures (bad credentials, captcha, lockout…). */
     @ExceptionHandler(AuthException.class)
-    public ResponseEntity<ErrorResponse> handleAuth(AuthException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleAuth(AuthException ex) {
         String message = msgSrc.getMessage(ex.getMessage(), ex.getParams(), "Auth failed", locale());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(new ErrorResponse(ex.getErrorCode(), message, null, new Date()));
+                .body(ApiResponse.reject(ex.getErrorCode(), message, null));
     }
 
     /**
@@ -117,25 +116,25 @@ public class GlobalExceptionHandler {
      * the exception ({@link BizException#getHttpStatusCode()}).
      */
     @ExceptionHandler(BizException.class)
-    public ResponseEntity<ErrorResponse> handleBiz(BizException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleBiz(BizException ex) {
         String message = msgSrc.getMessage(ex.getMessage(), ex.getParams(), "error", locale());
         HttpStatus status = HttpStatus.resolve(ex.getHttpStatusCode());
         return ResponseEntity.status(status != null ? status : HttpStatus.BAD_REQUEST)
-                .body(new ErrorResponse(ex.getErrorCode(), message, null, new Date()));
+                .body(ApiResponse.reject(ex.getErrorCode(), message, null));
     }
 
     /** Preserve framework HTTP statuses (e.g. 404 for a missing static resource). */
     @ExceptionHandler(ErrorResponseException.class)
-    public ResponseEntity<ErrorResponse> handleErrorResponse(ErrorResponseException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleErrorResponse(ErrorResponseException ex) {
         String detail = ex.getBody().getDetail() != null ? ex.getBody().getDetail() : ex.getMessage();
         return ResponseEntity.status(ex.getStatusCode())
-                .body(new ErrorResponse(String.valueOf(ex.getStatusCode().value()), detail, null, new Date()));
+                .body(ApiResponse.reject(String.valueOf(ex.getStatusCode().value()), detail, null));
     }
 
     /**
      * A missing route or static resource. Browsers (which ask for {@code text/html}) get the
      * branded 404 page served from {@code static/error/404.html}; every other client keeps the
-     * standard {@link ErrorResponse} envelope, so the JSON API contract is unchanged. Being more
+     * standard {@link ApiResponse} envelope, so the JSON API contract is unchanged. Being more
      * specific than {@link #handleErrorResponse}, this handler wins for {@code NoResourceFoundException}.
      */
     @ExceptionHandler(NoResourceFoundException.class)
@@ -147,7 +146,7 @@ public class GlobalExceptionHandler {
         }
         String detail = ex.getBody().getDetail() != null ? ex.getBody().getDetail() : ex.getMessage();
         return ResponseEntity.status(ex.getStatusCode())
-                .body(new ErrorResponse(String.valueOf(ex.getStatusCode().value()), detail, null, new Date()));
+                .body(ApiResponse.reject(String.valueOf(ex.getStatusCode().value()), detail, null));
     }
 
     /** True when the request's {@code Accept} header asks for HTML (i.e. a browser navigation). */
@@ -158,18 +157,18 @@ public class GlobalExceptionHandler {
 
     /** Fallback: log and return a generic 500. */
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ErrorResponse> handleRuntime(RuntimeException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled runtime exception: ", ex);
         String message = msgSrc.getMessage(BaseResponseCode.INTERNAL_SERVER_ERROR.getCode(), null,
                 "Internal server error", locale());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse(BaseResponseCode.INTERNAL_SERVER_ERROR.getCode(), message, null, new Date()));
+                .body(ApiResponse.reject(BaseResponseCode.INTERNAL_SERVER_ERROR.getCode(), message, null));
     }
 
-    private ResponseEntity<ErrorResponse> validationError(List<String> errors) {
+    private ResponseEntity<ApiResponse<Object>> validationError(List<String> errors) {
         String message = msgSrc.getMessage(BaseResponseCode.VALIDATION_ERROR.getCode(), null,
                 "Parameter validation failed", locale());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ErrorResponse(BaseResponseCode.VALIDATION_ERROR.getCode(), message, errors, new Date()));
+                .body(ApiResponse.reject(BaseResponseCode.VALIDATION_ERROR.getCode(), message, errors));
     }
 }

@@ -1,5 +1,6 @@
 package cn.nitrowater.server.ai;
 
+import cn.nitrowater.server.ai.properties.AiProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.ai.document.Document;
@@ -108,6 +109,25 @@ class DocChunkBuilderTest {
 
         assertThat(result.files()).isZero();
         assertThat(result.chunks()).isEmpty();
+    }
+
+    @Test
+    void acceptsFileUriPrefixedLocation() throws IOException {
+        write("index.md", """
+                # Prefixed corpus
+
+                Deployed corpora are usually written as file:/srv/docs/<corpus>.
+                """);
+
+        AiProperties properties = new AiProperties(true,
+                500, 100, 40, 6, 0.35, 2000, 4, false, 20,
+                "deploy/ai-skills",
+                List.of(new DocCollection("nitrowater", "file:" + docs, "")));
+
+        DocChunkBuilder.Result result = new DocChunkBuilder(properties).build();
+
+        assertThat(result.files()).isEqualTo(1);
+        assertThat(result.chunks()).isNotEmpty();
     }
 
     @Test

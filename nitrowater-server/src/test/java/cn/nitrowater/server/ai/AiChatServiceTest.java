@@ -1,5 +1,7 @@
 package cn.nitrowater.server.ai;
 
+import cn.nitrowater.server.ai.properties.AiProperties;
+import cn.nitrowater.server.infra.enums.ModerationMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.ai.chat.model.ChatModel;
@@ -30,7 +32,7 @@ class AiChatServiceTest {
     @BeforeEach
     void enablesChatFeatures() {
         when(settings.get()).thenReturn(new AiAdminSettingsService.Settings(
-                50000, true, true, true, true, true, true, true));
+                50000, true, true, true, true, true, true, true, ModerationMode.LOG));
     }
 
     @Test

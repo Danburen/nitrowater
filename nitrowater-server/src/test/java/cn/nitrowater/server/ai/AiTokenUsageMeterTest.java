@@ -1,6 +1,7 @@
 package cn.nitrowater.server.ai;
 
 import cn.nitrowater.server.ai.AiAdminSettingsService.Settings;
+import cn.nitrowater.server.infra.enums.ModerationMode;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.metadata.Usage;
 
@@ -78,7 +79,8 @@ class AiTokenUsageMeterTest {
 
     @Test
     void adminSettingsGateOnlyTheToolsTheyOwn() {
-        Settings disabled = new Settings(1000, true, true, true, false, false, false, false);
+        Settings disabled = new Settings(1000, true, true, true, false, false, false, false,
+                ModerationMode.LOG);
 
         assertThat(disabled.toolEnabled("searchDocs")).isFalse();
         assertThat(disabled.toolEnabled("loadSkill")).isFalse();
@@ -87,7 +89,8 @@ class AiTokenUsageMeterTest {
         assertThat(disabled.toolEnabled("futureCoreTool")).isTrue();
         assertThat(disabled.toolEnabled(" ")).isFalse();
 
-        Settings enabled = new Settings(1000, true, true, true, true, true, true, true);
+        Settings enabled = new Settings(1000, true, true, true, true, true, true, true,
+                ModerationMode.LOG);
         assertThat(enabled.toolEnabled("searchDocs")).isTrue();
         assertThat(enabled.toolEnabled("webSearch")).isTrue();
     }

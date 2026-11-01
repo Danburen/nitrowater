@@ -6,7 +6,7 @@
  * for anyone who wants to audit retrieval / sandbox usage.</p>
  */
 import { computed, ref } from 'vue'
-import type { AiToolCall } from '../api'
+import type { AiToolCall } from '../../../api/ai'
 
 const props = defineProps<{ tools: AiToolCall[]; skills: string[] }>()
 

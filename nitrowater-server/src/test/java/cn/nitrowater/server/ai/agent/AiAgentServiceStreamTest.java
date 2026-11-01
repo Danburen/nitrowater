@@ -1,14 +1,17 @@
 package cn.nitrowater.server.ai.agent;
 
 import cn.nitrowater.server.ai.AiAdminSettingsService;
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.ai.AiStreamChunk;
 import cn.nitrowater.server.ai.AiTokenUsage;
 import cn.nitrowater.server.ai.AiUsageService;
 import cn.nitrowater.server.ai.AiUsageTracker;
 import cn.nitrowater.server.ai.PromptBuilder;
+import cn.nitrowater.server.ai.memory.AiMemoryService;
+import cn.nitrowater.server.ai.profile.AiProfileService;
 import cn.nitrowater.server.ai.skill.SkillRegistry;
 import cn.nitrowater.server.ai.tool.WebSearchProvider;
+import cn.nitrowater.server.infra.enums.ModerationMode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -30,7 +33,6 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,7 +59,7 @@ class AiAgentServiceStreamTest {
     @BeforeEach
     void setUp() {
         when(settings.get()).thenReturn(new AiAdminSettingsService.Settings(
-                50_000, true, true, true, true, true, true, true));
+                50_000, true, true, true, true, true, true, true, ModerationMode.LOG));
         when(usage.start(anyLong(), anyInt())).thenReturn(new NoopTracker());
     }
 
@@ -177,8 +179,13 @@ class AiAgentServiceStreamTest {
         when(webSearch.enabled()).thenReturn(false);
         SkillRegistry skills = mock(SkillRegistry.class);
         when(skills.list()).thenReturn(List.of());
+        AiProfileService profiles = mock(AiProfileService.class);
+        when(profiles.promptBlock(anyLong())).thenReturn(null);
+        AiMemoryService memories = mock(AiMemoryService.class);
+        when(memories.recall(anyLong(), any(), anyInt())).thenReturn(List.of());
         return new AiAgentService(chatModel, toolCallingManager, new AgentToolProviders(core, web),
-                webSearch, skills, properties(), new PromptBuilder(), settings, usage, 10);
+                webSearch, skills, properties(), new PromptBuilder(), settings, usage, profiles,
+                memories, 10);
     }
 
     private static Flux<ChatResponse> chunks(String... texts) {

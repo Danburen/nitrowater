@@ -1,5 +1,7 @@
 package cn.nitrowater.resource.config;
 
+import cn.nitrowater.core.web.ApiResponseWriter;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -44,10 +46,8 @@ public class InternalEndpointFilter extends OncePerRequestFilter {
         }
         log.warn("Rejected internal request from {} {} ({})", request.getRemoteAddr(), uri,
                 request.getHeader("X-Forwarded-For"));
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(
-                "{\"error\":\"internal_forbidden\",\"message\":\"Internal endpoints are only reachable from a private network\"}");
+        ApiResponseWriter.error(response, HttpServletResponse.SC_FORBIDDEN, "internal_forbidden",
+                "Internal endpoints are only reachable from a private network");
     }
 
     /**

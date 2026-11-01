@@ -68,6 +68,8 @@ class PromptBuilderTest {
                 .contains("searchDocs")
                 .contains("loadSkill")
                 .contains("webSearch")
+                .contains("够用即停")
+                .contains("remaining")
                 .contains("通用");
     }
 

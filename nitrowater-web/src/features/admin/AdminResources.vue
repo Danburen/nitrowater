@@ -1,17 +1,11 @@
 <template>
-  <div class="flex h-full flex-col">
-    <header class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2">
-      <div class="flex items-center gap-2">
-        <h1 class="text-sm font-medium text-ink">
-          资源管理
-        </h1>
-        <span class="rounded-md border border-line px-1.5 py-0.5 text-[11px] text-dim">资源文件</span>
-      </div>
-    </header>
-
-    <div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
+  <AdminPage
+    title="资源管理"
+    description="统一资源服务的元数据、归属与可见性；字节存储与下载由 resource 服务负责。"
+  >
+    <div class="flex flex-col gap-3">
       <form
-        class="flex flex-wrap gap-2"
+        class="admin-actions"
         @submit.prevent="search"
       >
         <input
@@ -363,23 +357,24 @@
         </div>
       </div>
     </div>
-  </div>
+  </AdminPage>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref, reactive } from 'vue'
+import AdminPage from './AdminPage.vue'
 import {
   adminListResources,
   adminGetResource,
   adminGetResourceDictionaries,
   adminDeleteResource,
-} from './api'
+} from '../../api/admin'
 import type {
   AdminResourceItem,
   AdminResourceDetail,
   AdminResourcePage,
   DictionaryOption,
-} from './api'
+} from '../../api/admin'
 
 /** Sentinel option value: the viewer typed an app name that is not in the dictionary. */
 const OTHER_APP = '__other__'

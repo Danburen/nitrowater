@@ -12,6 +12,7 @@ import cn.nitrowater.account.web.dto.response.EmailChangeVo;
 import cn.nitrowater.account.web.dto.response.PhoneChangeVo;
 import cn.nitrowater.account.web.dto.response.ReAuthInfoResp;
 import cn.nitrowater.account.web.dto.response.ReAuthTokenVo;
+import cn.nitrowater.account.web.dto.response.UserCenterResp;
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.lib.common.TokenResult;
 import cn.nitrowater.lib.utils.MaskUtil;
@@ -26,7 +27,13 @@ import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;
 import cn.nitrowater.core.application.account.AccountCoreService;
 import cn.nitrowater.core.application.auth.SingleUseTokenService;
 import cn.nitrowater.core.application.auth.code.VerificationService;
+import cn.nitrowater.core.application.user.UserCoreService;
 import cn.nitrowater.core.application.user.UserDatumCoreService;
+import cn.nitrowater.core.exception.BizException;
+import cn.nitrowater.lib.api.BaseResponseCode;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @RestController
@@ -36,6 +43,7 @@ public class AuthAccountController {
     private final AccountCoreService accountCoreService;
     private final VerificationService verificationService;
     private final UserDatumCoreService userDatumCoreService;
+    private final UserCoreService userCoreService;
     private final SingleUseTokenService singleUseTokenService;
 
     @RateLimit(key = "account.default", permits = 10, window = 300)
@@ -46,16 +54,41 @@ public class AuthAccountController {
         );
     }
 
+    /** Login: full user-center snapshot (identity, nickname and masked contacts). */
+    @RateLimit(key = "account.default", permits = 30, window = 300)
+    @GetMapping("/me")
+    public ApiResponse<UserCenterResp> me() {
+        long uid = UserCtxHolder.getUserUid();
+        return ApiResponse.success(UserCenterResp.from(
+                userCoreService.getUser(uid),
+                userDatumCoreService.getAccountInfo(uid)));
+    }
+
+    /** Login: update the display nickname. */
+    @RateLimit(key = "user", permits = 5, window = 300)
+    @PutMapping("/nickname")
+    public ApiResponse<Void> updateNickname(@Valid @RequestBody UpdateNicknameReq body) {
+        userCoreService.updateNickname(UserCtxHolder.getUserUid(), body.getNickname());
+        return ApiResponse.success();
+    }
+
     @Operation(summary = "获取 re-auth 信息（掩码手机号）")
     @GetMapping("/re-auth/info")
     public ApiResponse<ReAuthInfoResp> getReAuthInfo() {
         long uid = UserCtxHolder.getUserUid();
         String rawPhone = userDatumCoreService.getRawPhone(uid);
-        if (rawPhone == null) {
-            return ApiResponse.success(new ReAuthInfoResp(null));
+        String rawEmail = userDatumCoreService.getRawEmail(uid);
+        List<String> channels = new ArrayList<>(2);
+        if (rawPhone != null) {
+            channels.add(VerifyChannel.SMS.name());
         }
-        String masked = MaskUtil.maskPhone(rawPhone);
-        return ApiResponse.success(new ReAuthInfoResp(masked));
+        if (rawEmail != null) {
+            channels.add(VerifyChannel.EMAIL.name());
+        }
+        return ApiResponse.success(new ReAuthInfoResp(
+                rawPhone == null ? null : MaskUtil.maskPhone(rawPhone),
+                rawEmail == null ? null : MaskUtil.maskEmail(rawEmail),
+                channels));
     }
 
     @Operation(summary = "发起 re-auth（直接发验证码到绑定手机）")
@@ -64,12 +97,11 @@ public class AuthAccountController {
     public ApiResponse<Void> reAuth(@Valid @RequestBody ReAuthReq body,
                                     HttpServletResponse response) {
         long uid = UserCtxHolder.getUserUid();
-        String phone = userDatumCoreService.getRawPhone(uid);
-        if (phone == null) {
-            return ApiResponse.success();
-        }
-        CodeResult result = verificationService.sendCodeForAuthenticated(phone, VerifyChannel.SMS, body.getScene());
-        ResponseUtil.setCookieAndNoCache(response, body.getScene().name() + "_REAUTH_KEY", result.getKey(), 300);
+        VerifyChannel channel = resolveChannel(uid, body.getChannel());
+        String target = targetFor(uid, channel);
+        CodeResult result = verificationService.sendCodeForAuthenticated(target, channel, body.getScene());
+        ResponseUtil.setCookieAndNoCache(response, reAuthCookieName(body.getScene(), channel),
+                result.getKey(), 300);
         return ApiResponse.success();
     }
 
@@ -79,17 +111,47 @@ public class AuthAccountController {
     public ApiResponse<ReAuthTokenVo> verifyReAuth(@Valid @RequestBody ReAuthVerifyReq body,
                                                    HttpServletRequest request) {
         long uid = UserCtxHolder.getUserUid();
-        String phone = userDatumCoreService.getRawPhone(uid);
-        if (phone == null) {
-            return ApiResponse.success(new ReAuthTokenVo(null));
+        VerifyChannel channel = resolveChannel(uid, body.getChannel());
+        String target = targetFor(uid, channel);
+        String verifyKey = CookieUtil.getCookieValue(request.getCookies(),
+                reAuthCookieName(body.getScene(), channel));
+        if (verifyKey == null) {
+            verifyKey = CookieUtil.getCookieValue(request.getCookies(),
+                    body.getScene().name() + "_REAUTH_KEY");
         }
-        String verifyKey = CookieUtil.getCookieValue(request.getCookies(), body.getScene().name() + "_REAUTH_KEY");
         if (verifyKey == null) {
             return ApiResponse.success(new ReAuthTokenVo(null));
         }
-        verificationService.verifyCode(phone, body.getScene(), VerifyChannel.SMS, verifyKey, body.getCode());
+        verificationService.verifyCode(target, body.getScene(), channel, verifyKey, body.getCode());
         TokenResult token = singleUseTokenService.generateVerifyToken(body.getScene().name(), uid);
         return ApiResponse.success(new ReAuthTokenVo(token.value()));
+    }
+
+    private VerifyChannel resolveChannel(long uid, VerifyChannel requested) {
+        if (requested != null) {
+            return requested;
+        }
+        if (userDatumCoreService.getRawPhone(uid) != null) {
+            return VerifyChannel.SMS;
+        }
+        if (userDatumCoreService.getRawEmail(uid) != null) {
+            return VerifyChannel.EMAIL;
+        }
+        throw new BizException(BaseResponseCode.NOT_FOUND);
+    }
+
+    private String targetFor(long uid, VerifyChannel channel) {
+        String target = channel == VerifyChannel.EMAIL
+                ? userDatumCoreService.getRawEmail(uid)
+                : userDatumCoreService.getRawPhone(uid);
+        if (target == null) {
+            throw new BizException(BaseResponseCode.NOT_FOUND);
+        }
+        return target;
+    }
+
+    private static String reAuthCookieName(VerifyScene scene, VerifyChannel channel) {
+        return scene.name() + "_" + channel.name() + "_REAUTH_KEY";
     }
 
     @Operation(summary = "重置密码")
@@ -113,10 +175,10 @@ public class AuthAccountController {
     @Operation(summary = "激活邮箱")
     @PostMapping("/email/activate")
     @RateLimit(key = "account.default", permits = 5, window = 300)
-    public ApiResponse<Void> activateEmail(@Valid @RequestBody EmailReAuthReq body) {
+    public ApiResponse<EmailChangeVo> activateEmail(@Valid @RequestBody EmailReAuthReq body) {
         Long uid = singleUseTokenService.consumeVerifyToken(body.getReAuthToken(), VerifyScene.ACTIVATE.name());
-        accountCoreService.activateEmail(uid, body.getEmail(), body.getDeviceInfo());
-        return ApiResponse.success();
+        CodeResult result = accountCoreService.activateEmail(uid, body.getEmail(), body.getDeviceInfo());
+        return ApiResponse.success(new EmailChangeVo(result.getKey()));
     }
 
     @Operation(summary = "修改邮箱 — 保存为新邮箱（未激活）并发送激活码")
@@ -158,10 +220,10 @@ public class AuthAccountController {
     @Operation(summary = "激活手机号")
     @PostMapping("/phone/activate")
     @RateLimit(key = "account.default", permits = 5, window = 300)
-    public ApiResponse<Void> activatePhone(@Valid @RequestBody PhoneReAuthReq body) {
+    public ApiResponse<PhoneChangeVo> activatePhone(@Valid @RequestBody PhoneReAuthReq body) {
         Long uid = singleUseTokenService.consumeVerifyToken(body.getReAuthToken(), VerifyScene.ACTIVATE.name());
-        accountCoreService.activatePhone(uid, body.getPhone(), body.getDeviceInfo());
-        return ApiResponse.success();
+        CodeResult result = accountCoreService.activatePhone(uid, body.getPhone(), body.getDeviceInfo());
+        return ApiResponse.success(new PhoneChangeVo(result.getKey()));
     }
 
     @Operation(summary = "解绑邮箱")

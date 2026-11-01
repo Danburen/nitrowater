@@ -39,12 +39,14 @@ public class ApiProxyController {
 
     private final RestClient serverRestClient;
     private final RestClient resourceRestClient;
+    private final RestClient accountRestClient;
     private final OAuth2AuthorizedClientManager authorizedClientManager;
     private final String registrationId;
 
     public ApiProxyController(
             @Value("${app.rs.base-url}") String rsBaseUrl,
             @Value("${app.resource.base-url:http://localhost:8093}") String resourceBaseUrl,
+            @Value("${app.account.base-url:http://localhost:8090}") String accountBaseUrl,
             @Value("${app.api.read-timeout-ms:45000}") long readTimeoutMs,
             OAuth2AuthorizedClientManager authorizedClientManager,
             @Value("${app.oidc.registration-id:nitrowater}") String registrationId) {
@@ -53,8 +55,14 @@ public class ApiProxyController {
         requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
         this.serverRestClient = RestClient.builder().baseUrl(rsBaseUrl).requestFactory(requestFactory).build();
         this.resourceRestClient = RestClient.builder().baseUrl(resourceBaseUrl).requestFactory(requestFactory).build();
+        this.accountRestClient = RestClient.builder().baseUrl(accountBaseUrl).requestFactory(requestFactory).build();
         this.authorizedClientManager = authorizedClientManager;
         this.registrationId = registrationId;
+    }
+
+    /** Account-management paths belong to the SSO service, not the business API. */
+    private static boolean isAccountPath(String path) {
+        return path.equals("/api/auth/account") || path.startsWith("/api/auth/account/");
     }
 
     /** Routes resource-management paths to the resource service; everything else to the business API. */
@@ -89,7 +97,9 @@ public class ApiProxyController {
         HttpMethod method = HttpMethod.valueOf(request.getMethod());
         long contentLength = request.getContentLengthLong();
 
-        RestClient restClient = isResourcePath(path) ? resourceRestClient : serverRestClient;
+        RestClient restClient = isAccountPath(path)
+                ? accountRestClient
+                : isResourcePath(path) ? resourceRestClient : serverRestClient;
         RestClient.RequestBodySpec spec = restClient
                 .method(method)
                 .uri(target);

@@ -1,7 +1,10 @@
 package cn.nitrowater.bff;
 
+import cn.nitrowater.core.web.ApiResponseAdvice;
+import cn.nitrowater.core.web.GlobalExceptionHandler;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Import;
 
 /**
  * Backend-for-Frontend (Token Handler) for the NitroWater SSO.
@@ -13,6 +16,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * renewal happens here (no iframe, no token in the browser).</p>
  */
 @SpringBootApplication
+@Import({ApiResponseAdvice.class, GlobalExceptionHandler.class})
 public class NitrowaterBffApplication {
 
     public static void main(String[] args) {

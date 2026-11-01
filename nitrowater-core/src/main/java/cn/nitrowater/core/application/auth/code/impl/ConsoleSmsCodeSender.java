@@ -1,62 +1,36 @@
 package cn.nitrowater.core.application.auth.code.impl;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.api.auth.VerifyScene;
-import cn.nitrowater.core.api.resp.auth.CodeResult;
-import cn.nitrowater.lib.common.RedisKeyPrefix;
-import cn.nitrowater.lib.common.cache.RedisKeyBuilder;
+import cn.nitrowater.core.application.auth.code.AbstractRedisCodeSender;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
-import cn.nitrowater.core.application.auth.code.CodeSender;
-import cn.nitrowater.core.application.auth.code.CodeVerifier;
-
-import java.time.Duration;
-import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
+import cn.nitrowater.lib.utils.MaskUtil;
 
 /**
- * 临时（开发期）短信验证码发送器：不接云通道，仅把验证码打印到控制台并写入 Redis。
- * <p>用于 Phase 1 打通登录/注册链路；后续以 AliyunSmsService 真实实现替换（决策点 N4）。</p>
+ * Local-development SMS sender. Logs the code instead of delivering it.
+ *
+ * <p>Selected when {@code app.communication.mode=mock} (the default). Never use this mode in
+ * production: verification codes appear in application logs.</p>
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
-public class ConsoleSmsCodeSender implements CodeSender, CodeVerifier {
+@ConditionalOnProperty(prefix = "app.communication", name = "mode",
+        havingValue = "mock", matchIfMissing = true)
+public class ConsoleSmsCodeSender extends AbstractRedisCodeSender {
 
-    private final RedisHelperHolder redisHelper;
-
-    @Value("${expire.sms-code:2}")
-    private Long expireMinutes;
-
-    private static String codeKey(String target, String scene, String identifier) {
-        return RedisKeyBuilder.build(RedisKeyPrefix.VERIFY, "sms", target, scene, identifier);
+    public ConsoleSmsCodeSender(RedisHelperHolder redisHelper,
+            @Value("${expire.sms-code:2}") long expireMinutes) {
+        super(redisHelper, VerifyChannel.SMS, expireMinutes);
+        log.warn("Communication mock mode is active; verification SMS are logged, not sent");
     }
 
     @Override
-    public CodeResult sendCode(String target, VerifyScene scene) {
-        String code = (String) generateVerifyCode();
-        String uuid = UUID.randomUUID().toString().replace("-", "");
-        log.info("[ConsoleCodeSender][SMS] >>> target={}, scene={}, code={} (TTL {} min)",
-                target, scene, code, expireMinutes);
-        redisHelper.set(codeKey(target, scene.getValue(), uuid), code, Duration.ofMinutes(expireMinutes));
-        return CodeResult.success(target, VerifyChannel.SMS).withKey(uuid);
-    }
-
-    @Override
-    public boolean verifyCode(String target, VerifyScene scene, String key, String code) {
-        return redisHelper.validateAndRemove(codeKey(target, scene.getValue(), key), code);
-    }
-
-    @Override
-    public Object generateVerifyCode() {
-        return String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1000000));
-    }
-
-    @Override
-    public VerifyChannel channel() {
-        return VerifyChannel.SMS;
+    protected void deliver(String target, VerifyScene scene, String code, long expireMinutes) {
+        log.info("[MOCK][SMS] target={}, scene={}, code={}, ttl={}min",
+                MaskUtil.maskPhone(target), scene, code, expireMinutes);
     }
 }

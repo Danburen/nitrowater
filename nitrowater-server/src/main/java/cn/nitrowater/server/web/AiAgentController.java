@@ -2,16 +2,15 @@ package cn.nitrowater.server.web;
 
 import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.ai.AiAdminSettingsService;
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.ai.AiQuotaExceededException;
-import cn.nitrowater.server.ai.AiTokenUsage;
-import cn.nitrowater.server.ai.AiUsageService;
 import cn.nitrowater.server.ai.ChatTurn;
 import cn.nitrowater.server.ai.agent.AgentAnswer;
 import cn.nitrowater.server.ai.agent.AgentTrace;
 import cn.nitrowater.server.ai.agent.AiAgentService;
 import cn.nitrowater.server.ai.agent.PreparedAgent;
 import cn.nitrowater.server.ai.conversation.ConversationService;
+import cn.nitrowater.server.ai.moderation.AiModerationService;
 import cn.nitrowater.server.ai.skill.SkillRegistry;
 import cn.nitrowater.server.web.dto.AiAgentReq;
 import cn.nitrowater.server.web.dto.AiAgentResp;
@@ -25,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.security.Principal;
 import java.util.LinkedHashMap;
@@ -61,17 +62,23 @@ public class AiAgentController {
     private final SkillRegistry skills;
     private final AiProperties properties;
     private final AiAdminSettingsService adminSettings;
+    private final AiModerationService moderation;
     private final String chatModel;
+    private final boolean interruptOnDisconnect;
 
     public AiAgentController(AiAgentService agentService, ConversationService conversations,
             SkillRegistry skills, AiProperties properties, AiAdminSettingsService adminSettings,
-            @Value("${spring.ai.openai.chat.model:}") String chatModel) {
+            AiModerationService moderation,
+            @Value("${spring.ai.openai.chat.model:}") String chatModel,
+            @Value("${app.ai.agent.interrupt-on-disconnect:false}") boolean interruptOnDisconnect) {
         this.agentService = agentService;
         this.conversations = conversations;
         this.skills = skills;
         this.properties = properties;
         this.adminSettings = adminSettings;
+        this.moderation = moderation;
         this.chatModel = chatModel;
+        this.interruptOnDisconnect = interruptOnDisconnect;
     }
 
     /** Login: list skills for the chat picker. */
@@ -94,10 +101,14 @@ public class AiAgentController {
         List<ChatTurn> history = historyOf(request, turn);
         try {
             AgentAnswer answer = agentService.answer(
-                    request.question(), history, request.skill(), request.allowWeb(), uid);
-            conversations.finish(turn.conversation(), answer.answer(), answer.sources(), answer.tools(), chatModel,
-                    answer.usage());
-            return new AiAgentResp(turn.conversation().getUuid(), answer.answer(), answer.sources(),
+                    request.question(), history, request.skill(), request.allowWeb(), uid,
+                    turn.conversation().getUuid());
+            AiModerationService.Screened screened = moderation.screenAnswer(uid,
+                    turn.conversation().getUuid(), answer.answer());
+            String text = screened.text();
+            conversations.finish(turn.conversation(), text, answer.sources(), answer.tools(), chatModel,
+                    answer.usage(), screened.masked());
+            return new AiAgentResp(turn.conversation().getUuid(), text, answer.sources(),
                     answer.tools(), answer.skills(), answer.grounded());
         } catch (RuntimeException ex) {
             conversations.fail(turn.conversation(), message(ex));
@@ -126,8 +137,8 @@ public class AiAgentController {
         String question = continuing ? CONTINUE_INSTRUCTION : request.question();
 
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
-        send(emitter, "conversation", JsonUtil.toJson(Map.of("uuid", turn.conversation().getUuid())));
-        send(emitter, "start", JsonUtil.toJson(Map.of("mode", "agent")));
+        send(emitter, "conversation", Map.of("uuid", turn.conversation().getUuid()));
+        send(emitter, "start", Map.of("mode", "agent"));
 
         PreparedAgent prepared;
         try {
@@ -136,23 +147,30 @@ public class AiAgentController {
                     history,
                     request.skill(),
                     request.allowWeb(),
-                    uid
+                    uid,
+                    turn.conversation().getUuid()
             );
         } catch (RuntimeException ex) {
             conversations.fail(turn.conversation(), message(ex));
-            send(emitter, "error", JsonUtil.toJson(errorPayload(ex)));
+            send(emitter, "error", errorPayload(ex));
             emitter.complete();
             return emitter;
         }
 
-        AtomicReference<Disposable> subscription = new AtomicReference<>();
-        AtomicReference<String> finishReason = new AtomicReference<>();
+        AtomicBoolean clientGone = new AtomicBoolean(false);
         AtomicBoolean tracesSent = new AtomicBoolean();
+        AtomicReference<String> finishReason = new AtomicReference<>();
         StringBuilder answer = new StringBuilder();
-        Disposable disposable = prepared.chunks().subscribe(
-                chunk -> {
+
+        // The subscription is deliberately decoupled from the emitter lifecycle: when the client
+        // disconnects, clientGone stops further writes but the model keeps running (unless
+        // app.ai.agent.interrupt-on-disconnect=true), so the full answer is still stored.
+        Mono<Void> pipeline = prepared.chunks()
+                .doOnNext(chunk -> {
                     if (chunk.step() != null) {
-                        send(emitter, "step", JsonUtil.toJson(chunk.step()));
+                        if (!clientGone.get() && !send(emitter, "step", chunk.step())) {
+                            clientGone.set(true);
+                        }
                         return;
                     }
                     if (chunk.finishReason() != null) {
@@ -162,46 +180,73 @@ public class AiAgentController {
                     if (token.isEmpty()) {
                         return;
                     }
-                    // Tool rounds are done before the first visible token, so the sources are final
-                    // here: emitting them now lets inline [n] chips resolve while the answer streams.
-                    if (tracesSent.compareAndSet(false, true)) {
+                    // Accumulate before checking clientGone: tokens produced after a disconnect
+                    // still belong to the stored answer.
+                    answer.append(token);
+                    if (clientGone.get()) {
+                        return;
+                    }
+                    // The prompt makes the model announce its action before calling a tool, so the
+                    // first visible token can arrive before any tool ran. Wait until there is a
+                    // trace to report, otherwise the once-only guard would ship an empty tool list
+                    // and drop the real one.
+                    if (!prepared.trace().calls().isEmpty() && tracesSent.compareAndSet(false, true)) {
                         sendTraces(emitter, prepared.trace());
                     }
-                    answer.append(token);
-                    if (!send(emitter, "delta", JsonUtil.toJson(Map.of("text", token)))) {
-                        Disposable running = subscription.get();
-                        if (running != null) {
-                            running.dispose();
-                        }
+                    if (!send(emitter, "delta", Map.of("text", token))) {
+                        clientGone.set(true);
                     }
-                },
-                error -> {
-                    conversations.fail(turn.conversation(), message(error));
-                    send(emitter, "error", JsonUtil.toJson(errorPayload(error)));
-                    emitter.complete();
-                },
-                () -> {
+                })
+                .then(Mono.fromRunnable(() -> {  // heavy persistence running on
                     AgentTrace trace = prepared.trace();
-                    AiTokenUsage tokenUsage = prepared.usageSession().finish();
-                    conversations.finish(turn.conversation(), answer.toString(), trace.sources(), trace.calls(),
-                            chatModel, tokenUsage);
-                    if (tracesSent.compareAndSet(false, true)) {
-                        sendTraces(emitter, trace);
+                    String raw = answer.toString();
+                    AiModerationService.Screened screened = moderation.screenAnswer(uid,
+                            turn.conversation().getUuid(), raw);
+                    String text = screened.text();
+                    conversations.finish(turn.conversation(), text,
+                            trace.sources(), trace.calls(), chatModel,
+                            prepared.usageSession().finish(), screened.masked());
+                    if (clientGone.get()) return;
+                    // Already-streamed tokens cannot be recalled, so the client replaces the bubble
+                    // with the screened text that was just stored.
+                    if (!text.equals(raw)) {
+                        send(emitter, "moderation", Map.of("text", text));
                     }
-                    send(emitter, "done", JsonUtil.toJson(donePayload(finishReason.get())));
+                    if (tracesSent.compareAndSet(false, true)) sendTraces(emitter, trace);
+                    send(emitter, "done", donePayload(finishReason.get()));
                     emitter.complete();
+                }).subscribeOn(Schedulers.boundedElastic()))
+                .doOnError(error -> Mono.fromRunnable(() -> {
+                    conversations.fail(turn.conversation(), message(error));
+                    if (clientGone.get()) return;
+                    send(emitter, "error", errorPayload(error));
+                    emitter.complete();
+                }).subscribeOn(Schedulers.boundedElastic()).subscribe())
+                .doFinally(signal -> prepared.usageSession().finish())
+                .then();
+
+        Disposable disposable = pipeline.subscribe(
+                null,
+                _ -> {
                 });
-        subscription.set(disposable);
-        emitter.onCompletion(disposable::dispose);
-        // Settles on client disconnect as well; Session#finish is idempotent.
-        emitter.onCompletion(prepared.usageSession()::finish);
+
+        emitter.onCompletion(() -> {
+            if (interruptOnDisconnect) {
+                disposable.dispose();
+            }
+        });
         emitter.onError(error -> {
-            disposable.dispose();
-            prepared.usageSession().finish();
+            if (interruptOnDisconnect) {
+                disposable.dispose();
+            }
         });
         emitter.onTimeout(() -> {
-            disposable.dispose();
-            prepared.usageSession().finish();
+            // The client will never see the rest: continue persisting without writing, then
+            // release the async request. Without this flag doOnComplete would still try to send.
+            clientGone.set(true);
+            if (interruptOnDisconnect) {
+                disposable.dispose();
+            }
             emitter.complete();
         });
         return emitter;
@@ -209,11 +254,11 @@ public class AiAgentController {
 
     /** Emits the per-turn citations, tool trace and skills (idempotent once per stream). */
     private static void sendTraces(SseEmitter emitter, AgentTrace trace) {
-        send(emitter, "sources", JsonUtil.toJson(Map.of(
+        send(emitter, "sources", Map.of(
                 "sources", trace.sources(),
-                "grounded", trace.hasSources())));
-        send(emitter, "tools", JsonUtil.toJson(Map.of("tools", trace.calls())));
-        send(emitter, "skills", JsonUtil.toJson(Map.of("skills", trace.skills())));
+                "grounded", trace.hasSources()));
+        send(emitter, "tools", Map.of("tools", trace.calls()));
+        send(emitter, "skills", Map.of("skills", trace.skills()));
     }
 
     /**
@@ -223,7 +268,7 @@ public class AiAgentController {
     private static Map<String, Object> donePayload(String finishReason) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("finishReason", finishReason);
-        payload.put("truncated", finishReason != null && "length".equalsIgnoreCase(finishReason));
+        payload.put("truncated", "length".equalsIgnoreCase(finishReason));
         return payload;
     }
 
@@ -238,9 +283,19 @@ public class AiAgentController {
         return AiHistory.toTurns(request.history(), properties.maxHistoryTurns());
     }
 
-    private static boolean send(SseEmitter emitter, String event, String data) {
+    /**
+     * Writes one SSE frame, serialising the payload as a JSON string.
+     *
+     * <p>The payload is kept as an {@code Object} so every call site can pass a
+     * {@code Map<String, Object>} directly (and the {@code step} record without conversion), while
+     * the SSE frame still carries the JSON text the browser expects. Passing a pre-serialised
+     * {@code String} would double-encode it.</p>
+     *
+     * @return whether the frame was written; a broken connection is ignored
+     */
+    private static boolean send(SseEmitter emitter, String event, Object payload) {
         try {
-            emitter.send(SseEmitter.event().name(event).data(data));
+            emitter.send(SseEmitter.event().name(event).data(JsonUtil.toJson(payload)));
             return true;
         } catch (Exception ex) {
             return false;
@@ -257,8 +312,8 @@ public class AiAgentController {
     private static Map<String, Object> errorPayload(Throwable error) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("message", message(error));
-        if (error instanceof AiQuotaExceededException) {
-            payload.put("code", AiQuotaExceededException.CODE);
+        if (error instanceof AiQuotaExceededException quota) {
+            payload.put("code", quota.code());
         }
         return payload;
     }

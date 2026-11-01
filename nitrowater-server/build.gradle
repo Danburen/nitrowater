@@ -20,6 +20,7 @@ repositories {
 
 dependencies {
     implementation project(':nitrowater-core')
+    implementation project(':nitrowater-core-web')
     // --- nitrowater-lib: 直依赖以便复用共享工具（如 IdentifierGenerator/Romanizer；core 的 implementation 不传递）---
     implementation project(':nitrowater-lib')
     // --- 拼音：离线中文→拉丁音译（slug 生成；替代重量级 ICU，见 .ai/context）---
@@ -49,6 +50,11 @@ dependencies {
     // --- Web search result extraction: strip HTML down to readable text before it reaches the
     // agent. Small, no transitive surprises. ---
     implementation 'org.jsoup:jsoup:1.18.3'
+    // --- Content moderation: DFA (trie) sensitive-word matcher. The built-in word list is NOT
+    // used; the dictionary is supplied from resources / an operator-mounted file so the repo never
+    // carries a violation word list. The dependency also brings the Chinese normalisation needed
+    // to catch full-width / traditional / repeated-character evasions. ---
+    implementation 'com.github.houbb:sensitive-word:0.29.5'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

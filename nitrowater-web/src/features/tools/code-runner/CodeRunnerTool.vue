@@ -21,8 +21,13 @@ import {
   VideoPlay,
 } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ElMessageBox } from 'element-plus'
+import 'element-plus/es/components/message-box/style/css'
 import { useAuth } from '../../../auth/useAuth'
+import { consumeRunnerSeed } from '../../../shared/codeRunnerSeed'
 import { apiFetch } from '../../../auth/bff'
+import { readJson } from '../../../api/envelope'
+import type { SandboxRunOutcome } from '../../../api/sandbox'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
 import TextArea from '../../../shared/ui/TextArea.vue'
@@ -38,7 +43,7 @@ import { ansiToHtml } from './lib/ansi'
 import { flushMemoryCache, useContentCache, type UseContentCacheReturn } from './lib/contentCache'
 import { ensureLanguage, isLanguageReady, runLocalCode } from './lib/runtimes/runtimeManager'
 
-const { login, session } = useAuth()
+const { login, session, loading } = useAuth()
 
 /** Picker entries: anonymous callers only get browser-local (WASM) languages. */
 const availableLanguages = computed(() =>
@@ -72,6 +77,56 @@ const stdin = ref('')
 const output = ref('')
 const status = ref('就绪')
 const running = ref(false)
+
+/**
+ * Applies a one-shot handoff from a chat code block (language + source).
+ *
+ * <p>Runs after the session probe resolves: server-side languages are hidden until then, so
+ * deciding earlier would wrongly reject a Java/C/C++ handoff.</p>
+ */
+async function applySeed(): Promise<void> {
+  const seed = consumeRunnerSeed()
+  if (!seed || !isRunnerLanguage(seed.language)) return
+  const language = seed.language
+  const entry = RUNNER_LANGUAGES.find((item) => item.id === language)
+  const cache = caches.get(language)
+  if (!entry || !cache) return
+
+  const selectable = availableLanguages.value.some((item) => item.id === language)
+  if (!selectable) {
+    // Signed out + server-side language: keep the draft out, hand it over via the clipboard.
+    try {
+      await navigator.clipboard.writeText(seed.code)
+      toast.warning(`${entry.label} 需要登录后使用，代码已复制到剪贴板`)
+    } catch {
+      toast.warning(`${entry.label} 需要登录后使用`)
+    }
+    return
+  }
+
+  const current = cache.content.value
+  if (current.trim() && current !== entry.defaultCode && current !== seed.code) {
+    try {
+      await ElMessageBox.confirm(
+        `运行器里「${entry.label}」已有代码，载入会覆盖当前草稿。`,
+        '覆盖现有代码？',
+        { type: 'warning', confirmButtonText: '覆盖', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
+  }
+
+  languageId.value = language
+  cache.content.value = seed.code
+  stdin.value = ''
+  toast.success('已从对话载入代码')
+}
+
+// The session decides whether server-side languages are selectable; seed after it resolves.
+watch(loading, (value) => {
+  if (!value) void applySeed()
+}, { immediate: true })
 
 /** Language id for editor syntax highlighting (all selectable languages have a mode). */
 const editorLanguage = computed<RunnerLanguageId | undefined>(() =>
@@ -110,17 +165,6 @@ async function copyCode() {
 //  Run
 // ──────────────────────────────────────────
 
-/** Response shape of the backend sandbox run endpoint. */
-interface ServerRunResponse {
-  stdout: string | null
-  stderr: string | null
-  status: string | null
-  exitCode: number | null
-  wallTimeMs: number | null
-  memoryBytes: number | null
-  message: string | null
-}
-
 /** Human-readable hint for a non-OK sandbox status. */
 function serverStatusHint(status: string | null): string {
   switch (status) {
@@ -158,7 +202,7 @@ async function runOnServer(language: string, source: string, input: string): Pro
     const detail = await response.text()
     return `[服务器错误 ${response.status}] ${detail}`
   }
-  const data = (await response.json()) as ServerRunResponse
+  const data = await readJson<SandboxRunOutcome>(response)
   const text = `${data.stdout ?? ''}${data.stderr ?? ''}`
   const hint = serverStatusHint(data.status)
   if (hint) {

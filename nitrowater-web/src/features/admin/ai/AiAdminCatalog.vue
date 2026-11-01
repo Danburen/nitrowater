@@ -1,11 +1,16 @@
 <script setup lang="ts">
+/**
+ * Index status, skills and tools, rendered with Element Plus descriptions/tables.
+ */
 import { computed } from 'vue'
-import type { AiSkill, AiStatus, AiTool } from '../../ai/api'
+import type { AiSkill, AiStatus, AiTool } from '../../../api/ai'
 
 const props = defineProps<{
+  /** Which block to render: the index health card or the tool/skill catalogue. */
+  section: 'index' | 'capabilities'
   status: AiStatus | null
-  skills: readonly AiSkill[]
-  tools: readonly AiTool[]
+  skills: AiSkill[]
+  tools: AiTool[]
   loading: boolean
 }>()
 
@@ -15,11 +20,11 @@ const indexLabel = computed(() => {
   return props.status.indexed ? '已索引' : '未索引'
 })
 
-const indexTone = computed(() => {
-  if (!props.status) return 'text-faint'
-  if (props.status.error) return 'text-danger'
-  if (props.status.indexing || !props.status.indexed) return 'text-warn'
-  return 'text-ok'
+const indexTagType = computed<'success' | 'warning' | 'danger' | 'info'>(() => {
+  if (!props.status) return 'info'
+  if (props.status.error) return 'danger'
+  if (props.status.indexing || !props.status.indexed) return 'warning'
+  return 'success'
 })
 
 const enabledTools = computed(() => props.tools.filter((tool) => tool.enabled).length)
@@ -32,37 +37,43 @@ function formatDate(value: string | null): string {
 </script>
 
 <template>
-  <section class="panel">
-    <h2 class="mb-4 text-sm font-semibold text-ink">
-      索引与目录
-    </h2>
-    <div class="grid gap-4 border-b border-line pb-4 sm:grid-cols-3">
-      <div>
-        <p class="text-xs text-faint">
-          索引状态
-        </p>
-        <p
-          class="mt-1 text-sm font-medium"
-          :class="indexTone"
+  <el-card
+    shadow="never"
+    class="admin-card"
+  >
+    <el-skeleton
+      v-if="loading && !status"
+      :rows="6"
+      animated
+      class="py-2"
+    />
+    <template v-else>
+            <div
+        v-if="section === 'index'"
+        class="overflow-x-auto"
+      >
+        <el-descriptions
+          :column="3"
+          border
+        >
+      <el-descriptions-item label="索引状态">
+        <el-tag
+          :type="indexTagType"
+          size="small"
         >
           {{ indexLabel }}
-          <span
-            v-if="status"
-            class="ml-2 text-xs font-normal text-dim"
-          >
-            {{ status.chunks }} 块 / {{ status.files }} 文件
-          </span>
-        </p>
+        </el-tag>
+        <span class="ml-2 text-xs text-dim">
+          {{ status?.chunks ?? 0 }} 块 / {{ status?.files ?? 0 }} 文件
+        </span>
         <p class="mt-1 text-xs text-faint">
           最近重建：{{ formatDate(status?.indexedAt ?? null) }}
         </p>
-      </div>
-      <div>
-        <p class="text-xs text-faint">
-          Chat / Embedding
-        </p>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="Chat / Embedding">
         <p
-          class="mt-1 truncate text-[13px] text-ink"
+          class="truncate text-[13px]"
           :title="status?.chatModel"
         >
           {{ status?.chatModel || '—' }}
@@ -73,13 +84,11 @@ function formatDate(value: string | null): string {
         >
           {{ status?.embeddingModel || '—' }}
         </p>
-      </div>
-      <div>
-        <p class="text-xs text-faint">
-          Qdrant 集合
-        </p>
+      </el-descriptions-item>
+
+      <el-descriptions-item label="Qdrant 集合">
         <p
-          class="mt-1 truncate text-[13px] text-ink"
+          class="truncate text-[13px]"
           :title="status?.collection"
         >
           {{ status?.collection || '—' }}
@@ -90,66 +99,61 @@ function formatDate(value: string | null): string {
         >
           {{ status.error }}
         </p>
+      </el-descriptions-item>
+    </el-descriptions>
       </div>
-    </div>
 
-    <div class="grid gap-5 pt-4 lg:grid-cols-2">
+            <div
+        v-if="section === 'capabilities'"
+        class="grid gap-4 lg:grid-cols-2"
+      >
       <div class="min-w-0">
         <div class="mb-2 flex items-center justify-between gap-2">
           <h3 class="text-[13px] font-medium text-ink">
             Skills
           </h3>
-          <span class="tag">{{ skills.length }}</span>
+          <el-tag
+            size="small"
+            type="info"
+          >
+            {{ skills.length }}
+          </el-tag>
         </div>
-        <p
-          v-if="loading"
-          class="py-3 text-sm text-dim"
+        <el-table
+          v-loading="loading"
+          :data="skills"
+          size="small"
+          max-height="288"
         >
-          加载中…
-        </p>
-        <p
-          v-else-if="skills.length === 0"
-          class="py-3 text-sm text-dim"
-        >
-          暂无技能。
-        </p>
-        <div
-          v-else
-          class="max-h-72 overflow-auto"
-        >
-          <table class="w-full border-collapse text-left text-xs">
-            <thead>
-              <tr class="border-b border-line text-faint">
-                <th class="py-2 pr-2 font-medium">
-                  名称
-                </th>
-                <th class="py-2 pr-2 font-medium">
-                  来源
-                </th>
-                <th class="py-2 font-medium">
-                  适用场景
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="skill in skills"
-                :key="skill.name"
-                class="border-b border-line/60 last:border-0"
-              >
-                <td class="py-2 pr-2 font-mono text-ink">
-                  {{ skill.name }}
-                </td>
-                <td class="py-2 pr-2 text-dim">
-                  {{ skill.source }}
-                </td>
-                <td class="py-2 text-dim">
-                  {{ skill.whenToUse || skill.description || '—' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          <template #empty>
+            <el-empty
+              description="暂无技能"
+              :image-size="60"
+            />
+          </template>
+          <el-table-column
+            label="名称"
+            min-width="130"
+          >
+            <template #default="{ row }">
+              <span class="font-mono">{{ row.name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="来源"
+            width="88"
+            prop="source"
+          />
+          <el-table-column
+            label="适用场景"
+            min-width="180"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              {{ row.whenToUse || row.description || '—' }}
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
       <div class="min-w-0">
@@ -157,67 +161,60 @@ function formatDate(value: string | null): string {
           <h3 class="text-[13px] font-medium text-ink">
             Agent 工具
           </h3>
-          <span class="tag">{{ enabledTools }} / {{ tools.length }}</span>
+          <el-tag
+            size="small"
+            type="info"
+          >
+            {{ enabledTools }} / {{ tools.length }}
+          </el-tag>
         </div>
-        <p
-          v-if="loading"
-          class="py-3 text-sm text-dim"
+        <el-table
+          v-loading="loading"
+          :data="tools"
+          size="small"
+          max-height="288"
         >
-          加载中…
-        </p>
-        <p
-          v-else-if="tools.length === 0"
-          class="py-3 text-sm text-dim"
-        >
-          暂无工具。
-        </p>
-        <div
-          v-else
-          class="max-h-72 overflow-auto"
-        >
-          <table class="w-full border-collapse text-left text-xs">
-            <thead>
-              <tr class="border-b border-line text-faint">
-                <th class="py-2 pr-2 font-medium">
-                  名称
-                </th>
-                <th class="py-2 pr-2 font-medium">
-                  来源
-                </th>
-                <th class="py-2 pr-2 font-medium">
-                  状态
-                </th>
-                <th class="py-2 font-medium">
-                  描述
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="tool in tools"
-                :key="tool.name"
-                class="border-b border-line/60 last:border-0"
+          <template #empty>
+            <el-empty
+              description="暂无工具"
+              :image-size="60"
+            />
+          </template>
+          <el-table-column
+            label="名称"
+            min-width="130"
+          >
+            <template #default="{ row }">
+              <span class="font-mono">{{ row.name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="来源"
+            width="80"
+            prop="source"
+          />
+          <el-table-column
+            label="状态"
+            width="80"
+          >
+            <template #default="{ row }">
+              <el-tag
+                size="small"
+                :type="row.enabled ? 'success' : 'info'"
               >
-                <td class="py-2 pr-2 font-mono text-ink">
-                  {{ tool.name }}
-                </td>
-                <td class="py-2 pr-2 text-dim">
-                  {{ tool.source }}
-                </td>
-                <td
-                  class="py-2 pr-2"
-                  :class="tool.enabled ? 'text-ok' : 'text-faint'"
-                >
-                  {{ tool.enabled ? '启用' : '关闭' }}
-                </td>
-                <td class="py-2 text-dim">
-                  {{ tool.description }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                {{ row.enabled ? '启用' : '关闭' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="描述"
+            min-width="180"
+            show-overflow-tooltip
+            prop="description"
+          />
+        </el-table>
       </div>
-    </div>
-  </section>
+      </div>
+    </template>
+  </el-card>
 </template>

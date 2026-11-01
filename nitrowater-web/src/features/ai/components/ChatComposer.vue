@@ -9,8 +9,9 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { SLASH_COMMANDS, matchSlashCommands, opensSlashMenu, type SlashCommand } from '../slash'
+import UiTooltip from '../../../shared/ui/UiTooltip.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: string
   busy: boolean
   disabled: boolean
@@ -19,17 +20,24 @@ const props = defineProps<{
   hint?: string
   /** Slash commands need a session; they stay available whenever the composer itself is usable. */
   commandsEnabled: boolean
-}>()
+  /** Whether the server exposes a web-search provider for this turn. */
+  webSearchAvailable?: boolean
+  /** User intent for the next turn; only effective when the server allows it. */
+  webSearch?: boolean
+}>(), { webSearchAvailable: false, webSearch: false })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   (e: 'submit'): void
   (e: 'stop'): void
   (e: 'login'): void
+  (e: 'update:webSearch', value: boolean): void
 }>()
 
-const MAX_HEIGHT = 168
+const MAX_HEIGHT = 180
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+/** Only enable native overflow scrolling once the auto-grown field hits its cap. */
+const overflowing = ref(false)
 const menuIndex = ref(0)
 /** Draft for which the user pressed Escape; the menu stays closed for that exact text. */
 const escapedDraft = ref<string | null>(null)
@@ -57,7 +65,11 @@ function resize(): void {
   const element = inputEl.value
   if (!element) return
   element.style.height = 'auto'
-  element.style.height = `${Math.min(element.scrollHeight, MAX_HEIGHT)}px`
+  const contentHeight = element.scrollHeight
+  element.style.height = `${Math.min(contentHeight, MAX_HEIGHT)}px`
+  // Keep overflow hidden while the field fits. Browsers otherwise reserve/show a scrollbar
+  // during the auto-grow measurement, including for the empty state and one or two blank lines.
+  overflowing.value = contentHeight > MAX_HEIGHT
 }
 
 function onInput(event: Event): void {
@@ -146,22 +158,53 @@ defineExpose({ focus })
       </div>
 
       <div class="rounded-[20px] border border-line bg-card shadow-[0_6px_24px_rgba(0,0,0,0.07)] transition focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/15">
-        <div class="flex items-end gap-2 pb-1.5 pl-3 pr-2 pt-2.5 sm:pl-4">
-          <textarea
-            ref="inputEl"
-            :value="modelValue"
-            rows="1"
-            class="max-h-[168px] min-h-[26px] flex-1 resize-none bg-transparent px-1 py-1 text-[14.5px] leading-[1.6] text-ink outline-none placeholder:text-faint"
-            :placeholder="placeholder"
-            :disabled="disabled"
-            aria-label="消息输入框"
-            aria-autocomplete="list"
-            :aria-expanded="menuOpen"
-            :aria-controls="menuOpen ? 'slash-commands' : undefined"
-            :aria-activedescendant="menuOpen ? `slash-${suggestions[menuIndex]?.name}` : undefined"
-            @input="onInput"
-            @keydown="onKeydown"
-          />
+        <textarea
+          ref="inputEl"
+          :value="modelValue"
+          rows="1"
+          class="scroll-thin block max-h-[180px] min-h-[26px] w-full resize-none bg-transparent px-3.5 pt-2.5 text-[14.5px] leading-[1.6] text-ink outline-none placeholder:text-faint sm:px-4"
+          :class="overflowing ? 'overflow-y-auto' : 'overflow-y-hidden'"
+          :placeholder="placeholder"
+          :disabled="disabled"
+          aria-label="消息输入框"
+          aria-autocomplete="list"
+          :aria-expanded="menuOpen"
+          :aria-controls="menuOpen ? 'slash-commands' : undefined"
+          :aria-activedescendant="menuOpen ? `slash-${suggestions[menuIndex]?.name}` : undefined"
+          @input="onInput"
+          @keydown="onKeydown"
+        />
+        <div class="flex items-center gap-1.5 px-2 pb-1.5 pt-1">
+          <UiTooltip
+            v-if="webSearchAvailable && !disabled"
+            text="本轮允许联网搜索（每轮最多 2 次）"
+            placement="top"
+          >
+            <button
+              type="button"
+              class="chip-toggle"
+              :class="{ 'is-on': webSearch }"
+              :aria-pressed="webSearch"
+              :title="webSearch ? '本轮联网：开' : '本轮联网：关'"
+              @click="emit('update:webSearch', !webSearch)"
+            >
+              <svg
+                class="size-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
+              </svg>
+              联网
+            </button>
+          </UiTooltip>
+          <span class="ml-auto" />
           <button
             v-if="busy"
             type="button"
@@ -175,13 +218,7 @@ defineExpose({ focus })
               viewBox="0 0 24 24"
               fill="currentColor"
             >
-              <rect
-                x="6"
-                y="6"
-                width="12"
-                height="12"
-                rx="2"
-              />
+              <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>
           </button>
           <button
@@ -201,18 +238,12 @@ defineExpose({ focus })
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <line
-                x1="12"
-                y1="19"
-                x2="12"
-                y2="5"
-              />
+              <line x1="12" y1="19" x2="12" y2="5" />
               <polyline points="5 12 12 5 19 12" />
             </svg>
           </button>
         </div>
-      </div>
-      <p class="mt-1.5 text-center text-[11px] text-faint">
+      </div>      <p class="mt-1.5 text-center text-[11px] text-faint">
         <template v-if="disabled">
           <button
             type="button"

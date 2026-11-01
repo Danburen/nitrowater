@@ -112,6 +112,17 @@ onMounted(() => {
         </p>
 
         <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          <div class="rounded-[14px] border border-line bg-card p-4 sm:col-span-2">
+            <h3 class="text-[13.5px] font-medium text-ink">
+              除了个人额度，还有全站额度
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-dim">
+              NitroWater 是开源项目，服务器、模型调用和向量检索都由个人出资维护，没有商业收入兜底。
+              为了避免某一天的用量把预算打穿、也为了让服务能长期稳定运行，全站设有每日用量上限。
+              达到上限后当天无法继续提问，<strong class="font-medium text-ink">历史会话与斜杠指令仍然可用</strong>，
+              第二天 08:00（北京时间）自动恢复。如果你觉得这个限制影响使用，欢迎在下方支持项目。
+            </p>
+          </div>
           <div class="rounded-[14px] border border-line bg-card p-4">
             <h3 class="text-[13.5px] font-medium text-ink">
               为什么要限制

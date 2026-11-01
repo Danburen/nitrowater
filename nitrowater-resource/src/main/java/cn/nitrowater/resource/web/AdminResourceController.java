@@ -1,12 +1,13 @@
 package cn.nitrowater.resource.web;
 
+import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.resource.application.ResourceService;
-import cn.nitrowater.resource.application.dto.AdminResourcePage;
+import cn.nitrowater.resource.application.dto.ResourceMeta;
 import cn.nitrowater.resource.application.dto.AdminResourceQuery;
 import cn.nitrowater.resource.web.dto.DictionaryResp;
 import cn.nitrowater.resource.web.dto.OptionResp;
-import cn.nitrowater.resource.web.dto.PageResp;
 import cn.nitrowater.resource.web.dto.ResourceMetaResp;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -50,7 +51,7 @@ public class AdminResourceController {
 
     /** Admin: filtered, paged listing (super-admin: all; other admin: own only). */
     @GetMapping
-    public PageResp<ResourceMetaResp> list(
+    public ApiResponse<Page<ResourceMetaResp>> list(
             @RequestParam(required = false) String app,
             @RequestParam(name = "group", required = false) String group,
             @RequestParam(required = false) Long ownerUid,
@@ -63,10 +64,9 @@ public class AdminResourceController {
         AdminResourceQuery query = new AdminResourceQuery(
                 app, group, ownerUid,
                 ResourceWebMapper.statusOf(status), ResourceWebMapper.sourceTypeOf(sourceType), keyword);
-        AdminResourcePage result = resourceService.adminList(query, ResourceWebMapper.uidOf(jwt),
+        Page<ResourceMeta> result = resourceService.adminList(query, ResourceWebMapper.uidOf(jwt),
                 ResourceWebMapper.isSuperAdmin(jwt), page, size);
-        List<ResourceMetaResp> items = result.items().stream().map(ResourceWebMapper::toResp).toList();
-        return new PageResp<>(items, result.total(), result.page(), result.size(), result.totalPages());
+        return ApiResponse.success(result.map(ResourceWebMapper::toResp));
     }
 
     /**

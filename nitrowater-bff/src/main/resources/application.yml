@@ -6,6 +6,10 @@
 
 server:
   port: 8080
+  # Behind the nginx edge the browser speaks https while Tomcat sees plain http. Honour
+  # X-Forwarded-Proto/Host so redirects, the OIDC callback and the session cookie keep the
+  # external scheme and host (otherwise the SPA bounces to http:// or the wrong host).
+  forward-headers-strategy: framework
   servlet:
     session:
       timeout: 30m
@@ -13,7 +17,9 @@ server:
         name: BFFSESSION
         http-only: true
         same-site: lax
-        secure: false
+        # Dev runs over plain http. A TLS deployment must set SESSION_COOKIE_SECURE=true, otherwise
+        # the browser will happily send the session cookie over http as well.
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 spring:
   application:
@@ -76,6 +82,8 @@ app:
   # 统一资源服务（/api/resource/** 与 /api/public/resource/** 路由到这里）
   resource:
     base-url: ${RESOURCE_BASE_URL:http://localhost:8093}
+  account:
+    base-url: ${ACCOUNT_BASE_URL:http://localhost:8090}
   # Downstream call budget: must exceed the resource server's sandbox compile+run budget.
   api:
     read-timeout-ms: ${API_READ_TIMEOUT_MS:45000}
@@ -90,6 +98,9 @@ app:
     # 每次发布换一个值（git sha / 时间戳）：旧会话在下一次请求时被判失效，/api/** 返回 401
     # session_expired，浏览器据此重新登录。见 SessionEpochFilter / JsonAuthenticationEntryPoint。
     epoch: ${APP_SESSION_EPOCH:dev}
+  # 登出后 AS 回跳的绝对地址；必须是 account 端 BFF_POST_LOGOUT_REDIRECT_URIS 中的一项。
+  # 若从请求 Host 推导，127.0.0.1 / 换端口 / 内网 IP 都会匹配失败（AS 返回 400 空白页，且不销毁 SSO 会话）。
+  post-logout-redirect-uri: ${POST_LOGOUT_REDIRECT_URI:http://localhost:5173}
   plugin-docs:
     upstream: ${PLUGIN_DOCS_UPSTREAM:http://localhost:8085}
 

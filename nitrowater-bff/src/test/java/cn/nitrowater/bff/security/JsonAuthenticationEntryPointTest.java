@@ -23,7 +23,10 @@ class JsonAuthenticationEntryPointTest {
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(response.getHeader("X-Auth-Reason")).isEqualTo("session_epoch_mismatch");
         assertThat(response.getContentType()).contains("application/json");
-        assertThat(response.getContentAsString()).contains("\"error\":\"session_expired\"");
+        assertThat(response.getContentAsString())
+                .contains("\"success\":false")
+                .contains("\"code\":\"session_expired\"")
+                .contains("\"reason\":\"session_epoch_mismatch\"");
         assertThat(response.getHeader(HttpHeaders.SET_COOKIE))
                 .contains("BFFSESSION=")
                 .contains("Max-Age=0");

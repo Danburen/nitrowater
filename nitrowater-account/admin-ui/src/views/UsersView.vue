@@ -21,8 +21,8 @@ async function load() {
   loading.value = true
   try {
     const res = await adminApi.listUsers(keyword.value, page.value, size.value)
-    users.value = res.list
-    total.value = res.total
+    users.value = res.content
+    total.value = res.page.totalElements
   } catch (e) {
     ElMessage.error(errText(e))
   } finally {

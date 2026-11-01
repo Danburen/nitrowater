@@ -31,7 +31,10 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它有两种调用�
 | `app.ai.web-search.endpoint` | `https://api.deepseek.com/v1/tools/search` | DeepSeek 搜索 API |
 | `app.ai.web-search.api-key` | `${DEEPSEEK_API_KEY}` | 搜索用 key，可与聊天共用 |
 | `app.ai.web-search.auto-fallback` | `true` | 本地文档无命中时自动联网一次 |
-| `app.ai.web-search.auto-fallback-count` | `3` | 自动联网取几条 |
+| `app.ai.web-search.max-results` | `3` | 单次联网取几条（显式搜索与自动兜底共用） |
+| `app.ai.web-search.max-successes` | `3` | 单轮成功联网上限（失败/重试不计数） |
+| `app.ai.web-search.max-attempts` | `2` | 单次调用的 HTTP 尝试上限（首查 + 一次重试） |
+| `app.ai.web-search.retry-backoff-ms` | `300` | 可重试失败之间的间隔 |
 
 聊天、embedding、联网搜索**各自独立**：聊天与 embedding 都走智谱 GLM 的 OpenAI 兼容接口（`https://open.bigmodel.cn/api/paas/v4`，共用 `GLM_API_KEY`，embedding 只做向量化），联网搜索走 DeepSeek 搜索 API（`DEEPSEEK_API_KEY`）。密钥都从环境变量读取；缺失时服务仍可启动，但对应能力不可用（`/api/ai/status` 的 `webSearchEnabled` 反映真实状态）。注意 Spring AI 2.x 的请求 URL = base-url + 固定路径（`/chat/completions`、`/embeddings`），base-url 必须带版本段。
 
@@ -63,7 +66,7 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它有两种调用�
 | `searchDocs(query, topK)` | 检索本地文档语料；**无命中时自动联网一次** | 站点产品、配置、权限、版本等事实性问题 |
 | `loadSkill(name)` | 加载预置工作流 | 需要按固定步骤完成的任务（命令参考、配置导览、排障） |
 | `runCode(language, code, stdin)` | 在 Piston 沙箱编译并运行 | 用户明确要求运行/测试/验证代码 |
-| `webSearch(query)` | 联网搜索（DeepSeek 搜索 API），本轮最多 2 次 | 近期事件/实时数据/可能变更，或用户明确要求 |
+| `webSearch(query)` | 联网搜索（DeepSeek 搜索 API），默认 1 次够用即停，单轮成功上限 3 次 | 近期事件/实时数据/可能变更，或用户明确要求 |
 
 工具轨迹由 `AgentTrace` 汇总：`name`、`argument`、`resultCount`、`status`、耗时。SSE 在结束前发送 `tools` 与 `skills`，前端据此渲染「过程」折叠区。
 
@@ -96,15 +99,17 @@ searchDocs(query)
 ```
 
 - 触发条件是**检索结果为空**，不是模型判断“够不够”；
-- 每轮最多一次，避免模型换关键词反复联网；
-- `webSearch` 工具保留：只用于近期事件、实时数据、价格、可能变更的信息，或用户明确说“搜索/查一下”；**本轮最多 2 次**（首查 + 改写一次），超限返回 `limit_reached`；
+- 每轮最多一次自动兜底，且与显式 `webSearch` **共用同一份成功预算**：已搜过的 query 不再重复搜，预算耗尽后连兜底也不再联网；
+- `webSearch` 工具保留：只用于近期事件、实时数据、价格、可能变更的信息，或用户明确说“搜索/查一下”；**单轮成功上限 3 次**（默认首查就够，只有存在明确缺口才继续），超限返回 `limit_reached`；
+- 失败处理：provider 对 I/O、超时、5xx、429 自动重试一次，4xx 直接失败；失败不占成功预算，兜底失败会释放占用，下次文档未命中仍可再试；
+- 返回体带 `remaining`（剩余成功次数）与 `hint`（够用即停），模型据此决定是否再搜；
 - 稳定事实、数学、编程基础、创作、用户已提供的资料**不联网**；
 - `POST /api/ai/chat(.stream)`（纯 RAG 路径）没有联网能力，只有 Agent 端点有。
 
 ### 5.4 过程声明与上下文
 
 - 调用工具前必须先输出一句「动作 + 对象 + 关键参数」的声明（如“正在查阅文档：chat-format 占位符”）；禁止“正在思考/请稍等”，禁止编造条数或结果状态，真实结果由工具轨迹渲染。
-- 工具结果只取结论：`searchDocs` 单条截到 1200 字，联网结果 600 字；需要更多再检索，不凭记忆补全。
+- 工具结果只取结论：`searchDocs` 单条截到 1200 字，联网结果正文 1200 字（界面预览 600 字）；只有缺失细节是回答所必需时才再检索，不凭记忆补全。
 - 会话历史取最近 `max-history-turns` 轮（默认 4）；若 `ai_conversation.summary` 非空，会作为「【此前对话摘要】」合成首轮注入（摘要生成属 T12）。
 ## 6. 会话与上下文
 
@@ -129,7 +134,58 @@ searchDocs(query)
 
 `/admin/ai`（需管理员）展示：索引状态、corpus 列表、可用 skills、可用 tools，并提供重建索引按钮（调用 `/api/admin/ai/reindex`）。
 
-## 9. 相关源码
+## 9. 内容安全（违禁词风控）
+
+> 定位：**合规兜底 + 可处置手柄**，不是安全边界。词表拦不住谐音、拆字、跨语言与代码藏词，所以目标只有三件事：可疑文本不进库、处置留痕可审、对重复输入做冷却而不是封号。
+
+### 9.1 三种编码与三种判定
+
+| 维度 | 取值 | 说明 |
+|---|---|---|
+| `ai_admin_setting.moderation_mode` | `0=OFF / 1=LOG / 2=ENFORCE` | 默认 `1`（影子模式）：只记录不拦截，先观察命中和误判，再收紧 |
+| `direction` | `0=INPUT / 1=OUTPUT / 2=MEMORY / 3=PROFILE` | 命中发生在哪一段 |
+| `action` | `0=LOGGED / 1=BLOCKED / 2=MASKED` | LOG 一律 `LOGGED`；ENFORCE 下输入与存储被拒为 `BLOCKED`，回答被替换为 `MASKED` |
+
+### 9.2 闸门位置
+
+| 位置 | 触发点 | LOG | ENFORCE |
+|---|---|---|---|
+| 用户输入 | `ConversationService.start()`，落库与调用模型之前 | 记录 | 400 `content_blocked`，不产生 `ai_message` 行 |
+| 模型回答 | `AiController` / `AiAgentController`（同步与流式各 2 处） | 记录 | 落库存**遮蔽后**文本；流式再发 SSE `moderation{text}` 让前端替换气泡 |
+| 长期记忆 | `AiMemoryService.save()` | 记录 | 拒绝写入 |
+| 画像偏好 | `AiProfileService` 写入时逐条校验；`promptBlock()` 读取时再过滤历史脏数据 | 记录 | 400 `content_blocked` |
+
+### 9.3 风控计数（只算输入）
+
+只有 INPUT 命中计分：Redis `nitrowater:ai:guard:strike:{uid}` 在 `strike-window-minutes` 内累计，达到 `strike-limit` 时写入 `nitrowater:ai:guard:cooldown:{uid}`（TTL = `cooldown-minutes`），冷却期内 AI 接口直接返回 429 `content_cooldown`。OUTPUT / MEMORY / PROFILE 命中只记录——那多半是模型漂移或引用文档原文，不是用户的尝试，不应据此惩罚账号。
+
+### 9.4 词表与运维
+
+- 引擎 `com.github.houbb:sensitive-word`（不自带词库）；词表 `resources/ai/moderation/words.txt` + `allow.txt`，可用 `AI_MODERATION_DICT` / `AI_MODERATION_ALLOW` 指向挂载文件，生产词表不入仓。
+- 误判处置：把词加进 allow（或从 dict 删除）→ 管理台「重载词表」（`POST /api/admin/ai/moderation/reload`）→ 下一个请求即生效，无需重启或重新部署。
+- 审计表 `ai_moderation_hit`：只存命中词，不存原文；`/admin/ai` 可按来源/处置筛选，按 `id` 游标翻页；`AI_MODERATION_RETENTION_DAYS`（默认 90 天）到期后由 `AiModerationMaintenance` 夜间 cron 清理。
+- `ai_message.moderated=1` 记录该回答曾被遮蔽，前端据此在重新加载会话后仍显示「内容已过滤」徽标。
+
+### 9.5 已知边界
+
+同音字/火星文、跨语言、Base64 与代码片段、图片内容均不覆盖；词表命中也不等于语义违规。它保证的是：被判定的文本不会进入对话历史、记忆或画像，并且处置可追溯、可申诉。
+
+### 9.6 输出脱敏、提示泄露与记忆加固
+
+| 能力 | OFF | LOG | ENFORCE |
+|---|---|---|---|
+| 输出脱敏（密钥 / JWT / 私钥 / 连接串口令 / 邮箱 / 手机号 / 内网 IP） | 生效 | 生效 | 生效 |
+| 系统提示泄露（canary `NITROBOT-INTERNAL-PROMPT-7F3A`） | 不检测 | 记录，不改写 | 整段替换为固定拒答 |
+| 记忆加固（单行化、≤200 字、禁密钥/手机号/身份证、禁指令式文本、单用户 ≤200 条） | 生效 | 生效 | 生效 |
+
+- 脱敏与记忆加固**不随 `moderation_mode` 变化**：前者是数据卫生（把密钥原样回吐给用户与内容政策无关），后者是资源与注入面约束，因此 `OFF` 下同样生效。
+- 脱敏命中会写一条 `OUTPUT/MASKED` 审计（`words` 记规则名，如 `openai_key,private_ip`），并令 `ai_message.moderated=1`。
+- 泄露检测只用 canary：命中即确定泄露、误报为零；模型改写式复述（不含 canary）不覆盖，需分类器，属后续迭代。
+- 记忆只接受「陈述事实/偏好」：角色标记（`<|im_start|>` 等）与「忽略以上规则」类文本直接拒绝，避免把记忆变成持久化的系统提示。
+- 脱敏只覆盖已知形态（带前缀 token、真实密钥形状、RFC 1918 段）；自由文本里的口令不保证识别。
+
+
+## 10. 相关源码
 
 - `ai/DocChunkBuilder.java`、`DocCollection.java`、`DocsIndexService.java`、`DocRetriever.java`
 - `ai/agent/AiAgentService.java`、`AgentTrace.java`、`PreparedAgent.java`

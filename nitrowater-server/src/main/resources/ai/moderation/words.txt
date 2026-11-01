@@ -1,0 +1,45 @@
+# Baseline violation list for NitroBot content moderation.
+#
+# Scope: illegal transactions, fraud/scams, sexual services and self-harm instructions. Political
+# vocabulary is deliberately NOT included here: this file ships inside the build artifact and the
+# repository is public, so the committed list stays small and uncontroversial. Deployments that
+# need a fuller list should mount it and set AI_MODERATION_DICT.
+#
+# Rules for adding a word:
+#   - at least two characters (single characters match everything);
+#   - prefer a phrase over a bare topic word: "赌博网站" not "赌博", because Minecraft server
+#     owners legitimately discuss gambling/casino *plugins*, and this assistant is technical;
+#   - terms that appear in normal troubleshooting (勒索软件, 木马病毒, /kill, TNT) must stay out or
+#     go into allow.txt.
+#
+# One term per line; blank lines and lines starting with '#' are ignored.
+
+代开发票
+代开增值税发票
+洗钱
+毒品交易
+贩卖毒品
+枪支买卖
+买卖枪支
+办假证
+办证刻章
+裸聊
+约炮
+嫖娼
+卖淫
+色情直播
+成人视频
+儿童色情
+赌博网站
+网络赌博
+私彩
+刷单返利
+刷单兼职
+杀猪盘
+电信诈骗
+诈骗话术
+钓鱼网站
+自残方法
+自杀方法
+自杀教程
+怎么自杀

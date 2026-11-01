@@ -1,5 +1,6 @@
 package cn.nitrowater.server.ai;
 
+import cn.nitrowater.server.ai.properties.AiProperties;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;

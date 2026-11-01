@@ -9,7 +9,7 @@
 import { defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../../auth/useAuth'
-import { fetchPlugins, SUBMIT_PLUGIN_URL, type PluginSummary } from './catalog'
+import { fetchPlugins, SUBMIT_PLUGIN_URL, type PluginSummary } from '../../api/plugins'
 
 /** Lazy: the editor (and `md-editor-v3`) must never enter the public bundle. */
 const PluginEditorDrawer = defineAsyncComponent(() => import('./PluginEditorDrawer.vue'))

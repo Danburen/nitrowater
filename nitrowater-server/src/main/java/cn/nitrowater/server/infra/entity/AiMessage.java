@@ -63,6 +63,15 @@ public class AiMessage {
     @Column(name = "is_pruned", nullable = false, columnDefinition = "tinyint(1)")
     private Boolean pruned = false;
 
+    /**
+     * True when the stored answer matched the violation dictionary and was masked before display.
+     *
+     * <p>Stored (not only streamed) so the badge survives a reload: the persisted text is already
+     * masked, and without this flag the client cannot tell a filtered answer from a short one.</p>
+     */
+    @Column(name = "moderated", nullable = false, columnDefinition = "tinyint(1)")
+    private Boolean moderated = false;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 }

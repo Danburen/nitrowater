@@ -1,6 +1,7 @@
 package cn.nitrowater.resource.web;
 
 import cn.nitrowater.resource.application.PluginArtifactPolicy;
+import cn.nitrowater.core.web.ApiResponseAdvice;
 import cn.nitrowater.resource.application.ResourceService;
 import cn.nitrowater.resource.application.dto.ResourceMeta;
 import cn.nitrowater.resource.config.ResourceProperties;
@@ -59,7 +60,7 @@ class AdminPluginResourceControllerTest {
                 "local", 600, 10L * 1024 * 1024, 64L * 1024 * 1024, null, null, null, null, null);
         mvc = MockMvcBuilders.standaloneSetup(
                         new AdminPluginResourceController(resourceService, new PluginArtifactPolicy(properties)))
-                .setControllerAdvice(new ResourceExceptionHandler())
+                .setControllerAdvice(new ApiResponseAdvice(), new ResourceExceptionHandler())
                 .build();
     }
 
@@ -75,9 +76,9 @@ class AdminPluginResourceControllerTest {
                         .contentType(MediaType.APPLICATION_OCTET_STREAM)
                         .content(JAR))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.uuid").value(META.uuid()))
-                .andExpect(jsonPath("$.name").value(NAME))
-                .andExpect(jsonPath("$.version").value("1.2.3"));
+                .andExpect(jsonPath("$.data.uuid").value(META.uuid()))
+                .andExpect(jsonPath("$.data.name").value(NAME))
+                .andExpect(jsonPath("$.data.version").value("1.2.3"));
 
         verify(resourceService).publishPluginArtifact(
                 eq(KEY), eq(NAME), eq("1.2.3"), any(InputStream.class), eq((long) JAR.length));
@@ -87,7 +88,7 @@ class AdminPluginResourceControllerTest {
     void uploadRequiresContentLength() throws Exception {
         mvc.perform(post("/api/admin/plugin-resources/{key}", KEY).param("name", NAME))
                 .andExpect(status().isLengthRequired())
-                .andExpect(jsonPath("$.error").value("length_required"));
+                .andExpect(jsonPath("$.code").value("length_required"));
 
         verifyNoInteractions(resourceService);
     }
@@ -101,7 +102,7 @@ class AdminPluginResourceControllerTest {
                         .contentType(MediaType.APPLICATION_OCTET_STREAM)
                         .content(notJar))
                 .andExpect(status().isUnsupportedMediaType())
-                .andExpect(jsonPath("$.error").value("unsupported_type"));
+                .andExpect(jsonPath("$.code").value("unsupported_type"));
 
         verifyNoInteractions(resourceService);
     }
@@ -113,7 +114,7 @@ class AdminPluginResourceControllerTest {
                         .contentType(MediaType.APPLICATION_OCTET_STREAM)
                         .content(JAR))
                 .andExpect(status().isUnsupportedMediaType())
-                .andExpect(jsonPath("$.error").value("unsupported_type"));
+                .andExpect(jsonPath("$.code").value("unsupported_type"));
 
         verifyNoInteractions(resourceService);
     }
@@ -124,9 +125,9 @@ class AdminPluginResourceControllerTest {
 
         mvc.perform(get("/api/admin/plugin-resources/{key}", KEY))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].uuid").value(META.uuid()))
-                .andExpect(jsonPath("$[0].app").value(PluginArtifactPolicy.PLUGIN_APP))
-                .andExpect(jsonPath("$[0].url").value(META.url()));
+                .andExpect(jsonPath("$.data[0].uuid").value(META.uuid()))
+                .andExpect(jsonPath("$.data[0].app").value(PluginArtifactPolicy.PLUGIN_APP))
+                .andExpect(jsonPath("$.data[0].url").value(META.url()));
     }
 
     @Test

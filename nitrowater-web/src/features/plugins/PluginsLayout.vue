@@ -8,7 +8,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import SectionLayout from '../../shared/ui/SectionLayout.vue'
-import { fetchPlugins, type PluginSummary } from './catalog'
+import { fetchPlugins, type PluginSummary } from '../../api/plugins'
 
 const plugins = ref<PluginSummary[]>([])
 const query = ref('')

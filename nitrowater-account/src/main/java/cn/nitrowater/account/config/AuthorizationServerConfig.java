@@ -5,10 +5,12 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -29,7 +31,12 @@ import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.core.session.SessionRegistryImpl;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -55,7 +62,8 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import cn.nitrowater.core.web.ApiResponseAccessDeniedHandler;
+import cn.nitrowater.core.web.ApiResponseAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.session.ConcurrentSessionFilter;
@@ -166,7 +174,8 @@ public class AuthorizationServerConfig {
             SessionRegistry sessionRegistry,
             SsoLoginSuccessHandler ssoLoginSuccessHandler,
             SsoLoginFailureHandler ssoLoginFailureHandler,
-            CspPolicy cspPolicy)
+            CspPolicy cspPolicy,
+            @Qualifier("accountApiJwtDecoder") JwtDecoder accountApiJwtDecoder)
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
         csrfRequestHandler.setCsrfRequestAttributeName("_csrf");
@@ -202,6 +211,8 @@ public class AuthorizationServerConfig {
                         .permitAll()
                         .successHandler(ssoLoginSuccessHandler)
                         .failureHandler(ssoLoginFailureHandler))
+                // Account APIs accept either the browser SSO session or the BFF-held Bearer token.
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(accountApiJwtDecoder)))
                 // Registry tracks sessions (no concurrency limit) so a credential/role change can
                 // terminate them all — see SessionInvalidationListener.
                 .sessionManagement(session -> session
@@ -215,14 +226,9 @@ public class AuthorizationServerConfig {
                 .exceptionHandling(ex -> ex
                         // XHR under /api/** gets a clean 401 JSON instead of a 302 to the HTML login page.
                         .defaultAuthenticationEntryPointFor(
-                                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                                new ApiResponseAuthenticationEntryPoint(),
                                 request -> request.getServletPath().startsWith("/api/"))
-                        .accessDeniedHandler((request, response, denied) -> {
-                            response.setStatus(HttpStatus.FORBIDDEN.value());
-                            response.setContentType("application/json;charset=UTF-8");
-                            response.getWriter().write(
-                                    "{\"success\":false,\"code\":\"http.forbidden\",\"message\":\"forbidden\"}");
-                        }))
+                        .accessDeniedHandler(new ApiResponseAccessDeniedHandler()))
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class);
         return http.build();
     }
@@ -432,9 +438,31 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
+    @Primary
     public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
         return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
     }
+
+    /**
+     * Decoder for the account-management API, which the BFF calls with the user's access token.
+     *
+     * <p>Unlike the Authorization Server's internal decoder, this one also enforces issuer and
+     * audience, so a token minted for an unrelated client cannot read or mutate account data.</p>
+     */
+    @Bean("accountApiJwtDecoder")
+    public JwtDecoder accountApiJwtDecoder(
+            @Value("${jwt.issuer:http://localhost:8090}") String issuer,
+            @Value("${app.oidc.account-api-audiences:nitrowater-bff}") List<String> audiences) {
+        String base = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(base + "/oauth2/jwks").build();
+        OAuth2TokenValidator<@NotNull Jwt> validator = new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(issuer),
+                new AccountAudienceValidator(audiences));
+        decoder.setJwtValidator(validator);
+        return decoder;
+    }
+
+
 
     @Bean
     public AuthorizationServerSettings authorizationServerSettings(

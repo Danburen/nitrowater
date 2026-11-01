@@ -22,6 +22,7 @@ import cn.nitrowater.core.infrastructure.RedisHelperHolder;
 import cn.nitrowater.core.infrastructure.persistence.user.UserDatumRepo;
 import cn.nitrowater.core.infrastructure.persistence.user.UserRepository;
 import cn.nitrowater.core.application.account.AccountCoreService;
+import cn.nitrowater.core.application.auth.AuthIdentifierUtil;
 import cn.nitrowater.core.application.auth.SingleUseTokenService;
 import cn.nitrowater.core.application.auth.code.VerificationService;
 import cn.nitrowater.core.application.user.UserCoreService;
@@ -30,6 +31,7 @@ import cn.nitrowater.core.application.user.UserDatumCoreService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -48,7 +50,13 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     private final ApplicationEventPublisher eventPublisher;
 
     private static final String FP_CTX_PREFIX = "op:verify:context:fp:";
-    private static final java.time.Duration FP_CTX_TTL = Duration.ofMinutes(5);
+    private static final Duration FP_CTX_TTL = Duration.ofMinutes(5);
+    private static final String CONTACT_CTX_PREFIX = "op:verify:context:contact:";
+    private static final Duration CONTACT_CTX_TTL = Duration.ofMinutes(30);
+
+    private static String contactContextKey(VerifyChannel channel, long uid, String verifyKey) {
+        return CONTACT_CTX_PREFIX + channel.name().toLowerCase(Locale.ROOT) + ":" + uid + ":" + verifyKey;
+    }
 
 
     @Transactional
@@ -70,40 +78,68 @@ public class AccountCoreServiceImpl implements AccountCoreService {
         }
         user.setPasswordHash(encoder.encode(newPwd));
         userRepository.save(user);
-        }
+        invalidateSessions(userUid);
+    }
 
     // -- Email operations --
 
     @Override
     @Transactional
-    public void activateEmail(long userUid, String email, DeviceInfo deviceInfo) {
-        UserDatum ud = userDatumCoreService.saveNewEmail(userUid, email, true);
-        userDatumRepo.save(ud);
+    public CodeResult activateEmail(long userUid, String email, DeviceInfo deviceInfo) {
+        String current = userDatumCoreService.getRawEmail(userUid);
+        if (current == null) {
+            if (email == null || email.isBlank()) {
+                throw new BizException(BaseResponseCode.EMAIL_NOT_FOUND);
+            }
+            return changeEmail(userUid, email, deviceInfo);
         }
+        String requested = AuthIdentifierUtil.normalizeEmail(email);
+        if (requested != null && !AuthIdentifierUtil.isEmail(requested)) {
+            throw new BizException(BaseResponseCode.EMAIL_INVALID);
+        }
+        if (requested != null && !current.equals(requested)) {
+            throw new BizException(BaseResponseCode.EMAIL_INVALID);
+        }
+        UserDatum datum = userDatumCoreService.getUserDatum(userUid);
+        if (Boolean.TRUE.equals(datum.getEmailVerified())) {
+            throw new BizException(BaseResponseCode.EMAIL_INVALID);
+        }
+        return sendContactCode(userUid, VerifyChannel.EMAIL, current, false);
+    }
 
     @Override
     @Transactional
     public CodeResult changeEmail(long userUid, String newEmail, DeviceInfo deviceInfo) {
-        userDatumCoreService.saveNewEmail(userUid, newEmail, false);
-        UserDatum ud = userDatumCoreService.getUserDatum(userUid);
-        ud.setEmailExpireAt(Instant.now().plus(Duration.ofHours(24)));
-        userDatumRepo.save(ud);
-        return verificationService.sendCodeForAuthenticated(
-                newEmail, VerifyChannel.EMAIL, VerifyScene.ACTIVATE);
+        String email = AuthIdentifierUtil.normalizeEmail(newEmail);
+        if (!AuthIdentifierUtil.isEmail(email)) {
+            throw new BizException(BaseResponseCode.EMAIL_INVALID);
+        }
+        userDatumCoreService.validateEmailAvailable(userUid, email);
+        return sendContactCode(userUid, VerifyChannel.EMAIL, email, true);
     }
 
     @Override
     @Transactional
     public void verifyChangeEmail(String verifyKey, String code, long userUid, DeviceInfo deviceInfo) {
-        String email = userDatumCoreService.getRawEmail(userUid);
-        if (email == null) {
-            throw new BizException(BaseResponseCode.EMAIL_NOT_FOUND);
+        String contextKey = contactContextKey(VerifyChannel.EMAIL, userUid, verifyKey);
+        String context = redisHelperHolder.getValue(contextKey);
+        if (context == null) {
+            throw new BizException(BaseResponseCode.INVALID_TOKEN_OR_EXPIRED);
         }
+        String[] parts = context.split("\\|", 2);
+        if (parts.length != 2) {
+            throw new BizException(BaseResponseCode.INVALID_TOKEN_OR_EXPIRED);
+        }
+        boolean isChange = "change".equals(parts[0]);
+        String email = parts[1];
         verificationService.verifyCode(email, VerifyScene.ACTIVATE, VerifyChannel.EMAIL, verifyKey, code);
-        UserDatum ud = userDatumCoreService.getUserDatum(userUid);
-        ud.setEmailVerified(true);
-        userDatumRepo.save(ud);
+        if (isChange) {
+            userDatumCoreService.saveNewEmail(userUid, email, true);
+        } else {
+            userDatumCoreService.markEmailVerified(userUid);
         }
+        redisHelperHolder.del(contextKey);
+    }
 
     @Override
     @Async
@@ -123,29 +159,68 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     @Override
     @Transactional
     public CodeResult changePhone(long userUid, String newPhone, DeviceInfo deviceInfo) {
-        userDatumCoreService.saveNewPhone(userUid, newPhone, false);
-        return verificationService.sendCodeForAuthenticated(
-                newPhone, VerifyChannel.SMS, VerifyScene.ACTIVATE);
+        String phone = AuthIdentifierUtil.normalizePhone(newPhone);
+        if (!AuthIdentifierUtil.isPhone(phone)) {
+            throw new BizException(BaseResponseCode.PHONE_NUMBER_EMPTY_OR_INVALID);
+        }
+        userDatumCoreService.validatePhoneAvailable(userUid, phone);
+        return sendContactCode(userUid, VerifyChannel.SMS, phone, true);
     }
 
     @Override
     @Transactional
     public void verifyChangePhone(String verifyKey, String code, long userUid, DeviceInfo deviceInfo) {
-        String phone = userDatumCoreService.getRawPhone(userUid);
-        if (phone == null) {
-            throw new BizException(BaseResponseCode.NOT_FOUND);
+        String contextKey = contactContextKey(VerifyChannel.SMS, userUid, verifyKey);
+        String context = redisHelperHolder.getValue(contextKey);
+        if (context == null) {
+            throw new BizException(BaseResponseCode.INVALID_TOKEN_OR_EXPIRED);
         }
+        String[] parts = context.split("\\|", 2);
+        if (parts.length != 2) {
+            throw new BizException(BaseResponseCode.INVALID_TOKEN_OR_EXPIRED);
+        }
+        boolean isChange = "change".equals(parts[0]);
+        String phone = parts[1];
         verificationService.verifyCode(phone, VerifyScene.ACTIVATE, VerifyChannel.SMS, verifyKey, code);
-        UserDatum ud = userDatumCoreService.getUserDatum(userUid);
-        ud.setPhoneVerified(true);
-        userDatumRepo.save(ud);
+        if (isChange) {
+            userDatumCoreService.saveNewPhone(userUid, phone, true);
+        } else {
+            userDatumCoreService.markPhoneVerified(userUid);
         }
+        redisHelperHolder.del(contextKey);
+    }
 
     @Override
     @Transactional
-    public void activatePhone(long userUid, String phone, DeviceInfo deviceInfo) {
-        userDatumCoreService.saveNewPhone(userUid, phone, true);
+    public CodeResult activatePhone(long userUid, String phone, DeviceInfo deviceInfo) {
+        String current = userDatumCoreService.getRawPhone(userUid);
+        if (current == null) {
+            if (phone == null || phone.isBlank()) {
+                throw new BizException(BaseResponseCode.NOT_FOUND);
+            }
+            return changePhone(userUid, phone, deviceInfo);
         }
+        String requested = AuthIdentifierUtil.normalizePhone(phone);
+        if (requested != null && !AuthIdentifierUtil.isPhone(requested)) {
+            throw new BizException(BaseResponseCode.PHONE_NUMBER_EMPTY_OR_INVALID);
+        }
+        if (requested != null && !current.equals(requested)) {
+            throw new BizException(BaseResponseCode.PHONE_NUMBER_ALREADY_USED);
+        }
+        UserDatum datum = userDatumCoreService.getUserDatum(userUid);
+        if (Boolean.TRUE.equals(datum.getPhoneVerified())) {
+            throw new BizException(BaseResponseCode.PHONE_NUMBER_ALREADY_USED);
+        }
+        return sendContactCode(userUid, VerifyChannel.SMS, current, false);
+    }
+
+    private CodeResult sendContactCode(long userUid, VerifyChannel channel, String target, boolean change) {
+        CodeResult result = verificationService.sendCodeForAuthenticated(
+                target, channel, VerifyScene.ACTIVATE);
+        redisHelperHolder.set(contactContextKey(channel, userUid, result.getKey()),
+                (change ? "change" : "activate") + "|" + target, CONTACT_CTX_TTL);
+        return result;
+    }
 
     // -- Unbind --
 
@@ -156,15 +231,17 @@ public class AccountCoreServiceImpl implements AccountCoreService {
         if (emailRaw == null) {
             throw new BizException(BaseResponseCode.EMAIL_NOT_FOUND);
         }
-        if (!emailRaw.equals(email)) {
+        String requested = AuthIdentifierUtil.normalizeEmail(email);
+        if (requested != null && !emailRaw.equals(requested)) {
             throw new BizException(BaseResponseCode.EMAIL_INVALID);
         }
         UserDatum ud = userDatumCoreService.getUserDatum(userUid);
         ud.setEmailExpireAt(null);
         ud.setEmailEncrypted(null);
+        ud.setEmailHash(null);
         ud.setEmailVerified(false);
         userDatumRepo.save(ud);
-        }
+    }
 
     @Override
     @Transactional
@@ -197,12 +274,23 @@ public class AccountCoreServiceImpl implements AccountCoreService {
         try {
             Long uid = userCoreService.resolveUid(identifier);
             String phone = userDatumCoreService.getRawPhone(uid);
-            if (phone == null) {
+            String email = userDatumCoreService.getRawEmail(uid);
+            VerifyChannel channel;
+            String target;
+            if (phone != null) {
+                channel = VerifyChannel.SMS;
+                target = phone;
+            } else if (email != null) {
+                channel = VerifyChannel.EMAIL;
+                target = email;
+            } else {
                 return null;
             }
-            CodeResult result = verificationService.sendCodeForAuthenticated(phone, VerifyChannel.SMS, VerifyScene.FORGOT_PASSWORD);
+            CodeResult result = verificationService.sendCodeForAuthenticated(
+                    target, channel, VerifyScene.FORGOT_PASSWORD);
             String reAuthKey = result.getKey();
-            redisHelperHolder.set(FP_CTX_PREFIX + reAuthKey, phone, FP_CTX_TTL);
+            redisHelperHolder.set(FP_CTX_PREFIX + reAuthKey,
+                    channel.name() + "|" + target, FP_CTX_TTL);
             return reAuthKey;
         } catch (Exception e) {
             return null;
@@ -212,13 +300,19 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     @Override
     @Nullable
     public TokenResult verifyForgotPasswordReAuth(String reAuthKey, String code) {
-        String phone = redisHelperHolder.getValue(FP_CTX_PREFIX + reAuthKey);
-        if (phone == null) return null;
-        verificationService.verifyCode(phone, VerifyScene.FORGOT_PASSWORD, VerifyChannel.SMS,
+        String context = redisHelperHolder.getValue(FP_CTX_PREFIX + reAuthKey);
+        if (context == null) return null;
+        int separator = context.indexOf('|');
+        if (separator <= 0 || separator == context.length() - 1) {
+            return null;
+        }
+        VerifyChannel channel = VerifyChannel.valueOf(context.substring(0, separator));
+        String target = context.substring(separator + 1);
+        verificationService.verifyCode(target, VerifyScene.FORGOT_PASSWORD, channel,
                 reAuthKey, code);
         // Code verified — now delete the key (only on success, allowing retry on wrong code)
         redisHelperHolder.del(FP_CTX_PREFIX + reAuthKey);
-        Long uid = userCoreService.resolveUid(phone);
+        Long uid = userCoreService.resolveUid(target);
         return singleUseTokenService.generateVerifyToken(VerifyScene.FORGOT_PASSWORD.name(), uid);
     }
 

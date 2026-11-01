@@ -10,7 +10,8 @@
  * <p>Highlighting is skipped while the block is still streaming: re-tokenizing a growing snippet
  * every frame is wasted work and produces flickering half-tokens.</p>
  */
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-javascript'
@@ -20,22 +21,17 @@ import 'prismjs/components/prism-c'
 import 'prismjs/components/prism-cpp'
 import 'prismjs/components/prism-lua'
 import { apiFetch } from '../../../auth/bff'
+import type { SandboxRunOutcome } from '../../../api/sandbox'
+import { readJson } from '../../../api/envelope'
+import { useAuth } from '../../../auth/useAuth'
+import { writeRunnerSeed } from '../../../shared/codeRunnerSeed'
+import { toast } from '../../../shared/ui/toast'
 
 interface SandboxTarget {
   readonly id: string
   readonly label: string
   readonly fileName: string
   readonly prism: string
-}
-
-interface RunOutcome {
-  readonly stdout: string | null
-  readonly stderr: string | null
-  readonly status: string
-  readonly exitCode: number | null
-  readonly wallTimeMs: number | null
-  readonly memoryBytes: number | null
-  readonly message: string | null
 }
 
 const TARGETS: Readonly<Record<string, SandboxTarget>> = {
@@ -72,13 +68,142 @@ const props = withDefaults(defineProps<{
 
 const running = ref(false)
 const ran = ref(false)
-const outcome = ref<RunOutcome | null>(null)
+const outcome = ref<SandboxRunOutcome | null>(null)
 const failure = ref('')
 const copied = ref(false)
+/** The inline terminal, scrolled into view when a run starts or finishes. */
+const terminalEl = ref<HTMLElement | null>(null)
+
+const router = useRouter()
+const { session, login } = useAuth()
+
+/** Languages the runner executes on the server; they are only selectable when signed in. */
+const SERVER_LANGUAGES: ReadonlySet<string> = new Set(['java', 'c', 'cpp'])
 
 const target = computed<SandboxTarget | null>(() => TARGETS[props.language.trim().toLowerCase()] ?? null)
-const runnable = computed(() => target.value !== null && !props.streaming && !running.value)
 const languageLabel = computed(() => target.value?.label ?? (props.language || 'text'))
+
+/**
+ * Hides the run button after the sandbox rejected the source at compile time.
+ *
+ * <p>This is the ground-truth correction for the entry-point heuristic: a block that cannot
+ * compile will never run, so offering the button again would only repeat the same error.</p>
+ */
+const compileFailed = ref(false)
+
+/** Inputs that block waiting for data the card cannot supply (no stdin box yet). */
+const STDIN_PATTERNS: readonly RegExp[] = [
+  /\binput\s*\(/,
+  /\bScanner\b/,
+  /System\s*\.\s*in/,
+  /\bcin\s*>>/,
+  /\bscanf\s*\(/,
+  /\breadline\b/,
+  /\breadlines\s*\(/,
+  /sys\.stdin/,
+]
+
+/**
+ * Removes comments and string literals (keeping newlines) so an entry-point match cannot be
+ * fooled by {@code main} appearing in prose.
+ */
+function stripNoise(source: string, language: string): string {
+  let out = ''
+  let index = 0
+  while (index < source.length) {
+    const char = source[index]
+    const next = source[index + 1]
+    if (char === '/' && next === '/') {
+      while (index < source.length && source[index] !== '\n') {
+        out += ' '
+        index += 1
+      }
+      continue
+    }
+    if (char === '/' && next === '*') {
+      out += '  '
+      index += 2
+      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) {
+        out += source[index] === '\n' ? '\n' : ' '
+        index += 1
+      }
+      if (index < source.length) {
+        out += '  '
+        index += 2
+      }
+      continue
+    }
+    const quoted = char === '"' || char === "'" || (char === '`' && (language === 'javascript' || language === 'typescript'))
+    if (quoted) {
+      out += char
+      index += 1
+      while (index < source.length) {
+        if (source[index] === '\\') {
+          out += '  '
+          index += 2
+          continue
+        }
+        const done = source[index] === char
+        out += source[index] === '\n' ? '\n' : done ? char : ' '
+        index += 1
+        if (done) break
+      }
+      continue
+    }
+    out += char
+    index += 1
+  }
+  return out
+}
+
+/** {@code void main(String[] args)} / {@code String... args} / {@code String args[]}, with {@code static} in the same statement. */
+function hasJavaMain(clean: string): boolean {
+  const signature = /\bvoid\s+main\s*\(\s*(?:final\s+)?(?:java\.lang\.)?String\s*(?:(?:\.\.\.|\[\s*\])\s*\w+|\w+\s*\[\s*\])\s*\)/.exec(clean)
+  if (!signature) return false
+  const before = clean.slice(Math.max(0, signature.index - 200), signature.index)
+  // Look only at the current declaration: the previous ';' / '}' bounds unrelated static fields.
+  const statementStart = Math.max(before.lastIndexOf(';'), before.lastIndexOf('}'))
+  return /\bstatic\b/.test(before.slice(statementStart + 1))
+}
+
+/** Conservative entry-point gate: only decides whether to *offer* the button, never promises a run. */
+const entryPointOk = computed(() => {
+  const sandbox = target.value
+  if (!sandbox) return false
+  const clean = stripNoise(props.code, sandbox.id)
+  if (sandbox.id === 'java') return hasJavaMain(clean)
+  if (sandbox.id === 'c' || sandbox.id === 'cpp') return /\bint\s+main\s*\(/.test(clean)
+  // Script languages have no entry-point concept: any syntactically valid snippet runs.
+  return true
+})
+
+const needsStdin = computed(() => {
+  const sandbox = target.value
+  if (!sandbox) return false
+  const clean = stripNoise(props.code, sandbox.id)
+  return STDIN_PATTERNS.some((pattern) => pattern.test(clean))
+})
+
+/** Whether the run button is offered at all. */
+const showRun = computed(() => target.value !== null
+  && !props.streaming
+  && !needsStdin.value
+  && entryPointOk.value
+  && !compileFailed.value)
+
+const runnable = computed(() => showRun.value && !running.value)
+
+/** Why the run button is missing (shown as a muted note next to the language). */
+const blockedReason = computed(() => {
+  if (!target.value || props.streaming) return ''
+  if (compileFailed.value) return '编译失败，已隐藏运行'
+  if (needsStdin.value) return '需要标准输入，暂不支持直接运行'
+  if (!entryPointOk.value) return '缺少程序入口（main）'
+  return ''
+})
+
+/** A finished block can always be handed to the full runner. */
+const canOpenInRunner = computed(() => target.value !== null && !props.streaming)
 const command = computed(() => (target.value ? `$ ${target.value.fileName}` : ''))
 const statusText = computed(() => {
   if (running.value) return '运行中…'
@@ -106,6 +231,12 @@ const highlighted = computed(() => {
   }
 })
 
+/** Brings the inline terminal into view: opened → nearest, output arrived → align to its end. */
+async function revealTerminal(block: 'nearest' | 'start' | 'center' | 'end'): Promise<void> {
+  await nextTick()
+  terminalEl.value?.scrollIntoView({ behavior: 'smooth', block })
+}
+
 async function run(): Promise<void> {
   const sandbox = target.value
   if (!sandbox || running.value || props.streaming) return
@@ -113,6 +244,8 @@ async function run(): Promise<void> {
   ran.value = true
   outcome.value = null
   failure.value = ''
+  // The terminal is rendered on the next tick; scroll once it exists so the user sees progress.
+  void revealTerminal('nearest')
   try {
     const response = await apiFetch('/api/sandbox/run', {
       method: 'POST',
@@ -127,12 +260,45 @@ async function run(): Promise<void> {
       failure.value = await readFailure(response)
       return
     }
-    outcome.value = (await response.json()) as RunOutcome
+    outcome.value = await readJson<SandboxRunOutcome>(response)
+    if (outcome.value.status === 'CE') {
+      // The sandbox proved the source cannot compile: stop offering the button for this block.
+      compileFailed.value = true
+    }
   } catch (cause) {
     failure.value = cause instanceof Error ? `网络错误：${cause.message}` : '网络错误'
   } finally {
     running.value = false
+    // Reveal the result (stdout/stderr/exit code) once it is painted.
+    void revealTerminal('end')
   }
+}
+
+/**
+ * Hands the snippet to the code-runner tool (edit + stdin + language switching), then navigates.
+ *
+ * <p>The payload travels through a one-shot sessionStorage seed: a URL would pollute history and
+ * truncate long code. If storage is blocked the clipboard becomes the fallback channel.</p>
+ */
+async function openInRunner(): Promise<void> {
+  const sandbox = target.value
+  if (!sandbox) return
+  const stored = writeRunnerSeed({ language: sandbox.id, code: props.code })
+  if (!stored) {
+    try {
+      await navigator.clipboard.writeText(props.code)
+      toast.info('已复制代码，进入运行器后粘贴即可')
+    } catch {
+      toast.error('无法传递代码，请先手动复制')
+      return
+    }
+  }
+  if (SERVER_LANGUAGES.has(sandbox.id) && session.value?.authenticated !== true) {
+    // Server-side languages are only listed for signed-in users; sign in, then the seed is consumed.
+    login('/tools/code-runner')
+    return
+  }
+  void router.push('/tools/code-runner')
 }
 
 async function copy(): Promise<void> {
@@ -173,6 +339,10 @@ function clean(value: string | null): string {
   <div class="code-card">
     <div class="code-head">
       <span class="code-lang">{{ languageLabel }}</span>
+      <span
+        v-if="blockedReason"
+        class="code-note"
+      >{{ blockedReason }}</span>
       <span class="code-actions">
         <button
           type="button"
@@ -182,11 +352,32 @@ function clean(value: string | null): string {
           {{ copied ? '已复制' : '复制' }}
         </button>
         <button
-          v-if="target"
+          v-if="canOpenInRunner"
+          type="button"
+          class="code-btn"
+          title="打开代码运行器：可编辑、可输入 stdin"
+          @click="openInRunner"
+        >
+          <svg
+            class="size-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M7 17 17 7M8 7h9v9" />
+          </svg>
+          打开运行器
+        </button>
+        <button
+          v-if="showRun"
           type="button"
           class="code-btn code-run"
           :disabled="!runnable"
-          :title="streaming ? '回答完成后才能运行' : `在沙盒中运行 ${languageLabel}`"
+          title="在沙盒中运行（不保证依赖完整）"
           @click="run"
         >
           {{ running ? '运行中…' : '运行' }}
@@ -204,6 +395,7 @@ function clean(value: string | null): string {
 
     <div
       v-if="terminalOpen"
+      ref="terminalEl"
       class="code-terminal"
     >
       <div class="term-head">
@@ -270,7 +462,22 @@ function clean(value: string | null): string {
   gap: 6px;
 }
 
+.code-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  padding: 0 8px;
+  font-size: 10.5px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
 .code-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border-radius: 6px;
   padding: 2px 9px;
   font-size: 11px;

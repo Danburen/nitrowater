@@ -37,7 +37,7 @@ public final class DataAdapter {
     }
 
     /**
-     * parse dotStr like(1.x.x) to double version values -> 1.xx
+     * parseList dotStr like(1.x.x) to double version values -> 1.xx
      * @param dotStr String that contains dot.
      * @return double version
      */

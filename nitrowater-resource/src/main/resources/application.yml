@@ -52,6 +52,10 @@ app:
       audiences: ${RESOURCE_JWT_AUDIENCES:nitrowater-resource,nitrowater-server}
   resource:
     default-backend: ${RESOURCE_BACKEND:s3}        # s3 | cos | local
+    # End-user upload surface (/api/resource/upload/**). false keeps the endpoints mapped but
+    # answers 503 uploads_disabled - used while "upload + moderation" is not shipped yet. Plugin
+    # publishing (/api/admin/plugin-resources, /internal/resource/publish) is unaffected.
+    user-upload-enabled: ${RESOURCE_USER_UPLOAD:true}
     presign-expiry-seconds: ${RESOURCE_PRESIGN_EXPIRY:600}
     max-size-bytes: ${RESOURCE_MAX_SIZE:10485760}  # 10MB (end-user uploads)
     # Admin-published plugin artifacts (.jar only). Kept separate so raising the plugin cap does not

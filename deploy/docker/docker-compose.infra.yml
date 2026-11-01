@@ -42,9 +42,19 @@ services:
     # 不映射宿主端口：仅内网可达（避免与宿主本地 Redis 冲突）。
     volumes:
       - nitrowater-redis:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass "$$REDIS_PASSWORD"
+        else
+          exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+        fi
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,8 +69,10 @@ services:
     image: qdrant/qdrant:v1.18.3
     container_name: nitrowater-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      # Loopback by default: the dashboard has NO authentication of its own, so it must not be
+      # reachable from the network. Ops use `deploy/bin/ops-tunnel.*` (ssh -L) and open
+      # http://127.0.0.1:6333/dashboard. 6334 (gRPC) is container-only - never publish it.
+      - "${OPS_BIND:-127.0.0.1}:6333:6333"
     volumes:
       - nitrowater-qdrant:/qdrant/storage
     mem_limit: 384m
@@ -72,10 +84,12 @@ services:
     image: chrislusf/seaweedfs
     container_name: nitrowater-seaweedfs
     ports:
-      - "8333:8333"
-      - "8888:8888"
-      - "9333:9333"
-      - "23646:23646"
+      # S3 (:8333) stays reachable from the host because dev clients AND presigned URLs are
+      # generated for it; the filer (:8888) and master (:9333) UIs have no auth, so they are
+      # loopback-only and reached through the SSH tunnel. :23646 (volume) is never published.
+      - "${OPS_BIND:-127.0.0.1}:8333:8333"
+      - "${OPS_BIND:-127.0.0.1}:8888:8888"
+      - "${OPS_BIND:-127.0.0.1}:9333:9333"
     volumes:
       - nitrowater-seaweedfs:/data
     environment:

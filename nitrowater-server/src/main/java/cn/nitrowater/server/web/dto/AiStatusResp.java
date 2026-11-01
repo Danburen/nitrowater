@@ -1,6 +1,7 @@
 package cn.nitrowater.server.web.dto;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
 
 /**
  * Documentation-assistant status, surfaced by the chat page (and handy for smoke tests).
@@ -25,6 +26,7 @@ import java.time.Instant;
  * @param documentSearchEnabled whether local documentation retrieval is enabled
  * @param codeRunnerEnabled whether the Agent code runner is enabled
  * @param skillsEnabled whether skills are available to the Agent
+ * @param globalQuota platform-wide daily budget snapshot (the breaker closes chat, nothing else)
  */
 public record AiStatusResp(
         boolean enabled,
@@ -46,5 +48,29 @@ public record AiStatusResp(
         boolean agentEnabled,
         boolean documentSearchEnabled,
         boolean codeRunnerEnabled,
-        boolean skillsEnabled) {
+        boolean skillsEnabled,
+        GlobalQuota globalQuota) {
+
+    /**
+     * All-users daily budget, surfaced to every signed-in client so the chat page can explain a
+     * closed composer without asking an admin endpoint.
+     *
+     * @param enabled whether the breaker is switched on and has a positive ceiling
+     * @param limit daily ceiling in tokens ({@code 0} when unlimited)
+     * @param used tokens consumed today, reservations excluded
+     * @param tripped whether new model calls are currently rejected
+     * @param resetAt instant the counter rolls over (next UTC midnight)
+     */
+    public record GlobalQuota(boolean enabled, long limit, long used, boolean tripped, Instant resetAt) {
+
+        /**
+         * @param usage service snapshot
+         * @return the wire view, with the rollover instant derived from the usage date
+         */
+        public static GlobalQuota from(cn.nitrowater.server.ai.AiUsageService.GlobalUsage usage) {
+            Instant resetAt = usage.date().plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+            return new GlobalQuota(usage.enabled(), usage.dailyTokenLimit(), usage.totalTokens(),
+                    usage.tripped(), resetAt);
+        }
+    }
 }

@@ -28,7 +28,7 @@ dependencies {
     implementation 'cn.hutool:hutool-core:5.8.26'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
-    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.0.0'
+    // stays web-free while still shipping the shared JSON envelope advice.
 
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'

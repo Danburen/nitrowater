@@ -28,6 +28,7 @@ A **multi-module platform** for Minecraft server owners and the plugin / server 
 |---|---|
 | `nitrowater-lib` | Generic utilities and value types. |
 | `nitrowater-core` | Shared library: entities, repositories, auth services, security utils. |
+| `nitrowater-core-web` | Spring MVC/Security JSON plumbing shared by every service (`ApiResponse` advice, global exception handler, 401/403 JSON writers). |
 | `nitrowater-account` | SSO / OIDC identity center (auth API + OIDC provider + hosted login + admin console). |
 | `nitrowater-bff` | BFF / token handler (confidential OIDC client + session + `/api/**` proxy). |
 | `nitrowater-server` | Business API + OAuth2 resource server (plugins, server-oriented toolbox, sandbox runner). |

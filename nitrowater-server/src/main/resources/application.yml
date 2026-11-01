@@ -41,11 +41,12 @@ spring:
   # vendors (Spring AI composes request URLs as base-url + /chat/completions or /embeddings).
   #   chat      -> DeepSeek (https://api.deepseek.com); deepseek-reasoner has no tool calling, so
   #                the agent stays on deepseek-chat.
-  #   embedding -> ZhipuAI GLM (https://open.bigmodel.cn/api/paas/v4). DeepSeek exposes no
-  #                embeddings endpoint, and changing the embedding model would invalidate every
-  #                vector already stored in Qdrant (full re-index required).
-  # Keys: AI_CHAT_API_KEY / DEEPSEEK_API_KEY for chat, GLM_API_KEY / AI_EMBEDDING_API_KEY for
-  # embeddings.
+  #   embedding -> SiliconFlow (https://api.siliconflow.cn/v1), Qwen3-Embedding-0.6B (1024 dims).
+  #                DeepSeek exposes no embeddings endpoint. Changing the embedding model or its
+  #                dimensions invalidates every vector already stored in Qdrant (full re-index
+  #                required).
+  # Keys: AI_CHAT_API_KEY / DEEPSEEK_API_KEY for chat and web search,
+  #       SILICONFLOW_API_KEY / AI_EMBEDDING_API_KEY for embeddings.
   ai:
     # The OpenAI starter also auto-configures image/audio/moderation models. They are unused here
     # and require credentials of their own, so switch them off (the chat/embedding models are
@@ -57,7 +58,7 @@ spring:
         speech: none
         transcription: none
     openai:
-      api-key: ${AI_CHAT_API_KEY:${DEEPSEEK_API_KEY:not-configured}}
+      # Chat and embedding resolve their own keys below; no shared fallback is needed here.
       chat:
         api-key: ${AI_CHAT_API_KEY:${DEEPSEEK_API_KEY:not-configured}}
         base-url: ${AI_CHAT_BASE_URL:https://api.deepseek.com}
@@ -69,12 +70,12 @@ spring:
         timeout: 90s
         max-retries: 2
       embedding:
-        api-key: ${AI_EMBEDDING_API_KEY:${GLM_API_KEY:not-configured}}
-        base-url: ${AI_EMBEDDING_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
-        model: ${AI_EMBEDDING_MODEL:embedding-3}
-        # embedding-3 supports `dimensions` (256/512/1024/2048, default 2048). Keep 1024 to match
-        # the existing Qdrant collection; switching the embedding vendor/model requires a full
-        # re-index (POST /api/admin/ai/reindex). When unset, the size is probed from the model.
+        api-key: ${AI_EMBEDDING_API_KEY:${SILICONFLOW_API_KEY:not-configured}}
+        base-url: ${AI_EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+        model: ${AI_EMBEDDING_MODEL:Qwen/Qwen3-Embedding-0.6B}
+        # Qwen3-Embedding-0.6B returns 1024 dimensions. Keep the explicit size so a vendor-side
+        # default change cannot silently break the existing Qdrant collection. Switching the
+        # model or dimension requires a full re-index (POST /api/admin/ai/reindex).
         dimensions: ${AI_EMBEDDING_DIMENSIONS:1024}
         timeout: 30s
         max-retries: 2
@@ -129,6 +130,18 @@ app:
     max-history-turns: ${AI_MAX_HISTORY_TURNS:4}
     ingest-on-startup: ${AI_INGEST_ON_STARTUP:true}
     per-user-per-minute: ${AI_PER_USER_PER_MINUTE:20}
+    # Long-term memory lifecycle: unused active entries expire after retention-days; user-deleted
+    # and expired rows are hard-deleted after purge-days so audit history stays bounded.
+    memory:
+      retention-days: ${AI_MEMORY_RETENTION_DAYS:180}
+      purge-days: ${AI_MEMORY_PURGE_DAYS:30}
+      cleanup-cron: ${AI_MEMORY_CLEANUP_CRON:0 15 3 * * *}
+    # Usage counters: per-user day rows are pruned after retention-days; the uid=0 platform row is
+    # kept much longer because it is the only long-term "site spend" series.
+    usage:
+      retention-days: ${AI_USAGE_RETENTION_DAYS:31}
+      global-retention-days: ${AI_USAGE_GLOBAL_RETENTION_DAYS:366}
+      cleanup-cron: "${AI_USAGE_CLEANUP_CRON:0 45 4 * * *}"
     # Documentation corpora. Each entry is a logical corpus; location may be a filesystem path or
     # a classpath: prefix. `public-base-url` empty means markdown-only (citations carry no URL).
     collections:
@@ -141,6 +154,27 @@ app:
         # Markdown-only corpus: no published site, so citations carry no URL.
         public-base-url: ''
     # ---- Agent: skills + tools ----
+    # When true, a client disconnect cancels the model stream immediately. The default (false)
+    # lets the turn finish server-side so the full answer is persisted even if the browser leaves;
+    # no further SSE frames are written after the disconnect either way.
+    agent:
+      interrupt-on-disconnect: ${AI_AGENT_INTERRUPT_ON_DISCONNECT:false}
+    # ---- Content moderation (violation words) ----
+    # The active posture lives in the database (ai_admin_setting.moderation_mode, editable from
+    # 管理端 › AI › 运行设置) so it can be switched without a redeploy. It defaults to LOG (record
+    # only): run in shadow mode first, review the hits, tune the dictionary, then switch to ENFORCE.
+    # The committed word list is a small safety baseline. Mount a fuller list at deploy time and
+    # point AI_MODERATION_DICT at it rather than committing one to this public repository.
+    moderation:
+      dict-locations: ${AI_MODERATION_DICT:classpath:ai/moderation/words.txt}
+      allow-locations: ${AI_MODERATION_ALLOW:classpath:ai/moderation/allow.txt}
+      # Blocked questions per user within the window before that user's AI endpoints are paused.
+      strike-limit: ${AI_MODERATION_STRIKE_LIMIT:5}
+      strike-window-minutes: ${AI_MODERATION_STRIKE_WINDOW_MINUTES:10}
+      cooldown-minutes: ${AI_MODERATION_COOLDOWN_MINUTES:15}
+      # Audit rows are kept this long, then purged by the nightly cleanup (cleanup-cron below).
+      retention-days: ${AI_MODERATION_RETENTION_DAYS:90}
+      cleanup-cron: "${AI_MODERATION_CLEANUP_CRON:0 30 4 * * *}"
     # External skills are markdown files at <skills-dir>/<name>/SKILL.md; built-in skills live on
     # the classpath (resources/ai/skills). External files override a same-named built-in.
     skills-dir: ${AI_SKILLS_DIR:deploy/ai-skills}
@@ -153,7 +187,13 @@ app:
       endpoint: ${AI_WEB_SEARCH_ENDPOINT:https://api.deepseek.com/v1/tools/search}
       # `searchDocs` falls back to one web search per turn when the local corpus has no match.
       auto-fallback: ${AI_WEB_SEARCH_AUTO_FALLBACK:true}
-      auto-fallback-count: ${AI_WEB_SEARCH_AUTO_FALLBACK_COUNT:3}
+      # Hits per call. The explicit tool and the docs fallback share this value; tokens grow linearly.
+      max-results: ${AI_WEB_SEARCH_MAX_RESULTS:3}
+      # Successful searches per turn, counting the fallback. Failures and retries do not count.
+      max-successes: ${AI_WEB_SEARCH_MAX_SUCCESSES:3}
+      # HTTP attempts per call (first try + one retry) and the pause between retryable attempts.
+      max-attempts: ${AI_WEB_SEARCH_MAX_ATTEMPTS:2}
+      retry-backoff-ms: ${AI_WEB_SEARCH_RETRY_BACKOFF_MS:300}
       timeout-ms: ${AI_WEB_SEARCH_TIMEOUT_MS:20000}
   # -------- 代码沙箱（Piston）--------
   # 业务服务直连 Piston（不设独立模块）；仅登录用户可用（匿名只跑浏览器本地 WASM）。

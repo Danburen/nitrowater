@@ -1,6 +1,5 @@
 package cn.nitrowater.resource.application;
 
-import cn.nitrowater.resource.application.dto.AdminResourcePage;
 import cn.nitrowater.resource.application.dto.AdminResourceQuery;
 import cn.nitrowater.resource.application.dto.ResourceMeta;
 import cn.nitrowater.resource.application.dto.ResourceReadResult;
@@ -502,15 +501,13 @@ public class ResourceService {
      * @return one page of matching resources, newest first
      */
     @Transactional(readOnly = true)
-    public AdminResourcePage adminList(AdminResourceQuery query, Long callerUid, boolean superAdmin,
+    public Page<ResourceMeta> adminList(AdminResourceQuery query, Long callerUid, boolean superAdmin,
             int page, int size) {
         int safeSize = Math.min(MAX_ADMIN_PAGE_SIZE, Math.max(1, size));
         Pageable pageable = PageRequest.of(Math.max(0, page), safeSize,
                 Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<Resource> result = repository.findAll(adminSpecification(query, callerUid, superAdmin), pageable);
-        List<ResourceMeta> items = result.getContent().stream().map(ResourceService::toAdminListItem).toList();
-        return new AdminResourcePage(items, result.getTotalElements(), result.getNumber(), result.getSize(),
-                result.getTotalPages());
+        return repository.findAll(adminSpecification(query, callerUid, superAdmin), pageable)
+                .map(ResourceService::toAdminListItem);
     }
 
     /**
@@ -606,6 +603,10 @@ public class ResourceService {
             }
             if (query.status() != null) {
                 predicates.add(cb.equal(root.get("status"), query.status()));
+            } else {
+                // Soft-deleted rows are never part of a listing: their bytes are gone, the row only
+                // exists so a later purge/audit can still resolve the uuid.
+                predicates.add(cb.notEqual(root.get("status"), ResourceStatus.DELETED));
             }
             if (query.sourceType() != null) {
                 predicates.add(cb.equal(root.get("sourceType"), query.sourceType()));

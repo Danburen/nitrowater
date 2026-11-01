@@ -6,6 +6,8 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.List;
+
 /**
  * Shared JSON helper (Jackson 3 — {@code tools.jackson}). Internally used by the caching/IO layers
  * and by the business modules for their JSON columns; keeping one mapper here keeps the JSON
@@ -43,7 +45,7 @@ public final class JsonUtil {
         try {
             return MAPPER.readValue(json, typeRef);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse JSON", e);
+            throw new RuntimeException("Failed to parseList JSON", e);
         }
     }
 
@@ -54,7 +56,7 @@ public final class JsonUtil {
         try {
             return MAPPER.readValue(json, clazz);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse JSON", e);
+            throw new RuntimeException("Failed to parseList JSON", e);
         }
     }
 
@@ -71,5 +73,10 @@ public final class JsonUtil {
 
     public static ObjectMapper getMapper() {
         return MAPPER;
+    }
+
+    public static <T> List<T> parseList(String json, TypeReference<List<T>> type) {
+        List<T> value = fromJson(json, type);
+        return value == null ? List.of() : value;
     }
 }

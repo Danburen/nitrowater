@@ -16,6 +16,7 @@ import java.util.List;
  * @param sources citations captured when the answer was produced
  * @param tools tool trace captured when the answer was produced
  * @param model model that produced the answer, or {@code null}
+ * @param moderated whether the stored text was masked by the content gate
  * @param createdAt creation timestamp
  */
 public record ConversationMessageResp(
@@ -26,5 +27,6 @@ public record ConversationMessageResp(
         List<DocSource> sources,
         List<ToolCall> tools,
         String model,
+        boolean moderated,
         Instant createdAt) {
 }

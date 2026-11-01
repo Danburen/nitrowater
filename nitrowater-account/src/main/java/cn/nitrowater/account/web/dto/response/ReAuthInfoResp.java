@@ -9,4 +9,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class ReAuthInfoResp {
     private String maskedPhone;
+    private String maskedEmail;
+    private java.util.List<String> availableChannels;
 }

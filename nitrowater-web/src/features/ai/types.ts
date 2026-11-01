@@ -1,5 +1,5 @@
-import type { AiSource, AiToolCall } from './api'
-import type { SlashProfile, SlashQuota, SlashStatus } from './slashApi'
+import type { AiSource, AiToolCall } from '../../api/ai'
+import type { SlashProfile, SlashQuota, SlashStatus } from '../../api/slash'
 
 /** Transient progress of a streaming agent turn (rendered as the live activity card). */
 export interface ChatActivity {
@@ -7,11 +7,8 @@ export interface ChatActivity {
   tool: string | null
 }
 
-/** Transient progress of a streaming agent turn (rendered as the live activity card). */
-export interface ChatActivity {
-  phase: 'thinking' | 'tool_start' | 'tool_end'
-  tool: string | null
-}
+
+
 
 /**
  * Payload of a system card inserted by a slash command.
@@ -24,6 +21,12 @@ export type SystemCard =
   | { type: 'profile'; data: SlashProfile }
   | { type: 'status'; data: SlashStatus }
   | { type: 'notice'; text: string; tone: 'info' | 'warn' }
+
+/** One dot of the conversation timeline (one per user question). */
+export interface TimelineItem {
+  id: string
+  label: string
+}
 
 /**
  * One message in the NitroBot transcript.
@@ -45,6 +48,8 @@ export interface ChatMessage {
   stopped?: boolean
   /** The provider stopped on a token limit; the answer can be continued. */
   truncated?: boolean
+  /** The content gate masked part of this answer before it was stored. */
+  moderated?: boolean
   /** Live tool/thinking state while streaming. */
   activity?: ChatActivity | null
   /** Slash-command result; present only on {@code system} messages. */

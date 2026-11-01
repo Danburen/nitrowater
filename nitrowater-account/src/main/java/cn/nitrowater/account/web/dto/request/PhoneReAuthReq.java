@@ -9,7 +9,7 @@ import cn.nitrowater.core.api.req.auth.DeviceInfo;
 public class PhoneReAuthReq {
     @NotBlank
     private String reAuthToken;
-    @NotBlank
+    /** Optional for activation of an already-bound phone; required for initial binding. */
     private String phone;
     @NotNull
     private DeviceInfo deviceInfo;

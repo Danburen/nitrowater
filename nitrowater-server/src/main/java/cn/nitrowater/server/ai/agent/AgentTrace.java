@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -32,24 +33,35 @@ public final class AgentTrace {
     public static final String CONTEXT_KEY = "nitrowater.agent.trace";
 
     private final String userId;
+    private final String conversationUuid;
     private final Map<String, AgentDoc> docs = new LinkedHashMap<>();
     private final List<ToolCall> calls = new CopyOnWriteArrayList<>();
     private final Set<String> skills = new LinkedHashSet<>();
     private final AtomicInteger runCodeAttempts = new AtomicInteger();
     private final AtomicBoolean webFallbackUsed = new AtomicBoolean();
-    private final AtomicInteger webSearchAttempts = new AtomicInteger();
+    private final AtomicInteger webSearchSuccesses = new AtomicInteger();
+    private final Set<String> webQueries = new LinkedHashSet<>();
     private int nextIndex = 1;
 
     /** Creates a trace without a user id; used by tests and non-authenticated tool paths. */
     public AgentTrace() {
-        this(null);
+        this(null, null);
     }
 
     /**
      * @param userId the authenticated user id, or {@code null} when unavailable
      */
     public AgentTrace(String userId) {
+        this(userId, null);
+    }
+
+    /**
+     * @param userId the authenticated user id, or {@code null} when unavailable
+     * @param conversationUuid conversation that owns this turn, or {@code null} for legacy callers
+     */
+    public AgentTrace(String userId, String conversationUuid) {
         this.userId = userId;
+        this.conversationUuid = conversationUuid;
     }
 
     /**
@@ -128,20 +140,64 @@ public final class AgentTrace {
         return webFallbackUsed.compareAndSet(false, true);
     }
 
-    /** The most explicit {@code webSearch} calls allowed in one turn (first try + one rewrite). */
-    public static final int MAX_WEB_SEARCH_ATTEMPTS = 2;
+    /**
+     * Releases the fallback claim after a failed search, so a later docs miss can still retry
+     * instead of silently losing the turn's only automatic search.
+     */
+    public void releaseWebFallback() {
+        webFallbackUsed.set(false);
+    }
 
     /**
-     * Claims one explicit {@code webSearch} attempt.
-     *
-     * @return {@code true} while the turn is below {@link #MAX_WEB_SEARCH_ATTEMPTS}
+     * @param query search query
+     * @return whether this exact query already ran successfully in this turn
      */
-    public boolean claimWebSearchAttempt() {
-        return webSearchAttempts.incrementAndGet() <= MAX_WEB_SEARCH_ATTEMPTS;
+    public synchronized boolean hasSearched(String query) {
+        return webQueries.contains(normalizeQuery(query));
+    }
+
+    /**
+     * @param maxSuccesses budget for one turn
+     * @return how many more successful searches the turn may run (never negative)
+     */
+    public int remainingWebSearches(int maxSuccesses) {
+        return Math.max(0, maxSuccesses - webSearchSuccesses.get());
+    }
+
+    /**
+     * Records a search that actually reached the provider, keeping the budget and the
+     * de-duplication set in sync.
+     *
+     * @param query the query that was searched
+     */
+    public synchronized void recordWebSearchSuccess(String query) {
+        webSearchSuccesses.incrementAndGet();
+        webQueries.add(normalizeQuery(query));
+    }
+
+    /** @return successful searches so far this turn */
+    public int webSearchSuccesses() {
+        return webSearchSuccesses.get();
+    }
+
+    /**
+     * Normalizes a query for de-duplication: trimmed, lower-cased, whitespace collapsed.
+     *
+     * @param query raw query, may be {@code null}
+     * @return the comparison key, never {@code null}
+     */
+    public static String normalizeQuery(String query) {
+        return Objects.requireNonNullElse(query, "").trim().toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ");
     }
     /** @return the authenticated user id, or {@code null} when unavailable */
     public String userId() {
         return userId;
+    }
+
+    /** @return the conversation uuid that owns this turn, or {@code null} */
+    public String conversationUuid() {
+        return conversationUuid;
     }
 
     /**

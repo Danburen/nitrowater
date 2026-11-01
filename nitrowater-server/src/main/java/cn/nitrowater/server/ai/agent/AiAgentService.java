@@ -2,16 +2,20 @@ package cn.nitrowater.server.ai.agent;
 
 import cn.nitrowater.server.ai.AiAdminSettingsService;
 import cn.nitrowater.server.ai.AiInput;
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.ai.AiStreamChunk;
 import cn.nitrowater.server.ai.AiTokenUsageMeter;
 import cn.nitrowater.server.ai.AiUsageService;
 import cn.nitrowater.server.ai.AiUsageTracker;
 import cn.nitrowater.server.ai.ChatTurn;
 import cn.nitrowater.server.ai.PromptBuilder;
+import cn.nitrowater.server.ai.memory.AiMemoryService;
+import cn.nitrowater.server.ai.profile.AiProfileService;
 import cn.nitrowater.server.ai.skill.Skill;
 import cn.nitrowater.server.ai.skill.SkillRegistry;
 import cn.nitrowater.server.ai.tool.WebSearchProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClientMessageAggregator;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -58,6 +62,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class AiAgentService {
 
     private static final ChatClientMessageAggregator AGGREGATOR = new ChatClientMessageAggregator();
+    private static final Logger log = LoggerFactory.getLogger(AiAgentService.class);
 
     private final ChatModel chatModel;
     private final ToolCallingManager toolCallingManager;
@@ -68,12 +73,14 @@ public class AiAgentService {
     private final PromptBuilder promptBuilder;
     private final AiAdminSettingsService settings;
     private final AiUsageService usage;
+    private final AiProfileService profiles;
+    private final AiMemoryService memories;
     private final int maxToolRounds;
 
     public AiAgentService(ChatModel chatModel, ToolCallingManager toolCallingManager,
             AgentToolProviders tools, WebSearchProvider webSearchProvider, SkillRegistry skills,
             AiProperties properties, PromptBuilder promptBuilder, AiAdminSettingsService settings,
-            AiUsageService usage,
+            AiUsageService usage, AiProfileService profiles, AiMemoryService memories,
             @Value("${spring.ai.tools.limits.max-total-tool-calls:10}") int maxToolRounds) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
@@ -84,6 +91,8 @@ public class AiAgentService {
         this.promptBuilder = promptBuilder;
         this.settings = settings;
         this.usage = usage;
+        this.profiles = profiles;
+        this.memories = memories;
         this.maxToolRounds = Math.max(1, maxToolRounds);
     }
 
@@ -100,11 +109,27 @@ public class AiAgentService {
      */
     public AgentAnswer answer(String question, List<ChatTurn> history, String skillName,
             boolean allowWeb, long uid) {
+        return answer(question, history, skillName, allowWeb, uid, null);
+    }
+
+    /**
+     * Runs one complete agent turn (no streaming).
+     *
+     * @param question user question
+     * @param history previous turns
+     * @param skillName optional selected skill
+     * @param allowWeb whether the user allowed web search for this turn
+     * @param uid authenticated user id whose daily token quota is charged
+     * @param conversationUuid conversation that owns this turn, used as the memory source
+     * @return answer + citations + tool trace
+     */
+    public AgentAnswer answer(String question, List<ChatTurn> history, String skillName,
+            boolean allowWeb, long uid, String conversationUuid) {
         AiAdminSettingsService.Settings runtime = requireEnabled();
         String sanitized = AiInput.question(question, properties.maxQuestionChars());
         Skill skill = resolveSkill(skillName, runtime);
-        AgentTrace trace = traceFor(skill, String.valueOf(uid));
-        AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime);
+        AgentTrace trace = traceFor(skill, String.valueOf(uid), conversationUuid);
+        AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime, uid);
         AiUsageTracker session = usage.start(uid, request.estimatedInputTokens());
         try {
             Prompt prompt = request.prompt();
@@ -154,11 +179,33 @@ public class AiAgentService {
             boolean allowWeb,
             long uid
     ) {
+        return prepare(question, history, skillName, allowWeb, uid, null);
+    }
+
+    /**
+     * Starts one agent turn and returns the answer token stream.
+     *
+     * @param question user question
+     * @param history previous turns
+     * @param skillName optional selected skill
+     * @param allowWeb whether the user allowed web search for this turn
+     * @param uid authenticated user id whose daily token quota is charged
+     * @param conversationUuid conversation that owns this turn, used as the memory source
+     * @return trace + token stream
+     */
+    public PreparedAgent prepare(
+            String question,
+            List<ChatTurn> history,
+            String skillName,
+            boolean allowWeb,
+            long uid,
+            String conversationUuid
+    ) {
         AiAdminSettingsService.Settings runtime = requireEnabled();
         String sanitized = AiInput.question(question, properties.maxQuestionChars());
         Skill skill = resolveSkill(skillName, runtime);
-        AgentTrace trace = traceFor(skill, String.valueOf(uid));
-        AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime);
+        AgentTrace trace = traceFor(skill, String.valueOf(uid), conversationUuid);
+        AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime, uid);
         AiUsageTracker session = usage.start(uid, request.estimatedInputTokens());
         Flux<AiStreamChunk> chunks = streamRounds(request.prompt())
                 .doOnNext(chunk -> {
@@ -264,7 +311,7 @@ public class AiAgentService {
     }
 
     private AgentRequest request(String question, List<ChatTurn> history, Skill skill,
-            boolean allowWeb, AgentTrace trace, AiAdminSettingsService.Settings runtime) {
+            boolean allowWeb, AgentTrace trace, AiAdminSettingsService.Settings runtime, long uid) {
         List<ToolCallback> callbacks = new ArrayList<>();
         for (ToolCallback callback : tools.core().getToolCallbacks()) {
             if (runtime.toolEnabled(callback.getToolDefinition().name())) {
@@ -278,11 +325,30 @@ public class AiAgentService {
                 }
             }
         }
-        String system = promptBuilder.agentSystem(runtime.skillsEnabled() ? skills.list() : List.of(), skill);
+        String context = userContext(uid, question);
+        String system = promptBuilder.agentSystem(
+                runtime.skillsEnabled() ? skills.list() : List.of(), skill, context);
         String user = promptBuilder.agentUser(question, history);
         List<Message> messages = List.of(new SystemMessage(system), new UserMessage(user));
         Prompt prompt = new Prompt(messages, chatOptions(callbacks, trace));
         return new AgentRequest(prompt, AiTokenUsageMeter.estimateTokens(system + user));
+    }
+
+    /**
+     * Loads the user's profile and question-relevant memories for the system prompt.
+     *
+     * <p>Personalization is best-effort: a database failure must not take down chat, so the turn
+     * continues without this block and the failure is logged.</p>
+     */
+    private String userContext(long uid, String question) {
+        try {
+            String profile = profiles.promptBlock(uid);
+            List<AiMemoryService.MemoryView> recalled = memories.recall(uid, question, 3);
+            return promptBuilder.agentContext(profile, recalled);
+        } catch (RuntimeException ex) {
+            log.warn("Failed to assemble user context for uid {}: {}", uid, ex.getMessage());
+            return "";
+        }
     }
 
     /**
@@ -330,8 +396,8 @@ public class AiAgentService {
         return Objects.requireNonNullElse(response.getResult().getOutput().getText(), "");
     }
 
-    private static AgentTrace traceFor(Skill skill, String userId) {
-        AgentTrace trace = new AgentTrace(userId);
+    private static AgentTrace traceFor(Skill skill, String userId, String conversationUuid) {
+        AgentTrace trace = new AgentTrace(userId, conversationUuid);
         if (skill != null) {
             // The selected skill is inlined into the system prompt, so no loadSkill call occurs;
             // record it here so the UI can still show which workflow was applied.

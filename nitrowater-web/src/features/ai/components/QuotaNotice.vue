@@ -8,7 +8,7 @@
  * state applies (and whether the once-per-day warning was already dismissed).</p>
  */
 import { computed } from 'vue'
-import type { AiDailyUsage } from '../api'
+import type { AiDailyUsage } from '../../../api/ai'
 
 const props = defineProps<{
   usage: AiDailyUsage | null

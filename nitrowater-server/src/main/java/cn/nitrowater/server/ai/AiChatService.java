@@ -1,5 +1,6 @@
 package cn.nitrowater.server.ai;
 
+import cn.nitrowater.server.ai.properties.AiProperties;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;

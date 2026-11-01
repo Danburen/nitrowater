@@ -1,11 +1,12 @@
 package cn.nitrowater.server.ai.conversation;
 
 import cn.nitrowater.lib.utils.JsonUtil;
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.ai.AiTokenUsage;
 import cn.nitrowater.server.ai.ChatTurn;
 import cn.nitrowater.server.ai.DocSource;
 import cn.nitrowater.server.ai.agent.ToolCall;
+import cn.nitrowater.server.ai.moderation.AiModerationService;
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.entity.AiMessage;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
@@ -46,12 +47,14 @@ public class ConversationService {
     private final AiConversationRepository conversations;
     private final AiMessageRepository messages;
     private final AiProperties properties;
+    private final AiModerationService moderation;
 
     public ConversationService(AiConversationRepository conversations, AiMessageRepository messages,
-            AiProperties properties) {
+            AiProperties properties, AiModerationService moderation) {
         this.conversations = conversations;
         this.messages = messages;
         this.properties = properties;
+        this.moderation = moderation;
     }
 
     /**
@@ -171,11 +174,14 @@ public class ConversationService {
      */
     @Transactional
     public StartedTurn start(long uid, String conversationUuid, String question) {
+        // The content gate runs before anything is written: a rejected question must not create a
+        // conversation or an ai_message row that later has to be scrubbed by hand.
+        moderation.guardQuestion(uid, conversationUuid, question);
         AiConversation conversation = (conversationUuid == null || conversationUuid.isBlank())
                 ? create(uid, deriveTitle(question))
                 : require(conversationUuid, uid);
         List<ChatTurn> history = history(conversation);
-        append(conversation, MessageRole.USER, question, 0, null, null, null);
+        append(conversation, MessageRole.USER, question, 0, null, null, null, false);
         return new StartedTurn(conversation, history);
     }
 
@@ -187,10 +193,12 @@ public class ConversationService {
      * @param sources citations, may be empty
      * @param tools tool trace, may be empty
      * @param model model that produced the answer
+     * @param moderated whether the answer was masked by the content gate, stored with the message so
+     *        the client can still show the badge after a reload
      */
     @Transactional
     public void finish(AiConversation conversation, String answer, List<DocSource> sources,
-            List<ToolCall> tools, String model, AiTokenUsage usage) {
+            List<ToolCall> tools, String model, AiTokenUsage usage, boolean moderated) {
         String text = Objects.requireNonNullElse(answer, "").trim();
         // `ai_message.tokens` measures the message itself (used for context estimates), so it keeps
         // the completion side only; the daily ledger separately records prompt + completion.
@@ -198,7 +206,7 @@ public class ConversationService {
         append(conversation, MessageRole.ASSISTANT, text, tokens,
                 sources == null || sources.isEmpty() ? null : JsonUtil.toJson(sources),
                 tools == null || tools.isEmpty() ? null : JsonUtil.toJson(tools),
-                trimToNull(model, 64));
+                trimToNull(model, 64), moderated);
     }
 
     /**
@@ -210,7 +218,7 @@ public class ConversationService {
     @Transactional
     public void fail(AiConversation conversation, String errorMessage) {
         String text = Objects.requireNonNullElse(errorMessage, "AI request failed").trim();
-        append(conversation, MessageRole.ERROR, text, 0, null, null, null);
+        append(conversation, MessageRole.ERROR, text, 0, null, null, null, false);
     }
 
     /**
@@ -306,7 +314,7 @@ public class ConversationService {
     }
 
     private void append(AiConversation conversation, MessageRole role, String content, int tokens,
-            String sourcesJson, String toolsJson, String model) {
+            String sourcesJson, String toolsJson, String model, boolean moderated) {
         AiMessage message = new AiMessage();
         message.setUuid(UUID.randomUUID().toString());
         message.setConversationId(conversation.getId());
@@ -317,6 +325,7 @@ public class ConversationService {
         message.setSourcesJson(sourcesJson);
         message.setToolsJson(toolsJson);
         message.setModel(model);
+        message.setModerated(moderated);
         messages.save(message);
 
         conversation.setMessageCount(conversation.getMessageCount() + 1);

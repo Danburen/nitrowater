@@ -1,0 +1,42 @@
+plugins {
+    id 'java-library'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'cn.nitrowater'
+version = '0.0.1-SNAPSHOT'
+description = 'nitrowater-core-web'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Spring MVC / Security plumbing shared by every JSON service. Kept out of nitrowater-lib (which
+// stays framework-free) and out of nitrowater-core (which would drag JPA + a DataSource into the
+// BFF, a service that only talks to Redis and upstream HTTP).
+dependencies {
+    api project(':nitrowater-lib')
+    api 'org.springframework:spring-webmvc'
+    api 'org.springframework.security:spring-security-web'
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.0.0'
+    compileOnly 'org.slf4j:slf4j-api'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Pure library module: no main class -> disable bootJar, publish a plain jar.
+tasks.named('bootJar') {
+    enabled = false
+}
+tasks.named('jar') {
+    enabled = true
+}

@@ -11,7 +11,6 @@ import type { ChatActivity } from '../types'
 
 const props = defineProps<{
   activity: ChatActivity | null
-  writingCode: boolean
 }>()
 
 const TOOL_LABELS: Readonly<Record<string, string>> = {
@@ -22,7 +21,6 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
 }
 
 const text = computed(() => {
-  if (props.writingCode) return '正在编写代码…'
   const activity = props.activity
   if (!activity || activity.phase === 'thinking') return '正在思考…'
   const label = TOOL_LABELS[activity.tool ?? ''] ?? activity.tool ?? '工具'

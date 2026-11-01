@@ -7,11 +7,13 @@ import org.junit.jupiter.api.Test;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Verifies the DeepSeek {@code /v1/tools/search} request shape and result parsing. */
+/** Verifies the DeepSeek {@code /v1/tools/search} request shape, retry policy and result parsing. */
 class DeepSeekWebSearchProviderTest {
 
     @Test
@@ -43,7 +45,7 @@ class DeepSeekWebSearchProviderTest {
         try {
             String endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/tools/search";
             DeepSeekWebSearchProvider provider = new DeepSeekWebSearchProvider(new WebSearchProperties(
-                    true, "test-key", endpoint, true, 3, 5_000));
+                    true, "test-key", endpoint, true, 3, 3, 1, 0, 5_000));
 
             List<WebSearchResult> results = provider.search("DeepSeek V4", 99);
 
@@ -63,9 +65,73 @@ class DeepSeekWebSearchProviderTest {
     }
 
     @Test
+    void retriesOnceWhenTheServerFailsTransiently() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/tools/search", exchange -> {
+            int call = calls.incrementAndGet();
+            byte[] body = call == 1
+                    ? "{}".getBytes(StandardCharsets.UTF_8)
+                    : """
+                      {"results":[{"title":"Recovered","url":"https://example.com/recovered","summary":"ok"}]}
+                      """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(call == 1 ? 500 : 200, body.length);
+            try (var out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/tools/search";
+            DeepSeekWebSearchProvider provider = new DeepSeekWebSearchProvider(new WebSearchProperties(
+                    true, "test-key", endpoint, true, 3, 3, 2, 0, 5_000));
+
+            List<WebSearchResult> results = provider.search("transient", 3);
+
+            assertThat(calls.get()).isEqualTo(2);
+            assertThat(results).extracting(WebSearchResult::url).containsExactly("https://example.com/recovered");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void doesNotRetryClientErrors() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/tools/search", exchange -> {
+            calls.incrementAndGet();
+            byte[] body = "{\"error\":\"bad request\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(400, body.length);
+            try (var out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            String endpoint = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/tools/search";
+            DeepSeekWebSearchProvider provider = new DeepSeekWebSearchProvider(new WebSearchProperties(
+                    true, "test-key", endpoint, true, 3, 3, 2, 0, 5_000));
+
+            assertThatThrownBy(() -> provider.search("bad", 3))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("after 1 attempt");
+            assertThat(calls.get()).isEqualTo(1);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void disabledWithoutApiKey() {
         DeepSeekWebSearchProvider provider = new DeepSeekWebSearchProvider(new WebSearchProperties(
-                true, " ", "", true, 3, 5_000));
+                true, " ", "", true, 3, 3, 2, 0, 5_000));
 
         assertThat(provider.enabled()).isFalse();
         assertThat(provider.search("anything", 5)).isEmpty();

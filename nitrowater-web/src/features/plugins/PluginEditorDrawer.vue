@@ -25,7 +25,7 @@ import {
   type AdminPluginJar,
   type PluginAdmin,
   type PluginUpsert,
-} from './adminApi'
+} from '../../api/plugins'
 
 const TABS = [
   { value: 'basic', label: '基本信息' },

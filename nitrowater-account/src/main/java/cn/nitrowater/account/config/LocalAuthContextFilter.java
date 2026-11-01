@@ -6,8 +6,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import cn.nitrowater.account.security.SsoUserPrincipal;
@@ -31,7 +33,7 @@ import java.util.Locale;
 public class LocalAuthContextFilter extends OncePerRequestFilter {
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+    protected void doFilterInternal(@NotNull HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain chain)
             throws ServletException, IOException {
         try {
             AuthContext context = fromSecurityContext(request);
@@ -53,6 +55,18 @@ public class LocalAuthContextFilter extends OncePerRequestFilter {
     /** Identity from the session / OIDC principal established by the security filter chain. */
     private static AuthContext fromSecurityContext(HttpServletRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwt) {
+            String subject = jwt.getToken().getSubject();
+            if (subject != null) {
+                try {
+                    return new AuthContext(Long.parseLong(subject), null, null,
+                            resolveLocale(request), clientIp(request));
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+            return null;
+        }
         if (authentication == null || !(authentication.getPrincipal() instanceof SsoUserPrincipal principal)) {
             return null;
         }

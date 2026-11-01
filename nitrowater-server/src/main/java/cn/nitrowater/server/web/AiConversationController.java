@@ -115,14 +115,11 @@ public class AiConversationController {
                 message.getSeq(),
                 message.getRole().name().toLowerCase(),
                 message.getContent(),
-                parse(message.getSourcesJson(), SOURCES_TYPE),
-                parse(message.getToolsJson(), TOOLS_TYPE),
+                JsonUtil.parseList(message.getSourcesJson(), SOURCES_TYPE),
+                JsonUtil.parseList(message.getToolsJson(), TOOLS_TYPE),
                 message.getModel(),
+                Boolean.TRUE.equals(message.getModerated()),
                 message.getCreatedAt());
     }
 
-    private static <T> List<T> parse(String json, TypeReference<List<T>> type) {
-        List<T> value = JsonUtil.fromJson(json, type);
-        return value == null ? List.of() : value;
-    }
 }

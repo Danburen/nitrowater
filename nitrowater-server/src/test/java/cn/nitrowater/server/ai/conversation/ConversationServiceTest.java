@@ -1,7 +1,8 @@
 package cn.nitrowater.server.ai.conversation;
 
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.ai.ChatTurn;
+import cn.nitrowater.server.ai.moderation.AiModerationService;
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.entity.AiMessage;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
@@ -27,8 +28,9 @@ class ConversationServiceTest {
     private final AiConversationRepository conversations = mock(AiConversationRepository.class);
     private final AiMessageRepository messages = mock(AiMessageRepository.class);
     private final AiProperties properties = mock(AiProperties.class);
+    private final AiModerationService moderation = mock(AiModerationService.class);
     private final ConversationService service =
-            new ConversationService(conversations, messages, properties);
+            new ConversationService(conversations, messages, properties, moderation);
 
     @Test
     void historyReadsOnlyMessagesAfterTheContextBoundary() {

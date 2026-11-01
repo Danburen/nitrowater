@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
-import * as api from '../conversationsApi'
+import * as api from '../../../api/conversations'
+import type { ServerMessage } from '../../../api/conversations'
 import type { ChatMessage } from '../types'
 
 /** One conversation in the sidebar. `id` is the server uuid when signed in, a local id otherwise. */
@@ -9,6 +10,9 @@ export interface Conversation {
   createdAt: number
   updatedAt: number
   messages: ChatMessage[]
+  /** Server paging state: older pages exist and where to continue from. */
+  hasMore?: boolean
+  oldestSeq?: number | null
 }
 
 /** How the store is backed: the server when signed in, localStorage otherwise. */
@@ -45,6 +49,7 @@ export function useConversations() {
     remove,
     rename,
     loadMessages,
+    loadOlder,
     save,
     find,
   }
@@ -164,24 +169,52 @@ async function rename(id: string, title: string): Promise<void> {
   }
 }
 
-/** Fills an empty cached conversation from the server (newest page only). */
+/** Fills a conversation from the server and records its paging state. */
 async function loadMessages(conversation: Conversation): Promise<void> {
-  if (mode.value !== 'server' || conversation.messages.length > 0) return
+  if (mode.value !== 'server') return
+  // Cached transcripts render immediately, but the paging metadata may still be unknown (the
+  // cache only stores messages). Fetch once in that case so "load older" can work.
+  if (conversation.messages.length > 0 && conversation.hasMore !== undefined) return
   try {
     const page = await api.fetchMessages(conversation.id, undefined, MESSAGE_PAGE)
-    conversation.messages = page.items.map((message) => ({
-      id: message.uuid,
-      role: message.role === 'user' ? 'user' : 'assistant',
-      content: message.content,
-      sources: message.sources ?? [],
-      tools: message.tools ?? [],
-      skills: [],
-      grounded: (message.sources?.length ?? 0) > 0,
-      error: message.role === 'error' ? message.content : null,
-    }))
+    conversation.messages = page.items.map(toChatMessage)
+    conversation.hasMore = page.hasMore
+    conversation.oldestSeq = page.items[0]?.seq ?? null
     persist()
   } catch (error) {
     syncError.value = error instanceof Error ? error.message : '读取对话内容失败'
+  }
+}
+
+/**
+ * Loads the page before the oldest loaded message (server mode only).
+ *
+ * @param conversation conversation to extend
+ * @returns the newly prepended messages (empty when there is nothing older)
+ */
+async function loadOlder(conversation: Conversation): Promise<ChatMessage[]> {
+  if (mode.value !== 'server' || !conversation.hasMore || conversation.oldestSeq == null) return []
+  const page = await api.fetchMessages(conversation.id, conversation.oldestSeq, MESSAGE_PAGE)
+  const older = page.items.map(toChatMessage)
+  conversation.messages = [...older, ...conversation.messages]
+  conversation.hasMore = page.hasMore
+  conversation.oldestSeq = page.items[0]?.seq ?? conversation.oldestSeq
+  persist()
+  return older
+}
+
+/** Maps a stored message onto the transcript shape. */
+function toChatMessage(message: ServerMessage): ChatMessage {
+  return {
+    id: message.uuid,
+    role: message.role === 'user' ? 'user' : 'assistant',
+    content: message.content,
+    sources: message.sources ?? [],
+    tools: message.tools ?? [],
+    skills: [],
+    grounded: (message.sources?.length ?? 0) > 0,
+    error: message.role === 'error' ? message.content : null,
+    moderated: message.moderated === true ? true : undefined,
   }
 }
 

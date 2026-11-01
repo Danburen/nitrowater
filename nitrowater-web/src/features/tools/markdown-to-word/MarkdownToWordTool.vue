@@ -75,18 +75,28 @@ async function doConvert(): Promise<void> {
             class="hidden"
             @change="onPickFile"
           >
-          <el-button @click="pickFile">
+          <button
+            type="button"
+            class="btn"
+            @click="pickFile"
+          >
             选择 .md 文件
-          </el-button>
-          <el-button @click="loadSample">
+          </button>
+          <button
+            type="button"
+            class="btn"
+            @click="loadSample"
+          >
             载入示例
-          </el-button>
-          <el-button
+          </button>
+          <button
+            type="button"
+            class="btn"
             :disabled="!markdown"
             @click="clearAll"
           >
             清空
-          </el-button>
+          </button>
           <span class="ml-auto text-xs text-faint">{{ charCount }} 字符</span>
         </div>
 
@@ -106,14 +116,14 @@ async function doConvert(): Promise<void> {
           class="max-w-[240px]"
           placeholder="document"
         />
-        <el-button
-          type="primary"
-          :loading="converting"
-          :disabled="!canConvert"
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="converting || !canConvert"
           @click="doConvert"
         >
           {{ converting ? '转换中…' : '转换并下载 .docx' }}
-        </el-button>
+        </button>
         <span class="text-xs text-faint">支持标题、列表、引用、代码块、表格、粗体/斜体、链接</span>
       </section>
     </div>

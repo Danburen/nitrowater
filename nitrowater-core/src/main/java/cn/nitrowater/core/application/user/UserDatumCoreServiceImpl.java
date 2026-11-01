@@ -8,6 +8,7 @@ import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.lib.utils.MaskUtil;
 import cn.nitrowater.lib.utils.codec.HashUtil;
 import cn.nitrowater.core.api.resp.AccountResp;
+import cn.nitrowater.core.application.auth.AuthIdentifierUtil;
 import cn.nitrowater.core.domain.EncryptionDataKey;
 import cn.nitrowater.core.domain.user.UserDatum;
 import cn.nitrowater.core.exception.BizException;
@@ -33,19 +34,11 @@ public class UserDatumCoreServiceImpl implements UserDatumCoreService {
     @Transactional
     public UserDatum saveNewEmail(long userUid, String email, boolean verified) {
         UserDatum ud = getUserDatum(userUid);
-        EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
-        String newHashed = HashUtil.toSha256HmacString(email, hmacKey.getEncryptedKey());
-        // check new email whether equal to old email
-        if(newHashed.equals(ud.getEmailHash())){
-            throw new BizException(BaseResponseCode.TWO_VALUE_MUST_DIFFERENT,"email");
-        }
-        // check new email whether bound by others
-        userDatumRepo.findByEmailHash(newHashed).ifPresent(_ ->{
-            throw new BizException(BaseResponseCode.EMAIL_ALREADY_USED);
-        });
-        // save to the db
+        String normalized = AuthIdentifierUtil.normalizeEmail(email);
+        String newHashed = hashTarget(normalized);
+        validateEmailHash(ud, newHashed);
         EncryptionDataKey aesKey = encryptedKeyService.getAesKey();
-        ud.setEmailEncrypted(EncryptionHelper.encryptField(email, aesKey));
+        ud.setEmailEncrypted(EncryptionHelper.encryptField(normalized, aesKey));
         ud.setEmailHash(newHashed);
         ud.setEmailVerified(verified);
         ud.setEncryptionKeyId(aesKey.getKeyId());
@@ -53,26 +46,75 @@ public class UserDatumCoreServiceImpl implements UserDatumCoreService {
     }
 
     @Override
+    public void validateEmailAvailable(long userUid, String email) {
+        UserDatum ud = getUserDatum(userUid);
+        validateEmailHash(ud, hashTarget(AuthIdentifierUtil.normalizeEmail(email)));
+    }
+
+    @Override
+    @Transactional
+    public void markEmailVerified(long userUid) {
+        UserDatum ud = getUserDatum(userUid);
+        if (ud.getEmailEncrypted() == null) {
+            throw new BizException(BaseResponseCode.EMAIL_NOT_FOUND);
+        }
+        ud.setEmailVerified(true);
+        ud.setEmailExpireAt(null);
+        userDatumRepo.save(ud);
+    }
+
+    @Override
     @Transactional
     public UserDatum saveNewPhone(long userUid, String phone, boolean verified) {
         UserDatum ud = getUserDatum(userUid);
-        EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
-        String newHashed = HashUtil.toSha256HmacString(phone, hmacKey.getEncryptedKey());
-        // check new phone whether equal to old phone
-        if(newHashed.equals(ud.getPhoneHash())){
-            throw new BizException(BaseResponseCode.TWO_VALUE_MUST_DIFFERENT,"phone");
-        }
-        // check new phone whether bound by others
-        userDatumRepo.findByPhoneHash(newHashed).ifPresent(_ ->{
-            throw new PhoneNumberAlreadyUsedException();
-        });
-        // save to the db
+        String normalized = AuthIdentifierUtil.normalizePhone(phone);
+        String newHashed = hashTarget(normalized);
+        validatePhoneHash(ud, newHashed);
         EncryptionDataKey aesKey = encryptedKeyService.getAesKey();
-        ud.setPhoneEncrypted(EncryptionHelper.encryptField(phone, aesKey));
+        ud.setPhoneEncrypted(EncryptionHelper.encryptField(normalized, aesKey));
         ud.setPhoneHash(newHashed);
         ud.setPhoneVerified(verified);
         ud.setEncryptionKeyId(aesKey.getKeyId());
         return userDatumRepo.save(ud);
+    }
+
+    @Override
+    public void validatePhoneAvailable(long userUid, String phone) {
+        UserDatum ud = getUserDatum(userUid);
+        validatePhoneHash(ud, hashTarget(AuthIdentifierUtil.normalizePhone(phone)));
+    }
+
+    @Override
+    @Transactional
+    public void markPhoneVerified(long userUid) {
+        UserDatum ud = getUserDatum(userUid);
+        if (ud.getPhoneEncrypted() == null) {
+            throw new BizException(BaseResponseCode.NOT_FOUND);
+        }
+        ud.setPhoneVerified(true);
+        userDatumRepo.save(ud);
+    }
+
+    private String hashTarget(String target) {
+        return HashUtil.toSha256HmacString(target, encryptedKeyService.getUserDatumHmacKey().getEncryptedKey());
+    }
+
+    private void validateEmailHash(UserDatum ud, String hash) {
+        if (hash.equals(ud.getEmailHash())) {
+            throw new BizException(BaseResponseCode.TWO_VALUE_MUST_DIFFERENT, "email");
+        }
+        userDatumRepo.findByEmailHash(hash).ifPresent(_ -> {
+            throw new BizException(BaseResponseCode.EMAIL_ALREADY_USED);
+        });
+    }
+
+    private void validatePhoneHash(UserDatum ud, String hash) {
+        if (hash.equals(ud.getPhoneHash())) {
+            throw new BizException(BaseResponseCode.TWO_VALUE_MUST_DIFFERENT, "phone");
+        }
+        userDatumRepo.findByPhoneHash(hash).ifPresent(_ -> {
+            throw new PhoneNumberAlreadyUsedException();
+        });
     }
 
     @Override

@@ -27,11 +27,12 @@ public interface AccountCoreService {
     void setPassword(long userUid, String newPwd, String confirmPwd, @Nullable DeviceInfo deviceInfo);
 
     /**
-     * Activate email binding (authenticated via reAuthToken).
+     * Starts email binding: sends a code to the new address and returns its verify key.
      *
      * @param deviceInfo device fingerprint for audit logging, may be {@code null}
+     * @return code send result carrying the verification key
      */
-    void activateEmail(long userUid, String email, @Nullable DeviceInfo deviceInfo);
+    CodeResult activateEmail(long userUid, String email, @Nullable DeviceInfo deviceInfo);
 
     /**
      * Change email — saves as unverified, sends activation code to the new email.
@@ -68,11 +69,12 @@ public interface AccountCoreService {
     void verifyChangePhone(String verifyKey, String code, long userUid, @Nullable DeviceInfo deviceInfo);
 
     /**
-     * Activate phone number (authenticated via reAuthToken).
+     * Starts phone binding: sends a code to the new number and returns its verify key.
      *
      * @param deviceInfo device fingerprint for audit logging, may be {@code null}
+     * @return code send result carrying the verification key
      */
-    void activatePhone(long userUid, String phone, @Nullable DeviceInfo deviceInfo);
+    CodeResult activatePhone(long userUid, String phone, @Nullable DeviceInfo deviceInfo);
 
     /**
      * Unbind email (authenticated via reAuthToken).

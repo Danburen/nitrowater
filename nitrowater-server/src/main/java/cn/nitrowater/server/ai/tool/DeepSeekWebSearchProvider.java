@@ -5,9 +5,12 @@ import cn.nitrowater.server.ai.properties.WebSearchProperties;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.core.type.TypeReference;
 
+import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -28,6 +31,10 @@ import java.util.Objects;
  * <p>We send {@code need_content=false}: the page body would multiply the payload size, and the
  * summary is already the field DeepSeek recommends for models. When a hit has no summary the
  * snippet is used instead.</p>
+ *
+ * <p>Transient failures (I/O, timeouts, 5xx, 429) are retried once by default so a flaky call does
+ * not burn the turn's search budget; client errors (400/401/403) fail immediately because the same
+ * request would fail again.</p>
  */
 @Component
 public class DeepSeekWebSearchProvider implements WebSearchProvider {
@@ -41,10 +48,9 @@ public class DeepSeekWebSearchProvider implements WebSearchProvider {
 
     public DeepSeekWebSearchProvider(WebSearchProperties properties) {
         this.properties = properties;
-        int timeoutMs = properties.timeoutMs() > 0 ? properties.timeoutMs() : 20_000;
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build());
-        requestFactory.setReadTimeout(Duration.ofMillis(timeoutMs));
+        requestFactory.setReadTimeout(Duration.ofMillis(properties.effectiveTimeoutMs()));
         this.restClient = RestClient.builder().requestFactory(requestFactory).build();
     }
 
@@ -63,20 +69,29 @@ public class DeepSeekWebSearchProvider implements WebSearchProvider {
         body.put("count", Math.min(MAX_COUNT, Math.max(1, count)));
         body.put("need_content", false);
 
-        String response;
-        try {
-            response = restClient.post()
-                    .uri(endpoint())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .headers(headers -> headers.setBearerAuth(properties.apiKey()))
-                    .body(JsonUtil.toJson(body))
-                    .retrieve()
-                    .body(String.class);
-        } catch (Exception ex) {
-            throw new IllegalStateException("deepseek web search failed: " + message(ex), ex);
+        int attempts = properties.effectiveMaxAttempts();
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return parse(post(body));
+            } catch (Exception ex) {
+                if (attempt >= attempts || !retryable(ex)) {
+                    throw new IllegalStateException(
+                            "deepseek web search failed after " + attempt + " attempt(s): " + message(ex), ex);
+                }
+                pause(properties.effectiveRetryBackoffMs());
+            }
         }
-        return parse(response);
+    }
+
+    private String post(Map<String, Object> body) {
+        return restClient.post()
+                .uri(endpoint())
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .headers(headers -> headers.setBearerAuth(properties.apiKey()))
+                .body(JsonUtil.toJson(body))
+                .retrieve()
+                .body(String.class);
     }
 
     private String endpoint() {
@@ -112,6 +127,35 @@ public class DeepSeekWebSearchProvider implements WebSearchProvider {
                     text.isBlank() ? url : text));
         }
         return List.copyOf(results);
+    }
+
+    /**
+     * @return whether the same request is worth repeating (network hiccup, server error, throttling)
+     */
+    private static boolean retryable(Throwable error) {
+        Throwable root = error;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return retryableOne(error) || retryableOne(root);
+    }
+
+    private static boolean retryableOne(Throwable error) {
+        return error instanceof IOException
+                || error instanceof HttpServerErrorException
+                || error instanceof HttpClientErrorException.TooManyRequests;
+    }
+
+    private static void pause(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while retrying deepseek web search", ex);
+        }
     }
 
     private static String first(Object... values) {

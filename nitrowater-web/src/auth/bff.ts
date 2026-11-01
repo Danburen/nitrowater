@@ -6,6 +6,8 @@
  * tokens server-side and answers `/bff/me` with the identity.
  */
 
+import { unwrap } from '../api/envelope'
+
 export interface BffAccount {
   uid: string
   username?: string | null
@@ -95,7 +97,22 @@ export function consumePostLogin(): string | null {
  * session cookie there (a `fetch` would drop it cross-origin and the SSO session would survive).
  * The CSRF token is submitted as the `_csrf` form field the BFF expects.
  */
-export function logout(): void {
+export async function logout(): Promise<void> {
+  showLogoutOverlay()
+  // The form POST is CSRF-protected; after a long idle (or a fresh tab) the readable cookie can be
+  // gone, and an empty token turns the whole navigation into an unstyled 403 (the "white page").
+  // One cheap probe makes the BFF write a fresh token before we submit.
+  if (!readCookie('XSRF-TOKEN')) {
+    try {
+      await fetch('/bff/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    } catch {
+      // Offline/auth service down: submit anyway, the worst case is the 403 we just avoided trying.
+    }
+  }
+  // Recorded so the next app boot can tell "logout never completed" from "never signed in".
+  sessionStorage.setItem(LOGOUT_PENDING_KEY, String(Date.now()))
+  // One frame so the overlay paints before the browser leaves the page.
+  await new Promise((resolve) => window.setTimeout(resolve, 60))
   const form = document.createElement('form')
   form.method = 'POST'
   form.action = '/logout'
@@ -106,6 +123,45 @@ export function logout(): void {
   form.appendChild(csrf)
   document.body.appendChild(form)
   form.submit()
+}
+
+/** sessionStorage key marking a logout navigation that may not have completed. */
+const LOGOUT_PENDING_KEY = 'nitrowater:logout-pending'
+
+/**
+ * @return whether the previous page left an unfinished logout behind (cleared on read); a marker
+ *         older than a minute is ignored so a stale flag cannot nag forever
+ */
+export function consumeLogoutPending(): boolean {
+  const raw = sessionStorage.getItem(LOGOUT_PENDING_KEY)
+  if (!raw) return false
+  sessionStorage.removeItem(LOGOUT_PENDING_KEY)
+  const at = Number(raw)
+  return Number.isFinite(at) && Date.now() - at < 60_000
+}
+
+/**
+ * Blocks the page while the logout navigation is in flight, so a slow redirect does not look like a
+ * broken (blank) page. Inline styles only: it must render before any stylesheet is guaranteed.
+ */
+function showLogoutOverlay(): void {
+  if (typeof document === 'undefined' || document.getElementById('bff-logout-overlay')) return
+  const overlay = document.createElement('div')
+  overlay.id = 'bff-logout-overlay'
+  overlay.setAttribute('role', 'status')
+  overlay.style.cssText = [
+    'position:fixed',
+    'inset:0',
+    'z-index:9999',
+    'display:flex',
+    'align-items:center',
+    'justify-content:center',
+    'background:rgba(15,17,21,.55)',
+    'color:#e6e8ec',
+    'font:13px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif',
+  ].join(';')
+  overlay.textContent = '正在退出…'
+  document.body.appendChild(overlay)
 }
 
 /**
@@ -122,7 +178,7 @@ export async function fetchSession(): Promise<SessionProbe> {
       headers: { Accept: 'application/json' },
     })
     if (res.ok) {
-      const body = (await res.json()) as BffSession & { expired?: boolean }
+      const body = unwrap<BffSession & { expired?: boolean }>(await res.json())
       return body.authenticated
         ? { state: 'authenticated', session: body }
         : { state: 'anonymous', session: null, expired: body.expired === true }
@@ -174,7 +230,7 @@ export interface AccountRemoval {
 export async function removeAccount(uid: string): Promise<AccountRemoval> {
   const res = await apiFetch(`/bff/accounts/${encodeURIComponent(uid)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`remove account failed: ${res.status}`)
-  const result = (await res.json()) as AccountRemoval
+  const result = unwrap<AccountRemoval>(await res.json())
   if (result.needLogout) {
     logout()
     return result

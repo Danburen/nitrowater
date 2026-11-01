@@ -1,5 +1,6 @@
 package cn.nitrowater.server.ai;
 
+import cn.nitrowater.server.ai.properties.AiProperties;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.markdown.MarkdownDocumentReader;
 import org.springframework.ai.reader.markdown.config.MarkdownDocumentReaderConfig;
@@ -62,6 +63,8 @@ public class DocChunkBuilder {
     public static final String META_CHUNK = "chunk";
 
     private static final String CLASSPATH_PREFIX = "classpath:";
+    /** Tolerated alias for a filesystem path; the moderation loader accepts it too. */
+    private static final String FILE_PREFIX = "file:";
     private static final Pattern H1 = Pattern.compile("(?m)^#\\s+(.+?)\\s*$");
     private static final String FRONT_MATTER_DELIMITER = "---";
 
@@ -306,7 +309,11 @@ public class DocChunkBuilder {
         if (location.startsWith(CLASSPATH_PREFIX)) {
             return loadClasspath(location.substring(CLASSPATH_PREFIX.length()));
         }
-        return loadFileSystem(Path.of(location));
+        // A `file:` prefix is accepted but must be stripped: Path.of("file:/srv/docs") is a RELATIVE
+        // path whose first segment is literally "file:", so the corpus would silently load zero
+        // files and then look "not indexed" on every startup.
+        String path = location.startsWith(FILE_PREFIX) ? location.substring(FILE_PREFIX.length()) : location;
+        return loadFileSystem(Path.of(path));
     }
 
     private List<DocFile> loadFileSystem(Path root) throws IOException {

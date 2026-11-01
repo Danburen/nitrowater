@@ -32,13 +32,15 @@ public record AiStreamChunk(String text, Usage usage, String finishReason, Step 
         if (response == null) {
             return new AiStreamChunk("", null, null, null);
         }
-        Usage usage = response.getMetadata() == null ? null : response.getMetadata().getUsage();
-        if (response.getResult() == null || response.getResult().getOutput() == null) {
+        response.getMetadata();
+        Usage usage = response.getMetadata().getUsage();
+        if (response.getResult() == null) {
             return new AiStreamChunk("", usage, null, null);
+        } else {
+            response.getResult().getOutput();
         }
-        String finishReason = response.getResult().getMetadata() == null
-                ? null
-                : response.getResult().getMetadata().getFinishReason();
+        response.getResult().getMetadata();
+        String finishReason = response.getResult().getMetadata().getFinishReason();
         return new AiStreamChunk(
                 Objects.requireNonNullElse(response.getResult().getOutput().getText(), ""),
                 usage, finishReason, null);

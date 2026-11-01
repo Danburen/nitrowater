@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import {
   activateAccount,
   addAccount as bffAddAccount,
+  consumeLogoutPending,
   consumePostLogin,
   fetchSession,
   login as bffLogin,
@@ -23,6 +24,8 @@ export type AuthState = 'booting' | SessionState
 const session = ref<BffSession | null>(null)
 const state = ref<AuthState>('booting')
 const expired = ref(false)
+/** True when a previous logout navigation failed and the user is still signed in. */
+const logoutStuck = ref(false)
 const loading = computed(() => state.value === 'booting')
 
 let initialized = false
@@ -57,6 +60,14 @@ async function refresh(): Promise<void> {
   }
   session.value = probe.session
   state.value = probe.state
+  if (probe.state === 'authenticated') {
+    // A logout marker with a live session means the logout round trip never finished (AS rejected
+    // the redirect, CSRF missing, network): surface it instead of pretending nothing happened.
+    if (consumeLogoutPending()) logoutStuck.value = true
+  } else {
+    consumeLogoutPending()
+    logoutStuck.value = false
+  }
   // A stale cookie means the server dropped the session (deploy / Redis restart): surface it as an
   // expiry rather than as "this visitor never signed in".
   expired.value = probe.state === 'anonymous' && probe.expired === true
@@ -87,6 +98,7 @@ export function useAuth() {
     state,
     loading,
     expired,
+    logoutStuck,
     isAdmin,
     accounts,
     /** Full-page redirect into the SSO login; `returnTo` is resumed after authentication. */

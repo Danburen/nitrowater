@@ -3,12 +3,12 @@
  * ZIP compress / multi-format extract.
  * Ported from wtools (MIT) `src/components/ZipTool.vue`; UI rewritten with Tailwind.
  */
-import { Delete, Download, FolderOpened } from '@element-plus/icons-vue'
 import { computed, ref } from 'vue'
 import { saveAs } from 'file-saver'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
 import TextField from '../../../shared/ui/TextField.vue'
+import UiIcon from '../../../shared/ui/UiIcon.vue'
 import { ARCHIVE_EXTENSIONS, decompressArchive } from '../lib/archive/libarchive'
 import { compressZip, decompressZip } from '../lib/archive/zip'
 
@@ -186,19 +186,23 @@ function downloadExtracted(file: ExtractedFile): void {
           webkitdirectory
           @change="onPickFolder"
         >
-        <el-button
-          :icon="FolderOpened"
+        <button
+          type="button"
+          class="btn"
           @click="pickFolder"
         >
+          <UiIcon name="folder" />
           选择文件夹
-        </el-button>
-        <el-button
+        </button>
+        <button
           v-if="compressFiles.length"
-          :icon="Delete"
+          type="button"
+          class="btn"
           @click="clearFiles"
         >
+          <UiIcon name="trash" />
           清空 ({{ compressFiles.length }})
-        </el-button>
+        </button>
       </div>
 
       <ul
@@ -224,14 +228,15 @@ function downloadExtracted(file: ExtractedFile): void {
           class="max-w-[260px]"
           placeholder="压缩包名（默认 archive.zip）"
         />
-        <el-button
-          type="primary"
-          :icon="Download"
-          :loading="isCompressing"
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="isCompressing"
           @click="doCompress"
         >
-          压缩并下载
-        </el-button>
+          <UiIcon name="download" />
+          {{ isCompressing ? '压缩中…' : '压缩并下载' }}
+        </button>
       </div>
 
       <div
@@ -277,14 +282,15 @@ function downloadExtracted(file: ExtractedFile): void {
         class="flex flex-wrap items-center gap-3"
       >
         <span class="truncate text-sm text-dim">{{ singleArchive.name }}</span>
-        <el-button
-          type="primary"
-          :icon="Download"
-          :loading="isDecompressing"
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="isDecompressing"
           @click="doDecompress"
         >
-          提取内容
-        </el-button>
+          <UiIcon name="download" />
+          {{ isDecompressing ? '提取中…' : '提取内容' }}
+        </button>
       </div>
 
       <div
@@ -326,12 +332,13 @@ function downloadExtracted(file: ExtractedFile): void {
                 {{ prettySize(file.size) }}
               </td>
               <td class="px-3 py-2 text-right">
-                <el-button
-                  size="small"
+                <button
+                  type="button"
+                  class="btn btn-sm"
                   @click="downloadExtracted(file)"
                 >
                   下载
-                </el-button>
+                </button>
               </td>
             </tr>
           </tbody>

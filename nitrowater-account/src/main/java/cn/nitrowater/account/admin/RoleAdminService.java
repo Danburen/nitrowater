@@ -1,7 +1,6 @@
 package cn.nitrowater.account.admin;
 
 import cn.nitrowater.account.admin.dto.AssignRolesReq;
-import cn.nitrowater.account.admin.dto.PageResult;
 import cn.nitrowater.account.admin.dto.RoleCreateReq;
 import cn.nitrowater.account.admin.dto.RoleUpdateReq;
 import cn.nitrowater.account.admin.dto.RoleVO;
@@ -120,9 +119,16 @@ public class RoleAdminService {
 
     // ------------------------------------------------------------------ users
 
-    /** Paged account search (username / nickname substring) with each account's bound role codes. */
+    /**
+     * Paged account search (username / nickname substring) with each account's bound role codes.
+     *
+     * @param keyword optional username/nickname substring
+     * @param page one-based page number (the admin console pagination is one-based)
+     * @param size page size, clamped to the maximum
+     * @return one page of summaries, newest first
+     */
     @Transactional(readOnly = true)
-    public PageResult<UserSummaryVO> listUsers(String keyword, int page, int size) {
+    public Page<UserSummaryVO> listUsers(String keyword, int page, int size) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         Pageable pageable = PageRequest.of(safePage - 1, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -132,10 +138,7 @@ public class RoleAdminService {
         List<Long> uids = result.getContent().stream().map(User::getUid).toList();
         Map<Long, List<String>> rolesByUid = rolesByUid(uids);
 
-        List<UserSummaryVO> rows = result.getContent().stream()
-                .map(user -> toUserSummary(user, rolesByUid.getOrDefault(user.getUid(), List.of())))
-                .toList();
-        return PageResult.of(rows, result.getTotalElements(), safePage, safeSize);
+        return result.map(user -> toUserSummary(user, rolesByUid.getOrDefault(user.getUid(), List.of())));
     }
 
     /** Role codes currently bound to one account (dialog pre-fill). */

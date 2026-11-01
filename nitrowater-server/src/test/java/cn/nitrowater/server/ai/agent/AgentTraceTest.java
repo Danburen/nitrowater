@@ -63,6 +63,37 @@ class AgentTraceTest {
                 new ToolCall("runCode", "java · class Main {}", 0, "compile_error", "编译失败"));
     }
 
+    @Test
+    void tracksSuccessfulWebSearchesAgainstOneBudgetAndRemembersQueries() {
+        AgentTrace trace = new AgentTrace();
+
+        assertThat(trace.remainingWebSearches(3)).isEqualTo(3);
+        assertThat(trace.hasSearched("Java 21")).isFalse();
+
+        trace.recordWebSearchSuccess("Java 21");
+
+        assertThat(trace.hasSearched(" java   21 ")).isTrue();
+        assertThat(trace.remainingWebSearches(3)).isEqualTo(2);
+
+        trace.recordWebSearchSuccess("Spring Boot 4 release notes");
+        trace.recordWebSearchSuccess("DeepSeek pricing");
+
+        assertThat(trace.webSearchSuccesses()).isEqualTo(3);
+        assertThat(trace.remainingWebSearches(3)).isZero();
+    }
+
+    @Test
+    void releasesTheFallbackClaimOnlyWhenAsked() {
+        AgentTrace trace = new AgentTrace();
+
+        assertThat(trace.claimWebFallback()).isTrue();
+        assertThat(trace.claimWebFallback()).isFalse();
+
+        trace.releaseWebFallback();
+
+        assertThat(trace.claimWebFallback()).isTrue();
+    }
+
     private static Document document(String path, String section, String text) {
         return Document.builder()
                 .text(text)

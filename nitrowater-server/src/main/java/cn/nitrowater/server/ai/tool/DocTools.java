@@ -2,7 +2,7 @@ package cn.nitrowater.server.ai.tool;
 
 import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.ai.AiAdminSettingsService;
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.ai.DocRetriever;
 import cn.nitrowater.server.ai.DocSource;
 import cn.nitrowater.server.ai.DocSourceMapper;
@@ -108,13 +108,22 @@ public class DocTools {
                 || !settings.get().webSearchEnabled()) {
             return null;
         }
-        if (trace != null && !trace.claimWebFallback()) {
-            return null;
+        if (trace != null) {
+            // The fallback shares the turn's success budget with explicit webSearch calls: a
+            // repeated query is answered from what the model already has, and an exhausted budget
+            // stops searching instead of paying for the same information twice.
+            if (trace.hasSearched(query)
+                    || trace.remainingWebSearches(webProperties.effectiveMaxSuccesses()) <= 0) {
+                return null;
+            }
+            if (!trace.claimWebFallback()) {
+                return null;
+            }
         }
-        int count = webProperties.autoFallbackCount() > 0 ? webProperties.autoFallbackCount() : 3;
         try {
-            List<WebSearchResult> hits = webSearch.search(query, count);
+            List<WebSearchResult> hits = webSearch.search(query, webProperties.effectiveMaxResults());
             if (trace != null) {
+                trace.recordWebSearchSuccess(query);
                 trace.recordTool("searchDocs", query, 0, "fallback_web",
                         "本站文档无匹配，已自动联网搜索（" + hits.size() + " 条）");
             }
@@ -136,7 +145,8 @@ public class DocTools {
                 item.put("index", index);
                 item.put("title", Objects.requireNonNullElse(hit.title(), ""));
                 item.put("url", Objects.requireNonNullElse(hit.url(), ""));
-                item.put("snippet", snippet);
+                // The UI preview is `snippet`; the model only needs `content`, so the duplicated
+                // prefix is left out of the tool payload.
                 item.put("content", truncate(text, MAX_CONTENT_CHARS));
                 item.put("source", "web");
                 results.add(item);
@@ -148,6 +158,9 @@ public class DocTools {
                     "message", "本站文档没有匹配结果，以下是联网搜索结果；请在答案中说明来自外部搜索。"));
         } catch (Exception ex) {
             if (trace != null) {
+                // Give the claim back: a failed call must not consume this turn's only automatic
+                // search, and it must not count against the success budget either.
+                trace.releaseWebFallback();
                 trace.recordTool("searchDocs", query, 0, "fallback_failed", message(ex));
             }
             return JsonUtil.toJson(Map.of(

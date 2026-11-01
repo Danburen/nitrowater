@@ -20,11 +20,15 @@ export interface UserSummaryVO {
   createdAt: string
 }
 
-export interface PageResult<T> {
-  list: T[]
-  total: number
-  page: number
-  size: number
+/** Spring Data Page as serialized by the account service (VIA_DTO). */
+export interface SpringPage<T> {
+  content: T[]
+  page: {
+    size: number
+    number: number
+    totalElements: number
+    totalPages: number
+  }
 }
 
 export interface AdminSessionVO {
@@ -94,7 +98,7 @@ export const adminApi = {
   deleteRole: (id: number) => http.del<void>(`/api/admin/roles/${id}`),
 
   listUsers: (keyword: string, page: number, size: number) =>
-    http.get<PageResult<UserSummaryVO>>(
+    http.get<SpringPage<UserSummaryVO>>(
       `/api/admin/users?keyword=${encodeURIComponent(keyword)}&page=${page}&size=${size}`,
     ),
   assignRoles: (uid: number, roleCodes: string[]) =>

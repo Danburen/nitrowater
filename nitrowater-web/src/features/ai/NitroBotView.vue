@@ -22,7 +22,7 @@ import {
   type AiDailyUsage,
   type AiStatus,
   type ChatTurn,
-} from './api'
+} from '../../api/ai'
 import { useConversations, type Conversation } from './composables/useConversations'
 import { parseSlash, type SlashCommand } from './slash'
 import {
@@ -30,18 +30,21 @@ import {
   fetchSlashProfile,
   fetchSlashQuota,
   fetchSlashStatus,
-} from './slashApi'
-import type { ChatMessage, SystemCard } from './types'
+} from '../../api/slash'
+import { ResponseCode } from '../../api/codes'
+import type { ChatMessage, SystemCard, TimelineItem } from './types'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatEmpty from './components/ChatEmpty.vue'
 import ChatComposer from './components/ChatComposer.vue'
 import MessageItem from './components/MessageItem.vue'
+import GlobalQuotaNotice from './components/GlobalQuotaNotice.vue'
 import QuotaNotice from './components/QuotaNotice.vue'
 import SystemCardView from './components/SystemCard.vue'
+import ChatTimeline from './components/ChatTimeline.vue'
 
 const route = useRoute()
 const { session, loading: authLoading, login, logout } = useAuth()
-const { conversations, mode, initialize, create, save, remove, loadMessages } = useConversations()
+const { conversations, mode, initialize, create, save, remove, loadMessages, loadOlder } = useConversations()
 
 const authenticated = computed(() => session.value?.authenticated === true)
 const userLabel = computed(() => session.value?.name || session.value?.username || '已登录')
@@ -67,8 +70,32 @@ const exhaustedDate = ref<string | null>(null)
 /** Previous snapshot total, used to notice an administrator reset (usage went down). */
 const lastUsageTotal = ref<number | null>(null)
 const warnedDate = ref<string | null>(readWarnedDate())
+/** Web-search intent; only honoured when the server exposes a provider. Persisted per browser. */
+const WEB_SEARCH_KEY = 'nitrowater:ai:web-search'
+const webSearch = ref(readWebSearchPreference())
+
+function readWebSearchPreference(): boolean {
+  try {
+    return window.localStorage.getItem(WEB_SEARCH_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+watch(webSearch, (value) => {
+  try {
+    window.localStorage.setItem(WEB_SEARCH_KEY, value ? 'on' : 'off')
+  } catch {
+    // Storage unavailable: the choice lasts for this page only.
+  }
+})
 
 const scrollEl = ref<HTMLElement | null>(null)
+/** Paging state for "load older". */
+const loadingOlder = ref(false)
+/** User message currently at the top of the viewport (drives the timeline highlight). */
+const activeAnchor = ref<string | null>(null)
+let anchorFrame: number | null = null
 const composer = ref<InstanceType<typeof ChatComposer> | null>(null)
 let controller: AbortController | null = null
 
@@ -98,6 +125,8 @@ const quotaState = computed<'hidden' | 'warning' | 'exhausted'>(() => {
 })
 // Only a missing session locks the composer. An exhausted budget still allows slash commands,
 // because they never call a provider and therefore cost nothing.
+/** Platform-wide breaker: chat is closed for everyone, but slash commands still work. */
+const globalTripped = computed(() => status.value?.globalQuota?.tripped === true)
 const composerDisabled = computed(() => !authenticated.value)
 const composerHint = computed(() =>
   quotaState.value === 'exhausted'
@@ -116,6 +145,71 @@ const lastAssistantIndex = computed(() => {
   }
   return -1
 })
+
+/** Whether an older page can be fetched (server mode only). */
+const hasOlder = computed(() => mode.value === 'server' && activeConversation.value?.hasMore === true)
+
+/** One timeline dot per user question. */
+const timelineItems = computed<TimelineItem[]>(() =>
+  messages.value
+    .filter((message) => message.role === 'user' && message.content.trim().length > 0)
+    .map((message) => ({
+      id: message.id,
+      label: message.content.trim().slice(0, 40),
+    })),
+)
+
+/** Prepends one older page while keeping the viewport anchored on the same message. */
+async function loadOlderPage(): Promise<void> {
+  const conversation = activeConversation.value
+  const container = scrollEl.value
+  if (!conversation || !container || loadingOlder.value || !hasOlder.value) return
+  loadingOlder.value = true
+  const id = conversation.id
+  const previousHeight = container.scrollHeight
+  const previousTop = container.scrollTop
+  try {
+    const older = await loadOlder(conversation)
+    if (activeId.value !== id || older.length === 0) return
+    messages.value = [...older, ...messages.value]
+    await nextTick()
+    // Content grew above the viewport: shift down by exactly the inserted height.
+    container.scrollTop = container.scrollHeight - previousHeight + previousTop
+    onTranscriptScroll()
+  } catch (error) {
+    pushNotice(error instanceof Error ? error.message : '加载更早的消息失败', 'warn')
+  } finally {
+    loadingOlder.value = false
+  }
+}
+
+/** Tracks the user message nearest the top so the timeline can highlight it. */
+function onTranscriptScroll(): void {
+  if (anchorFrame !== null) return
+  anchorFrame = window.requestAnimationFrame(() => {
+    anchorFrame = null
+    const container = scrollEl.value
+    if (!container) return
+    const origin = container.getBoundingClientRect().top
+    let active: string | null = null
+    for (const element of container.querySelectorAll<HTMLElement>('[data-msg-id]')) {
+      if (element.getBoundingClientRect().top - origin <= 120) {
+        active = element.dataset.msgId ?? null
+      } else {
+        break
+      }
+    }
+    activeAnchor.value = active
+  })
+}
+
+/** Scrolls to one message and marks its dot active immediately. */
+function jumpToMessage(id: string): void {
+  const target = document.getElementById(`msg-${id}`)
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  activeAnchor.value = id
+}
 
 onMounted(async () => {
   await initialize(authenticated.value)
@@ -231,12 +325,18 @@ async function send(preset?: string): Promise<void> {
     return
   }
 
+  if (globalTripped.value) {
+    pushNotice('全站今日 AI 额度已用完，明天再来吧。历史会话与 / 指令仍可用。', 'warn')
+    return
+  }
+
   const conversation = await ensureConversation(question)
   // Signed in: the server replays history from its own store, so the client sends none.
   const history = mode.value === 'local' ? toTurns(messages.value) : []
   input.value = ''
   messages.value.push(newMessage('user', question))
-  scrollToBottom(true)
+  // The bubble only exists after Vue renders; scrolling now would use the previous scrollHeight.
+  void scrollToBottomSoon()
   await startTurn(conversation, question, history)
 }
 
@@ -280,9 +380,7 @@ async function clearContext(): Promise<void> {
 /** Appends a display-only card; system messages are never persisted or sent to the model. */
 function pushCard(card: SystemCard): void {
   messages.value.push({ ...newMessage('system', ''), card })
-  // The transcript (and possibly the empty state) only grows on the next tick; scrolling now
-  // would read a stale scrollHeight and leave the new card below the fold.
-  void nextTick(() => scrollToBottom(true))
+  void scrollToBottomSoon()
 }
 
 function pushNotice(text: string, tone: 'info' | 'warn'): void {
@@ -314,22 +412,39 @@ async function streamInto(
   streamingId.value = reply.id
   reply.activity = null
   controller = new AbortController()
-  scrollToBottom(true)
+  void scrollToBottomSoon()
 
   let received = ''
   let shown = 0
   let streaming = true
   let frame: number | null = null
-  const pump = (): void => {
+  let lastFrameAt = 0
+  /** When the first delta of this turn arrived (used to hold back a one-character start). */
+  let firstDeltaAt = 0
+  /** Fractional characters carried between frames so slow reveals stay smooth. */
+  let carry = 0
+  const pump = (timestamp: number): void => {
     frame = null
     if (!streaming) return
+    const elapsed = lastFrameAt === 0 ? 16 : Math.min(120, timestamp - lastFrameAt)
+    lastFrameAt = timestamp
     const backlog = received.length - shown
-    if (backlog > 0) {
-      // Catch up faster the further behind we are, so a burst never leaves the UI seconds behind.
-      const step = Math.min(backlog, Math.max(1, Math.ceil(backlog / 6)))
-      reply.content += received.slice(shown, shown + step)
-      shown += step
-      scrollToBottom()
+    // Hold the very first paint until a small cushion exists: revealing one character, waiting for
+    // the next chunk and then bursting is exactly the "chunk … pause" feel this pump removes.
+    const starting = shown === 0 && backlog < 8 && timestamp - firstDeltaAt < 160
+    if (backlog > 0 && !starting) {
+      // Reveal at a rate instead of "drain the buffer": a provider burst would otherwise be
+      // painted in a few frames and then sit idle. Aim to clear the backlog in ~0.45s, never
+      // slower than 55 chars/s so a provider stall still looks like steady typing.
+      const rate = Math.min(320, Math.max(55, backlog / 0.45))
+      carry += (rate * elapsed) / 1000
+      const step = Math.min(backlog, Math.floor(carry))
+      if (step > 0) {
+        carry -= step
+        reply.content += received.slice(shown, shown + step)
+        shown += step
+        scrollToBottom()
+      }
     }
     if (streaming) frame = window.requestAnimationFrame(pump)
   }
@@ -343,7 +458,7 @@ async function streamInto(
       conversation.id,
       history,
       '',
-      status.value?.webSearchEnabled === true,
+      status.value?.webSearchEnabled === true && webSearch.value,
       continueGeneration,
       {
         onConversation: (uuid) => adoptConversationId(conversation, uuid),
@@ -362,15 +477,28 @@ async function streamInto(
           reply.activity = { phase, tool: step.tool }
         },
         onDelta: (text) => {
+          if (firstDeltaAt === 0) firstDeltaAt = performance.now()
           received += text
+          // The live card describes the pre-answer phase only: once tokens flow, the answer itself
+          // is the feedback and the spinner would just sit above the text.
+          if (reply.activity) reply.activity = null
           ensurePump()
+        },
+        onModeration: (text) => {
+          // Tokens that already reached the browser cannot be recalled. Replace the bubble with the
+          // text the server actually stored and move the reveal cursor to the end, so the pending
+          // pump cannot append the un-masked buffer afterwards.
+          received = text
+          shown = text.length
+          reply.content = text
+          reply.moderated = true
         },
         onDone: (meta) => {
           reply.truncated = meta.truncated
         },
         onError: (message, code) => {
           reply.error = message
-          if (code === 'token_quota') markQuotaExhausted()
+          if (code === ResponseCode.TokenQuota) markQuotaExhausted()
         },
       },
       controller.signal,
@@ -397,8 +525,8 @@ async function streamInto(
     controller = null
     void loadUsage()
     persist(conversation)
-    scrollToBottom(true)
     await nextTick()
+    scrollToBottom(true)
     composer.value?.focus()
   }
 }
@@ -460,11 +588,11 @@ function openConversation(id: string): void {
   activeId.value = id
   messages.value = conversation.messages.map(cloneMessage)
   sidebarOpen.value = false
-  scrollToBottom(true)
+  void scrollToBottomSoon()
   void loadMessages(conversation).then(() => {
     if (activeId.value !== id) return
     messages.value = conversation.messages.map(cloneMessage)
-    scrollToBottom(true)
+    void scrollToBottomSoon()
   })
 }
 
@@ -541,6 +669,12 @@ function cloneMessage(message: ChatMessage): ChatMessage {
     tools: [...message.tools],
     skills: [...message.skills],
   }
+}
+
+/** Scrolls to the newest content once Vue has applied the pending DOM update. */
+async function scrollToBottomSoon(): Promise<void> {
+  await nextTick()
+  scrollToBottom(true)
 }
 
 function scrollToBottom(force = false): void {
@@ -669,11 +803,26 @@ function newId(): string {
         </span>
       </header>
 
-      <div
-        ref="scrollEl"
-        class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
+      <div class="relative min-h-0 flex-1">
+        <div
+          ref="scrollEl"
+          class="scroll-thin h-full overflow-y-auto overscroll-contain"
+          @scroll.passive="onTranscriptScroll"
+        >
         <div class="mx-auto w-full max-w-[760px] px-4 pb-6 pt-5">
+          <div
+            v-if="hasOlder"
+            class="mb-4 flex justify-center"
+          >
+            <button
+              type="button"
+              class="btn btn-sm"
+              :disabled="loadingOlder"
+              @click="loadOlderPage"
+            >
+              {{ loadingOlder ? '加载中…' : '加载更早的消息' }}
+            </button>
+          </div>
           <div
             v-if="statusError"
             class="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-[12.5px] text-danger"
@@ -727,6 +876,8 @@ function newId(): string {
               />
               <MessageItem
                 v-else
+                :id="`msg-${message.id}`"
+                :data-msg-id="message.id"
                 :message="message"
                 :streaming="message.id === streamingId"
                 :can-regenerate="message.role === 'assistant' && index === lastAssistantIndex"
@@ -738,7 +889,19 @@ function newId(): string {
             </template>
           </div>
         </div>
+        </div>
+
+        <ChatTimeline
+          :items="timelineItems"
+          :active-id="activeAnchor"
+          @select="jumpToMessage"
+        />
       </div>
+
+      <GlobalQuotaNotice
+        v-if="globalTripped"
+        :quota="status?.globalQuota ?? null"
+      />
 
       <QuotaNotice
         :usage="usage"
@@ -753,6 +916,8 @@ function newId(): string {
         :disabled="composerDisabled"
         :hint="composerHint"
         :commands-enabled="authenticated"
+        :web-search-available="status?.webSearchEnabled === true"
+        v-model:web-search="webSearch"
         :placeholder="placeholder"
         @submit="send()"
         @stop="stop"

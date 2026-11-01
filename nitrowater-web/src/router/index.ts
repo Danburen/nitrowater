@@ -28,6 +28,7 @@ const router = createRouter({
       ],
     },
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
+    { path: '/account', name: 'account', component: () => import('../features/account/AccountView.vue') },
     // Admin console: nested layout with its own sidebar (global header hidden). Access is
     // gated by role inside AdminLayout; the resource server enforces ROLE_ADMIN anyway.
     {
@@ -35,10 +36,29 @@ const router = createRouter({
       component: () => import('../features/admin/AdminLayout.vue'),
       meta: { layout: 'admin' },
       children: [
-        { path: '', redirect: '/admin/plugins' },
-        { path: 'plugins', name: 'admin-plugins', component: () => import('../features/admin/AdminPlugins.vue') },
-        { path: 'resources', name: 'admin-resources', component: () => import('../features/admin/AdminResources.vue') },
-        { path: 'ai', name: 'admin-ai', component: () => import('../features/admin/AdminAi.vue') },
+      { path: '', redirect: '/admin/plugins' },
+      { path: 'plugins', name: 'admin-plugins', component: () => import('../features/admin/AdminPlugins.vue') },
+      { path: 'resources', name: 'admin-resources', component: () => import('../features/admin/AdminResources.vue') },
+      { path: 'ai', redirect: '/admin/ai/settings' },
+      { path: 'ai/settings', name: 'admin-ai-settings', component: () => import('../features/admin/ai/AdminAiSettingsPage.vue') },
+      { path: 'ai/usage', name: 'admin-ai-usage', component: () => import('../features/admin/ai/AdminAiUsagePage.vue') },
+      {
+      path: 'ai/moderation',
+      name: 'admin-ai-moderation',
+      component: () => import('../features/admin/ai/AdminAiModerationPage.vue'),
+    },
+    {
+      path: 'ai/index',
+      name: 'admin-ai-index',
+      component: () => import('../features/admin/ai/AdminAiCatalogPage.vue'),
+      props: { section: 'index' },
+    },
+    {
+      path: 'ai/catalog',
+      name: 'admin-ai-catalog',
+      component: () => import('../features/admin/ai/AdminAiCatalogPage.vue'),
+      props: { section: 'capabilities' },
+    },
       ],
     },
     {

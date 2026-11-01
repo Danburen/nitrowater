@@ -28,13 +28,6 @@ const copied = ref(false)
 
 const isUser = computed(() => props.message.role === 'user')
 
-/** True while the streamed answer has an unclosed code fence (the model is writing code). */
-const writingCode = computed(() => {
-  if (!props.streaming) return false
-  const fences = (props.message.content.match(/^(`{3,}|~{3,})/gm) ?? []).length
-  return fences % 2 === 1
-})
-
 async function copy(): Promise<void> {
   if (!props.message.content) return
   try {
@@ -63,9 +56,16 @@ async function copy(): Promise<void> {
       class="min-w-0 flex-1"
       :class="isUser ? 'flex flex-col items-end' : ''"
     >
-      <p class="mb-1 text-[11.5px] font-semibold text-faint">
-        {{ isUser ? '你' : 'NitroBot' }}
-      </p>
+      <div class="mb-1 flex items-center gap-1.5">
+        <p class="text-[11.5px] font-semibold text-faint">
+          {{ isUser ? '你' : 'NitroBot' }}
+        </p>
+        <span
+          v-if="message.moderated"
+          class="rounded-full bg-warn/10 px-1.5 py-0.5 text-[10.5px] font-medium text-warn"
+          title="该回答中的违规内容已被替换为 *"
+        >内容已过滤</span>
+      </div>
 
       <div
         class="w-fit max-w-full rounded-2xl px-4 py-2.5 text-[14px] leading-[1.65]"
@@ -81,9 +81,8 @@ async function copy(): Promise<void> {
         </p>
         <template v-else>
           <LiveActivity
-            v-if="streaming"
+            v-if="streaming && (message.activity != null || !message.content)"
             :activity="message.activity ?? null"
-            :writing-code="writingCode"
           />
           <MarkdownContent
             v-if="message.content"
@@ -91,10 +90,6 @@ async function copy(): Promise<void> {
             :streaming="streaming"
             :sources="message.sources"
           />
-          <span
-            v-else-if="streaming"
-            class="text-[13px] text-dim"
-          >正在检索资料并思考…</span>
           <span
             v-if="streaming"
             class="ml-0.5 inline-block h-[0.95em] w-[3px] animate-pulse rounded-sm bg-accent align-[-0.15em]"

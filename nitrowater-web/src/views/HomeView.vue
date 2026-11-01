@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { fetchPlugins, type PluginSummary } from '../features/plugins/catalog'
+import { fetchPlugins, type PluginSummary } from '../api/plugins'
 import { toolCategories, readyToolsIn } from '../features/tools/catalog'
 
 /** 插件中心预告：与插件中心同源（业务服务 `GET /api/public/plugins`）。 */

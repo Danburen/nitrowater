@@ -1,5 +1,7 @@
 package cn.nitrowater.server.ai;
 
+import cn.nitrowater.core.web.ApiResponseWriter;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.infra.ratelimit.RedisRateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -8,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
+import java.util.Map;
 import java.security.Principal;
 import java.util.Set;
 
@@ -29,12 +32,14 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
     private final RedisRateLimiter limiter;
     private final AiProperties properties;
     private final AiAdminSettingsService settings;
+    private final AiUsageService usage;
 
     public AiRateLimitInterceptor(RedisRateLimiter limiter, AiProperties properties,
-            AiAdminSettingsService settings) {
+            AiAdminSettingsService settings, AiUsageService usage) {
         this.limiter = limiter;
         this.properties = properties;
         this.settings = settings;
+        this.usage = usage;
     }
 
     @Override
@@ -48,6 +53,14 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
         boolean agentRequest = AGENT_PATHS.contains(request.getRequestURI());
         if (agentRequest ? !runtime.agentEnabled() : !runtime.chatEnabled()) {
             reject(response, HttpStatus.SERVICE_UNAVAILABLE, "ai_mode_disabled", "This AI mode is disabled");
+            return false;
+        }
+        // Platform-wide budget: fail fast and with a distinguishable code so the web client can
+        // explain WHY chat is closed (history and slash commands keep working - they never reach
+        // a provider). Slash requests do not pass through this interceptor at all.
+        AiUsageService.GlobalUsage global = usage.globalToday();
+        if (global.tripped()) {
+            rejectGlobal(response, global);
             return false;
         }
         String uid = userId(request);
@@ -72,10 +85,16 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
         return principal.getName();
     }
 
+    /** Rejects a model call because the all-users daily ceiling is exhausted. */
+    private static void rejectGlobal(HttpServletResponse response, AiUsageService.GlobalUsage global)
+            throws IOException {
+        ApiResponseWriter.error(response, HttpStatus.TOO_MANY_REQUESTS.value(), "global_quota_exceeded",
+                "全站当日 AI token 额度已用完，请明天再试。",
+                Map.of("limit", global.dailyTokenLimit(), "used", global.totalTokens()));
+    }
+
     private static void reject(HttpServletResponse response, HttpStatus status, String code, String message)
             throws IOException {
-        response.setStatus(status.value());
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"error\":\"" + code + "\",\"message\":\"" + message + "\"}");
+        ApiResponseWriter.error(response, status.value(), code, message);
     }
 }

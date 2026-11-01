@@ -1,17 +1,15 @@
 package cn.nitrowater.server.ai.slash;
 
-import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.ai.AiAdminSettingsService;
 import cn.nitrowater.server.ai.AiDailyUsage;
 import cn.nitrowater.server.ai.AiUsageService;
 import cn.nitrowater.server.ai.DocsIndexService;
 import cn.nitrowater.server.ai.agent.AgentToolProviders;
 import cn.nitrowater.server.ai.conversation.ConversationService;
+import cn.nitrowater.server.ai.profile.AiProfileService;
 import cn.nitrowater.server.ai.skill.Skill;
 import cn.nitrowater.server.ai.skill.SkillRegistry;
 import cn.nitrowater.server.ai.tool.WebSearchProvider;
-import cn.nitrowater.server.infra.entity.AiUserProfile;
-import cn.nitrowater.server.infra.repository.AiUserProfileRepository;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -39,7 +37,7 @@ import java.util.Map;
 public class AiSlashService {
 
     private final AiUsageService usage;
-    private final AiUserProfileRepository profiles;
+    private final AiProfileService profiles;
     private final ConversationService conversations;
     private final DocsIndexService index;
     private final AiAdminSettingsService settings;
@@ -49,7 +47,7 @@ public class AiSlashService {
     private final String chatModel;
     private final String embeddingModel;
 
-    public AiSlashService(AiUsageService usage, AiUserProfileRepository profiles,
+    public AiSlashService(AiUsageService usage, AiProfileService profiles,
             ConversationService conversations, DocsIndexService index, AiAdminSettingsService settings,
             AgentToolProviders tools, SkillRegistry skills, WebSearchProvider webSearch,
             @Value("${spring.ai.openai.chat.model:}") String chatModel,
@@ -90,13 +88,9 @@ public class AiSlashService {
      * @return the profile, or a defaults-only snapshot when the user has no row yet
      */
     public Profile profile(long uid) {
-        AiUserProfile row = profiles.findById(uid).orElse(null);
-        if (row == null) {
-            return new Profile(false, "zh-CN", "BALANCED", "INTERMEDIATE", null, List.of(), false, null);
-        }
-        return new Profile(true, row.getLanguage(), row.getReplyStyle().name(), row.getExpertise().name(),
-                row.getTimezone(), preferences(row.getPreferencesJson()),
-                Boolean.TRUE.equals(row.getInferenceOptIn()), row.getUpdatedAt());
+        AiProfileService.Profile profile = profiles.get(uid);
+        return new Profile(profile.exists(), profile.language(), profile.replyStyle(), profile.expertise(),
+                profile.timezone(), profile.preferences(), profile.inferenceOptIn(), profile.updatedAt());
     }
 
     /**
@@ -154,30 +148,6 @@ public class AiSlashService {
             return List.of();
         }
         return skills.list().stream().map(Skill::name).toList();
-    }
-
-    /**
-     * Flattens the free-form preferences JSON into display lines.
-     *
-     * <p>The column accepts any JSON; arrays become one line per entry and objects become
-     * {@code key: value}. Malformed content is ignored rather than failing the card.</p>
-     */
-    private static List<String> preferences(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            Object value = JsonUtil.fromJson(json, Object.class);
-            if (value instanceof List<?> list) {
-                return list.stream().map(String::valueOf).toList();
-            }
-            if (value instanceof Map<?, ?> map) {
-                return map.entrySet().stream().map(entry -> entry.getKey() + ": " + entry.getValue()).toList();
-            }
-            return value == null ? List.of() : List.of(String.valueOf(value));
-        } catch (RuntimeException ex) {
-            return List.of();
-        }
     }
 
     /**

@@ -9,7 +9,7 @@ import cn.nitrowater.core.api.req.auth.DeviceInfo;
 public class EmailReAuthReq {
     @NotBlank
     private String reAuthToken;
-    @NotBlank
+    /** Optional for activation of an already-bound email; required for unbind. */
     private String email;
     @NotNull
     private DeviceInfo deviceInfo;

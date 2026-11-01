@@ -3,11 +3,12 @@
  * Java DTO/VO -> TypeScript converter.
  * Ported from wtools (MIT) `src/components/JavaToTs.vue`; UI rewritten with Tailwind.
  */
-import { CopyDocument, Delete } from '@element-plus/icons-vue'
 import { ref } from 'vue'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
 import TextArea from '../../../shared/ui/TextArea.vue'
+import UiIcon from '../../../shared/ui/UiIcon.vue'
+import UiTooltip from '../../../shared/ui/UiTooltip.vue'
 
 const javaCode = ref('')
 const tsCode = ref('')
@@ -249,30 +250,28 @@ async function copy(text: string, okMsg: string): Promise<void> {
             Java 输入
           </h3>
           <div class="flex gap-2">
-            <el-tooltip
-              content="复制 Java 代码"
-              placement="top"
-            >
-              <el-button
-                size="small"
-                :icon="CopyDocument"
-                circle
+            <UiTooltip text="复制 Java 代码">
+              <button
+                type="button"
+                class="icon-btn"
                 :disabled="!javaCode"
+                aria-label="复制 Java 代码"
                 @click="copy(javaCode, '已复制 Java 代码')"
-              />
-            </el-tooltip>
-            <el-tooltip
-              content="清空输入"
-              placement="top"
-            >
-              <el-button
-                size="small"
-                :icon="Delete"
-                circle
+              >
+                <UiIcon name="copy" />
+              </button>
+            </UiTooltip>
+            <UiTooltip text="清空输入">
+              <button
+                type="button"
+                class="icon-btn"
                 :disabled="!javaCode"
+                aria-label="清空输入"
                 @click="javaCode = ''"
-              />
-            </el-tooltip>
+              >
+                <UiIcon name="trash" />
+              </button>
+            </UiTooltip>
           </div>
         </div>
         <TextArea
@@ -299,13 +298,13 @@ async function copy(text: string, okMsg: string): Promise<void> {
             生成校验规则
           </label>
         </div>
-        <el-button
-          type="primary"
-          class="self-start"
+        <button
+          type="button"
+          class="btn btn-primary self-start"
           @click="convertToTs"
         >
           转换为 TypeScript
-        </el-button>
+        </button>
       </section>
 
       <section class="panel flex flex-col gap-3">
@@ -313,14 +312,15 @@ async function copy(text: string, okMsg: string): Promise<void> {
           <h3 class="text-sm font-semibold text-ink">
             TypeScript 输出
           </h3>
-          <el-button
-            size="small"
-            :icon="CopyDocument"
+          <button
+            type="button"
+            class="btn btn-sm"
             :disabled="!tsCode"
             @click="copy(tsCode, '已复制结果')"
           >
+            <UiIcon name="copy" />
             复制结果
-          </el-button>
+          </button>
         </div>
         <TextArea
           v-model="tsCode"

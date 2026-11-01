@@ -6,16 +6,31 @@
 
 server:
   port: 8090
+  # Behind the nginx edge: build absolute redirect_uri / issuer-backed URLs from
+  # X-Forwarded-Proto/Host instead of the container's http://account:8090.
+  forward-headers-strategy: framework
   servlet:
     session:
       cookie:
         # Cross-site POSTs must not carry the SSO session (CSRF hardening). Lax keeps normal
         # top-level navigation working; all first-party flows are same-site anyway.
         same-site: lax
+        # Set SESSION_COOKIE_SECURE=true whenever the account host is served over TLS.
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 spring:
   application:
     name: nitrowater-account
+
+  # Real email delivery (app.communication.mode=real). Mock mode ignores these values.
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
 
   # -------- 数据源（SSO 库：nitrowater_account，与业务库 nitrowater_biz 物理隔离；首次连接自动建库）--------
   datasource:
@@ -135,6 +150,18 @@ generator:
 # 任意本地端口的页面都能读走 /api/auth/account 之类的个人数据。
 # Cookie 属性（SameSite 等）统一在 server.servlet.session.cookie 下配置，见文件头部。
 app:
+  # Verification-code delivery. Local development defaults to mock: codes are logged, not sent.
+  # Set COMMUNICATION_MODE=real plus the provider credentials below for production.
+  communication:
+    mode: ${COMMUNICATION_MODE:mock}
+    email:
+      from: ${MAIL_FROM:}
+    sms:
+      access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID:}
+      access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
+      sign-name: ${ALIYUN_SMS_SIGN_NAME:}
+      template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+      endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
   # Hosted-login fallback when there is no saved request (no OIDC resume) and no explicit
   # redirect. It must point at the portal, never at /admin/.
   sso:
@@ -157,15 +184,18 @@ app:
   # Resource Server 用 app.security.jwt.audiences 校验这个值，两边要对齐。
   oidc:
     access-token-audiences: nitrowater-server
+    # The account API is called only by the confidential BFF client. Keep this audience narrow
+    # instead of accepting every token minted for the business API.
+    account-api-audiences: nitrowater-bff
     # BFF（confidential client）——服务端持 AT/RT，唯一面向浏览器的客户端。
     # 密文由 seeder 用 DelegatingPasswordEncoder 编码后存入 oauth2_registered_client。
     # 必填：无内置默认值（启动缺变量即失败）。本地由 bin/start-all 或 bootRun 注入 dev 值，
     # 生产必须与 nitrowater-bff 用同一个强随机值。
     bff-client-secret: "${BFF_CLIENT_SECRET}"
     # 重定向 URI：dev 经 Vite 代理(5173) / 直接 BFF(8080)；prod 为门户域名。逗号分隔。
-    bff-redirect-uris: "${BFF_REDIRECT_URIS:http://localhost:5173/login/oauth2/code/nitrowater,http://localhost:8080/login/oauth2/code/nitrowater,https://nitrowater.cn/login/oauth2/code/nitrowater}"
+    bff-redirect-uris: "${BFF_REDIRECT_URIS:http://localhost:5173/login/oauth2/code/nitrowater,http://localhost:8080/login/oauth2/code/nitrowater,http://127.0.0.1:5173/login/oauth2/code/nitrowater,http://127.0.0.1:8080/login/oauth2/code/nitrowater,https://nitrowater.cn/login/oauth2/code/nitrowater}"
     # RP-initiated logout 回跳地址：逗号分隔。
-    bff-post-logout-redirect-uris: "${BFF_POST_LOGOUT_REDIRECT_URIS:http://localhost:5173,http://localhost:5173/,http://localhost:8080,http://localhost:8080/,https://nitrowater.cn,https://nitrowater.cn/}"
+    bff-post-logout-redirect-uris: "${BFF_POST_LOGOUT_REDIRECT_URIS:http://localhost:5173,http://localhost:5173/,http://localhost:8080,http://localhost:8080/,http://127.0.0.1:5173,http://127.0.0.1:5173/,http://127.0.0.1:8080,http://127.0.0.1:8080/,https://nitrowater.cn,https://nitrowater.cn/}"
 
 logging:
   level:

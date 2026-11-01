@@ -20,6 +20,15 @@ public interface UserCoreService {
     User changePwd(long userUid, String newPwd);
 
     /**
+     * Update the display nickname.
+     *
+     * @param userUid target uid
+     * @param nickname trimmed nickname, 1-12 characters
+     * @return saved user
+     */
+    User updateNickname(long userUid, String nickname);
+
+    /**
      * Get a user by user uid.
      *
      * @param userUid target userUid

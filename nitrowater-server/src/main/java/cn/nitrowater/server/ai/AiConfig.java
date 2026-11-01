@@ -1,7 +1,10 @@
 package cn.nitrowater.server.ai;
 
 import cn.nitrowater.server.ai.agent.AgentToolProviders;
+import cn.nitrowater.server.ai.properties.AiProperties;
+import cn.nitrowater.server.ai.properties.ModerationProperties;
 import cn.nitrowater.server.ai.tool.DocTools;
+import cn.nitrowater.server.ai.tool.MemoryTools;
 import cn.nitrowater.server.ai.tool.RunCodeTool;
 import cn.nitrowater.server.ai.tool.SkillTools;
 import cn.nitrowater.server.ai.properties.WebSearchProperties;
@@ -24,22 +27,23 @@ import org.springframework.context.annotation.Configuration;
  * {@code AiAgentService}.</p>
  */
 @Configuration
-@EnableConfigurationProperties({AiProperties.class, WebSearchProperties.class})
+@EnableConfigurationProperties({AiProperties.class, WebSearchProperties.class, ModerationProperties.class})
 public class AiConfig {
 
     /**
      * @param docTools {@code searchDocs}
      * @param skillTools {@code loadSkill}
      * @param runCodeTool {@code runCode}
+     * @param memoryTools {@code saveMemory}
      * @param webSearchTool {@code webSearch}
      * @return core tools (always available) and the optional web tool
      */
     @Bean
     public AgentToolProviders agentToolProviders(DocTools docTools, SkillTools skillTools,
-            RunCodeTool runCodeTool, WebSearchTool webSearchTool) {
+            RunCodeTool runCodeTool, MemoryTools memoryTools, WebSearchTool webSearchTool) {
         return new AgentToolProviders(
                 MethodToolCallbackProvider.builder()
-                        .toolObjects(docTools, skillTools, runCodeTool)
+                        .toolObjects(docTools, skillTools, runCodeTool, memoryTools)
                         .build(),
                 MethodToolCallbackProvider.builder().toolObjects(webSearchTool).build());
     }

@@ -1,5 +1,7 @@
 package cn.nitrowater.server.infra.ratelimit;
 
+import cn.nitrowater.core.web.ApiResponseWriter;
+
 import cn.nitrowater.server.service.sandbox.SandboxExecutionGuard;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -69,8 +71,6 @@ public class SandboxRateLimitInterceptor implements HandlerInterceptor {
     /** Writes a JSON error body and stops the chain. */
     private static void reject(HttpServletResponse response, HttpStatus status, String code, String message)
             throws IOException {
-        response.setStatus(status.value());
-        response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"error\":\"" + code + "\",\"message\":\"" + message + "\"}");
+        ApiResponseWriter.error(response, status.value(), code, message);
     }
 }

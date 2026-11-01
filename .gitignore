@@ -118,3 +118,10 @@ demo/__pycache__/
 # published sites are deploy artifacts handled dynamically. Anything under static/docs is a stale
 # local build - never commit it. See deploy/plugin-docs/ + bin/dev/sync-docs.ps1.
 /nitrowater-server/src/main/resources/static/docs/
+
+# Decoupled deploy content: violation word lists, external doc corpora and external skills are
+# mounted at runtime (docker-compose.content.yml), maintained outside this public repo. Only the
+# contract (README) and the folder placeholder stay tracked. See deploy/content/README.md.
+/deploy/content/*
+!/deploy/content/README.md
+!/deploy/content/.gitkeep

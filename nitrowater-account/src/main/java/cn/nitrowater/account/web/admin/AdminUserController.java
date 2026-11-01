@@ -2,12 +2,12 @@ package cn.nitrowater.account.web.admin;
 
 import cn.nitrowater.account.admin.RoleAdminService;
 import cn.nitrowater.account.admin.dto.AssignRolesReq;
-import cn.nitrowater.account.admin.dto.PageResult;
 import cn.nitrowater.account.admin.dto.UserSummaryVO;
 import cn.nitrowater.lib.api.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -31,7 +31,7 @@ public class AdminUserController {
 
     @Operation(summary = "Paged account search by username / nickname, each row carrying its role codes")
     @GetMapping
-    public ApiResponse<PageResult<UserSummaryVO>> list(
+    public ApiResponse<Page<UserSummaryVO>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {

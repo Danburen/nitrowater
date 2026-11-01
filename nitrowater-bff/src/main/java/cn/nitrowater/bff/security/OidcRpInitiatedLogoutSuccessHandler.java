@@ -2,7 +2,6 @@ package cn.nitrowater.bff.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +28,6 @@ import java.nio.charset.StandardCharsets;
  * falls back to the session's {@code id_token}. If neither the token nor the endpoint can be
  * resolved the handler degrades to a local-only logout (redirect to {@code fallbackUri}).</p>
  */
-@RequiredArgsConstructor
 @Slf4j
 public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler {
     private static final String END_SESSION_ENDPOINT_CLAIM = "end_session_endpoint";
@@ -38,10 +36,20 @@ public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler
     private final ClientRegistrationRepository clientRegistrationRepository;
     private final String registrationId;
     private final String fallbackUri;
+    /** Absolute origin the AS must send the browser back to; blank keeps the request origin. */
+    private final String postLogoutRedirectUri;
 
     public OidcRpInitiatedLogoutSuccessHandler(ClientRegistrationRepository clientRegistrationRepository,
             String registrationId) {
-        this(clientRegistrationRepository, registrationId, "/");
+        this(clientRegistrationRepository, registrationId, "/", null);
+    }
+
+    public OidcRpInitiatedLogoutSuccessHandler(ClientRegistrationRepository clientRegistrationRepository,
+            String registrationId, String fallbackUri, String postLogoutRedirectUri) {
+        this.clientRegistrationRepository = clientRegistrationRepository;
+        this.registrationId = registrationId;
+        this.fallbackUri = fallbackUri;
+        this.postLogoutRedirectUri = postLogoutRedirectUri;
     }
 
     @Override
@@ -63,16 +71,34 @@ public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler
         String logoutUrl = endSessionEndpoint
                 + separator
                 + "id_token_hint=" + urlEncode(idToken)
-                + "&post_logout_redirect_uri=" +
-                // logout redirect url
-                urlEncode(
-                        ServletUriComponentsBuilder.fromRequestUri(request)
-                                .replacePath(null)
-                                .replaceQuery(null)
-                                .build()
-                                .toUriString()
-                );
+                + "&post_logout_redirect_uri=" + urlEncode(postLogoutRedirect(request));
         response.sendRedirect(logoutUrl);
+    }
+
+
+    /**
+     * The origin the AS sends the browser back to.
+     *
+     * <p>It MUST be one of the client's registered {@code post_logout_redirect_uris}: the AS
+     * answers {@code 400 invalid_request} for anything else, which shows up as a blank page AND
+     * (because validation runs before session invalidation) leaves the SSO session alive, so the
+     * next "login" silently re-authenticates the previous user. Deriving it from the request Host
+     * broke whenever the SPA was opened through a host the account service does not list
+     * (127.0.0.1 vs localhost, a different port, a LAN address), so the configured value wins.
+     *</p>
+     *
+     * @param request current request, used only when nothing is configured
+     * @return an absolute http(s) URI registered as a post-logout redirect
+     */
+    private String postLogoutRedirect(HttpServletRequest request) {
+        if (postLogoutRedirectUri != null && !postLogoutRedirectUri.isBlank()) {
+            return postLogoutRedirectUri.trim();
+        }
+        return ServletUriComponentsBuilder.fromRequestUri(request)
+                .replacePath(null)
+                .replaceQuery(null)
+                .build()
+                .toUriString();
     }
 
     /** Prefers the freshly minted id_token, falling back to the session principal's id_token. */

@@ -5,19 +5,19 @@ import cn.nitrowater.server.ai.AiChatService;
 import cn.nitrowater.server.ai.AiAdminSettingsService;
 import cn.nitrowater.server.ai.AiDailyUsage;
 import cn.nitrowater.server.ai.AiTokenUsage;
-import cn.nitrowater.server.ai.AiProperties;
+import cn.nitrowater.server.ai.properties.AiProperties;
 import cn.nitrowater.server.ai.ChatAnswer;
 import cn.nitrowater.server.ai.ChatTurn;
 import cn.nitrowater.server.ai.DocsIndexService;
 import cn.nitrowater.server.ai.PreparedChat;
 import cn.nitrowater.server.ai.conversation.ConversationService;
+import cn.nitrowater.server.ai.moderation.AiModerationService;
 import cn.nitrowater.server.ai.tool.WebSearchProvider;
 import cn.nitrowater.server.ai.AiUsageService;
 import cn.nitrowater.server.ai.AiUsageTracker;
 import cn.nitrowater.server.ai.AiQuotaExceededException;
 import cn.nitrowater.server.web.dto.AiChatReq;
 import cn.nitrowater.server.web.dto.AiChatResp;
-import cn.nitrowater.server.web.dto.AiChatTurn;
 import cn.nitrowater.server.web.dto.AiStatusResp;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,12 +62,14 @@ public class AiController {
     private final WebSearchProvider webSearchProvider;
     private final AiAdminSettingsService adminSettings;
     private final AiUsageService usage;
+    private final AiModerationService moderation;
     private final String chatModel;
     private final String embeddingModel;
 
     public AiController(AiChatService chatService, ConversationService conversations,
             DocsIndexService indexService, AiProperties properties,
             WebSearchProvider webSearchProvider, AiAdminSettingsService adminSettings, AiUsageService usage,
+            AiModerationService moderation,
             @Value("${spring.ai.openai.chat.model:}") String chatModel,
             @Value("${spring.ai.openai.embedding.model:}") String embeddingModel) {
         this.chatService = chatService;
@@ -77,6 +79,7 @@ public class AiController {
         this.webSearchProvider = webSearchProvider;
         this.adminSettings = adminSettings;
         this.usage = usage;
+        this.moderation = moderation;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
     }
@@ -102,7 +105,8 @@ public class AiController {
                 properties.similarityThreshold(),
                 runtime.webSearchEnabled() && webSearchProvider.enabled(),
                 runtime.dailyTokenLimit(), runtime.chatEnabled(), runtime.agentEnabled(),
-                runtime.documentSearchEnabled(), runtime.codeRunnerEnabled(), runtime.skillsEnabled());
+                runtime.documentSearchEnabled(), runtime.codeRunnerEnabled(), runtime.skillsEnabled(),
+                AiStatusResp.GlobalQuota.from(usage.globalToday()));
     }
 
     /** Login: return the current user's UTC-day token usage. */
@@ -119,9 +123,14 @@ public class AiController {
                 request.question());
         try {
             ChatAnswer answer = chatService.answer(request.question(), historyOf(request, turn), uid);
-            conversations.finish(turn.conversation(), answer.answer(), answer.sources(), List.of(), chatModel,
-                    answer.usage());
-            return new AiChatResp(turn.conversation().getUuid(), answer.answer(), answer.sources(),
+            // The screened text is used for both the response and the stored turn, so the database
+            // can never hold content the browser was not allowed to see.
+            AiModerationService.Screened screened = moderation.screenAnswer(uid,
+                    turn.conversation().getUuid(), answer.answer());
+            String text = screened.text();
+            conversations.finish(turn.conversation(), text, answer.sources(), List.of(), chatModel,
+                    answer.usage(), screened.masked());
+            return new AiChatResp(turn.conversation().getUuid(), text, answer.sources(),
                     answer.grounded());
         } catch (RuntimeException ex) {
             conversations.fail(turn.conversation(), message(ex));
@@ -186,8 +195,17 @@ public class AiController {
                     AiTokenUsage tokenUsage = prepared.usageSession()
                             .map(AiUsageTracker::finish)
                             .orElseGet(() -> new AiTokenUsage(0, 0, false));
-                    conversations.finish(turn.conversation(), answer.toString(), prepared.sources(), List.of(),
-                            chatModel, tokenUsage);
+                    String raw = answer.toString();
+                    AiModerationService.Screened screened = moderation.screenAnswer(uid,
+                            turn.conversation().getUuid(), raw);
+                    String text = screened.text();
+                    conversations.finish(turn.conversation(), text, prepared.sources(), List.of(),
+                            chatModel, tokenUsage, screened.masked());
+                    // Streamed tokens cannot be un-sent: when the gate masked something, the client
+                    // replaces the bubble with the stored version before it renders "done".
+                    if (!text.equals(raw)) {
+                        send(emitter, "moderation", JsonUtil.toJson(Map.of("text", text)));
+                    }
                     send(emitter, "done", "{}");
                     emitter.complete();
                 });
@@ -243,8 +261,8 @@ public class AiController {
     private static Map<String, Object> errorPayload(Throwable error) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("message", message(error));
-        if (error instanceof AiQuotaExceededException) {
-            payload.put("code", AiQuotaExceededException.CODE);
+        if (error instanceof AiQuotaExceededException quota) {
+            payload.put("code", quota.code());
         }
         return payload;
     }

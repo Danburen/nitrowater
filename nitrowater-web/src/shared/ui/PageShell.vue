@@ -12,7 +12,8 @@
  * for full-bleed layouts (tool pages).
  */
 import { computed } from 'vue'
-import { InfoFilled } from '@element-plus/icons-vue'
+import UiIcon from './UiIcon.vue'
+import UiTooltip from './UiTooltip.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -40,19 +41,18 @@ const headerStyle = computed(() =>
         <h1 class="min-w-0 truncate text-base font-semibold tracking-tight text-ink">
           {{ title }}
         </h1>
-        <el-tooltip
+        <UiTooltip
           v-if="desc"
-          :content="desc"
-          placement="bottom-start"
-          :show-after="150"
+          :text="desc"
         >
-          <el-button
-            size="small"
-            :icon="InfoFilled"
-            circle
-            text
-          />
-        </el-tooltip>
+          <button
+            type="button"
+            class="icon-btn"
+            aria-label="页面说明"
+          >
+            <UiIcon name="info" />
+          </button>
+        </UiTooltip>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <slot name="actions" />
         </div>

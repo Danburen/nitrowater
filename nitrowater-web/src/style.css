@@ -21,6 +21,9 @@
   --color-warn: #f0b45b;
   --color-danger: #d97b7b;
 
+  /* Elevation tint: shadows are built from this so they stay readable in both themes. */
+  --shadow-color: rgb(0 0 0 / 0.55);
+
   --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, 'Liberation Mono', monospace;
 }
 
@@ -43,6 +46,8 @@
   --color-ok: #1e9e57;
   --color-warn: #b7791f;
   --color-danger: #cf3f3f;
+
+  --shadow-color: rgb(16 18 22 / 0.12);
 }
 
 /*
@@ -134,12 +139,49 @@ html:root {
   --el-mask-color-extra-light: rgb(0 0 0 / 0.2);
   --el-overlay-color-lighter: rgb(0 0 0 / 0.5);
 
+  /*
+   * Shape, density and typography. Colors alone are not enough: Element Plus ships 4px radii,
+   * 14px text and 32px controls, which is what made admin controls look like a different design
+   * system next to the Tailwind chrome (9px radii, 13px text). These values are the single source
+   * of truth for "control-looking" things; keep them in sync with .input/.btn below.
+   */
   --el-border-radius-base: 9px;
+  --el-border-radius-small: 7px;
+  --el-border-radius-round: 999px;
+
   --el-font-family: inherit;
-  --el-box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
-  --el-box-shadow-light: 0 8px 24px rgb(0 0 0 / 0.28);
-  --el-box-shadow-lighter: 0 6px 18px rgb(0 0 0 / 0.22);
-  --el-box-shadow-dark: 0 16px 48px rgb(0 0 0 / 0.45);
+  --el-font-size-extra-large: 15px;
+  --el-font-size-large: 14px;
+  --el-font-size-medium: 13.5px;
+  --el-font-size-base: 13px;
+  --el-font-size-small: 12.5px;
+  --el-font-size-extra-small: 12px;
+
+  --el-component-size-large: 36px;
+  --el-component-size: 34px;
+  --el-component-size-small: 28px;
+
+  /* Cards and tags: match .panel / .chip-toggle. */
+  --el-card-border-radius: 14px;
+  --el-card-border-color: var(--color-line);
+  --el-card-bg-color: var(--color-card);
+  --el-card-padding: 16px;
+  --el-tag-border-radius: 7px;
+
+  /* Tables: header sits on the soft surface, rows keep the card background. */
+  --el-table-border-color: var(--color-line);
+  --el-table-bg-color: var(--color-card);
+  --el-table-tr-bg-color: var(--color-card);
+  --el-table-header-bg-color: var(--color-soft);
+  --el-table-header-text-color: var(--color-dim);
+  --el-table-text-color: var(--color-dim);
+  --el-table-row-hover-bg-color: color-mix(in srgb, var(--color-soft) 70%, var(--color-card));
+
+  /* Elevation: derived from the per-theme --shadow-color token. */
+  --el-box-shadow: 0 12px 32px var(--shadow-color);
+  --el-box-shadow-light: 0 6px 18px var(--shadow-color);
+  --el-box-shadow-lighter: 0 2px 8px var(--shadow-color);
+  --el-box-shadow-dark: 0 16px 48px var(--shadow-color);
 }
 
 @layer components {
@@ -151,12 +193,160 @@ html:root {
     @apply border-line-strong;
   }
 
+  .btn:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
   .btn-primary {
     @apply border-accent bg-accent text-white;
   }
 
   .btn-primary:hover {
     @apply bg-accent-strong;
+  }
+
+  .btn-sm {
+    @apply px-2.5 py-0.5 text-[12px];
+  }
+
+  .icon-btn {
+    @apply inline-grid size-7 shrink-0 place-items-center rounded-[8px] text-dim transition;
+  }
+
+  .icon-btn:hover:not(:disabled) {
+    @apply bg-soft text-ink;
+  }
+
+  .icon-btn:disabled {
+    @apply cursor-not-allowed opacity-40;
+  }
+
+  .chip-toggle {
+    @apply inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11.5px] text-dim transition;
+  }
+
+  .chip-toggle:hover {
+    @apply border-line-strong text-ink;
+  }
+
+  .chip-toggle.is-on {
+    @apply border-accent/40 bg-accent/10 text-accent;
+  }
+
+@layer utilities {
+  /* Thin scrollbar that only shows a thumb when the content actually overflows. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-line-strong) 65%, transparent);
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--color-line-strong);
+  }
+}
+  /*
+   * Admin console primitives. Every admin page composes these instead of repeating Tailwind
+   * strings, so spacing, borders and control sizes stay identical across pages. Keep the values
+   * in sync with the Element Plus bridge above (9px control radius, 14px card radius, 34px高).
+   */
+  .admin-card {
+    @apply rounded-[14px] border border-line bg-card shadow-none;
+  }
+
+  .admin-card > .el-card__header {
+    @apply border-b border-line px-4 py-3;
+  }
+
+  .admin-card > .el-card__body {
+    @apply p-4;
+  }
+
+  .admin-card-title {
+    @apply text-[13.5px] font-semibold text-ink;
+  }
+
+  /* Muted caption next to a card title (UTC day, counts, ...). */
+  .admin-card-meta {
+    @apply text-[12px] text-faint;
+  }
+
+  /* Header row of a card: title on the left, actions on the right. */
+  .admin-toolbar {
+    @apply flex flex-wrap items-center justify-between gap-3;
+  }
+
+  /* Action cluster: identical button size/rhythm wherever it appears above a table. */
+  .admin-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .admin-actions .el-button {
+    @apply m-0 h-7 px-2.5 text-[12.5px];
+  }
+
+  .admin-actions .el-button + .el-button {
+    margin-left: 0;
+  }
+
+  /*
+   * List-page shell: filter bar on top, table in the middle, pager at the bottom. The card body
+   * drops its padding so the table can run edge to edge; the bars keep their own padding.
+   */
+  .admin-card-flush > .el-card__body {
+    @apply p-0;
+  }
+
+  .admin-filter {
+    @apply flex flex-wrap items-center gap-2 border-b border-line px-4 py-3;
+  }
+
+  /* `el-form--inline` keeps a 18px bottom margin on every item; the bar owns the spacing instead. */
+  .admin-filter.el-form--inline .el-form-item {
+    @apply mb-0 mr-0;
+  }
+
+  .admin-filter .el-input {
+    @apply w-[200px];
+  }
+
+  .admin-filter .el-select {
+    @apply w-[150px];
+  }
+
+  .admin-pager {
+    @apply flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim;
+  }
+
+  /* Small metric tile used by the usage cards. */
+  .admin-stat {
+    @apply rounded-[12px] border border-line bg-card p-3;
+  }
+
+  .admin-stat-label {
+    @apply text-[12px] text-faint;
+  }
+
+  .admin-stat-value {
+    @apply mt-1 font-mono text-[17px] leading-tight text-ink;
+  }
+
+  /* Tables inside a card should not paint their own outer frame/bottom rule. */
+  .admin-card .el-table__inner-wrapper::before {
+    display: none;
   }
 
   .tag {

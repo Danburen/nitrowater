@@ -1,5 +1,6 @@
 package cn.nitrowater.server.infra.entity;
 
+import cn.nitrowater.server.infra.enums.ModerationMode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -27,6 +28,14 @@ public class AiAdminSetting {
     @Column(name = "daily_token_limit", nullable = false, columnDefinition = "bigint UNSIGNED")
     private Long dailyTokenLimit;
 
+    /** All users combined daily token ceiling; 0 = unlimited. */
+    @Column(name = "global_daily_token_limit", nullable = false, columnDefinition = "bigint UNSIGNED")
+    private Long globalDailyTokenLimit = 0L;
+
+    /** Master switch for the global daily quota breaker. */
+    @Column(name = "global_quota_enabled", nullable = false, columnDefinition = "tinyint(1)")
+    private Boolean globalQuotaEnabled = false;
+
     @Column(name = "ai_enabled", nullable = false, columnDefinition = "tinyint(1)")
     private Boolean aiEnabled = true;
 
@@ -47,6 +56,10 @@ public class AiAdminSetting {
 
     @Column(name = "skills_enabled", nullable = false, columnDefinition = "tinyint(1)")
     private Boolean skillsEnabled = true;
+
+    /** Content-moderation posture; see {@link cn.nitrowater.server.infra.enums.ModerationMode}. */
+    @Column(name = "moderation_mode", nullable = false, columnDefinition = "tinyint UNSIGNED")
+    private ModerationMode moderationMode = ModerationMode.LOG;
 
     @Column(name = "updated_by_uid")
     private Long updatedByUid;

@@ -1,0 +1,14 @@
+# Allow list for NitroBot content moderation.
+#
+# A term listed here is never reported as a hit, even when it contains a violation word. This is
+# the escape hatch for false positives: when the admin console shows a hit that is really normal
+# technical content, add the surrounding phrase here (or the bare term, if the whole term is safe
+# in this domain).
+#
+# Examples (kept commented so the baseline stays empty):
+#   /kill
+#   TNT
+#   赌博插件
+#   防诈骗
+#
+# One phrase per line; blank lines and lines starting with '#' are ignored.

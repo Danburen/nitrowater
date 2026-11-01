@@ -6,7 +6,8 @@ import ThemeToggle from './ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
-const { session, loading, login, logout, isAdmin, accounts, addAccount, switchAccount, removeAccount } = useAuth()
+const { session, loading, login, logout, logoutStuck, isAdmin, accounts, addAccount, switchAccount, removeAccount }
+  = useAuth()
 
 const isLoggedIn = computed(() => !!session.value?.authenticated)
 const displayName = computed(() => session.value?.name || session.value?.username || '已登录')
@@ -117,6 +118,15 @@ async function onNav(item: NavItem): Promise<void> {
           登录
         </button>
         <template v-else>
+          <button
+            v-if="logoutStuck"
+            type="button"
+            class="rounded-[9px] border border-danger/40 bg-danger/10 px-2 py-1 text-[12px] text-danger transition hover:border-danger"
+            title="上次退出没有完成，SSO 会话可能仍然有效"
+            @click="logout"
+          >
+            退出未完成，重试
+          </button>
           <details class="relative">
             <summary
               class="flex cursor-pointer list-none items-center gap-2 rounded-[9px] border border-line bg-soft px-3 py-1.5 text-[13px] text-ink transition hover:border-line-strong [&::-webkit-details-marker]:hidden"
@@ -171,9 +181,16 @@ async function onNav(item: NavItem): Promise<void> {
                 <button
                   type="button"
                   class="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-ink transition hover:bg-soft"
+                  @click="router.push('/account')"
+                >
+                  <span class="text-dim">◎</span> 用户中心
+                </button>
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-ink transition hover:bg-soft"
                   @click="addAccount"
                 >
-                  <span class="text-dim">＋</span> 添加账号
+                  <span class="text-dim">+</span> 添加账号
                 </button>
                 <button
                   type="button"

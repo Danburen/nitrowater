@@ -60,7 +60,8 @@ public class SecurityConfig {
             OAuth2AuthorizationRequestResolver switchAccountAuthorizationRequestResolver,
             UpstreamTokenService upstreamTokenService,
             @Value("${app.oidc.registration-id:nitrowater}") String registrationId,
-            @Value("${app.session.epoch:dev}") String sessionEpoch) throws Exception {
+            @Value("${app.session.epoch:dev}") String sessionEpoch,
+            @Value("${app.post-logout-redirect-uri:}") String postLogoutRedirectUri) throws Exception {
         // Read the raw (unmasked) token from the cookie and accept it verbatim in the header,
         // which is what a same-origin SPA does; the request attribute name is fixed so the
         // CsrfCookieFilter below can force the deferred token to be written to the cookie.
@@ -72,7 +73,8 @@ public class SecurityConfig {
         OidcSessionLogoutHandler oidcSessionLogoutHandler = new OidcSessionLogoutHandler(
                 authorizedClientRepository, upstreamTokenService);
         OidcRpInitiatedLogoutSuccessHandler oidcLogoutSuccessHandler =
-                new OidcRpInitiatedLogoutSuccessHandler(clientRegistrationRepository, registrationId);
+                new OidcRpInitiatedLogoutSuccessHandler(clientRegistrationRepository, registrationId, "/",
+                        postLogoutRedirectUri);
 
         http
                 .authorizeHttpRequests(a -> a
