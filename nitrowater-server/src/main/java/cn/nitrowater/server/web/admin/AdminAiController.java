@@ -1,12 +1,12 @@
 package cn.nitrowater.server.web.admin;
 
-import cn.nitrowater.server.ai.DocsIndexService;
-import cn.nitrowater.server.ai.AiAdminSettingsService;
-import cn.nitrowater.server.ai.AiUsageService;
-import cn.nitrowater.server.ai.agent.AgentToolProviders;
-import cn.nitrowater.server.ai.moderation.AiModerationService;
-import cn.nitrowater.server.ai.skill.SkillRegistry;
-import cn.nitrowater.server.ai.tool.WebSearchProvider;
+import cn.nitrowater.server.service.ai.DocsIndexService;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.AiUsageService;
+import cn.nitrowater.server.service.ai.model.agent.AgentToolProviders;
+import cn.nitrowater.server.service.ai.AiModerationService;
+import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
 import cn.nitrowater.server.infra.entity.AiModerationHit;
 import cn.nitrowater.server.infra.entity.BizUser;
 import cn.nitrowater.server.infra.enums.ModerationAction;

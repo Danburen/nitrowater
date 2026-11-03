@@ -15,8 +15,8 @@ defineProps<{
 </script>
 
 <template>
-  <div class="auth-page">
-    <div class="auth-shell">
+  <div class="grid min-h-dvh place-items-center bg-bg p-6">
+    <div class="w-full max-w-[400px]">
       <ElCard
         shadow="never"
         class="auth-panel"

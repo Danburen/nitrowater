@@ -203,7 +203,7 @@ onUnmounted(() => {
   >
     <div
       v-if="loginContext?.clientName"
-      class="auth-alert-info mb-5"
+      class="mb-5 rounded-lg border border-line bg-soft px-3 py-2.5 text-[13px] leading-5 text-dim"
       role="status"
     >
       您正在尝试登录「<strong class="font-medium text-ink">{{ loginContext.clientName }}</strong>」

@@ -38,7 +38,7 @@ const REPO = {
 
 <template>
   <div class="min-h-screen">
-    <main class="mx-auto max-w-[1120px] px-6">
+    <main class="mx-auto max-w-[1120px] px-4 sm:px-6">
       <!-- ===== Hero ===== -->
       <section class="py-[72px] pb-12 text-center">
         <div class="mb-5 inline-block rounded-full border border-accent/25 bg-accent/10 px-3 py-[5px] text-[12.5px] text-accent">
@@ -72,7 +72,7 @@ const REPO = {
         id="tools"
         class="py-10"
       >
-        <div class="section-head">
+        <div class="mb-[22px] flex items-end justify-between gap-4">
           <div>
             <h2 class="text-[21px] font-semibold tracking-tight">
               在线工具箱
@@ -140,7 +140,7 @@ const REPO = {
         id="plugins"
         class="py-10"
       >
-        <div class="section-head">
+        <div class="mb-[22px] flex items-end justify-between gap-4">
           <div>
             <h2 class="text-[21px] font-semibold tracking-tight">
               插件中心

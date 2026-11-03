@@ -1,9 +1,9 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.lib.utils.JsonUtil;
-import cn.nitrowater.server.ai.DocSource;
-import cn.nitrowater.server.ai.agent.ToolCall;
-import cn.nitrowater.server.ai.conversation.ConversationService;
+import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.model.agent.ToolCall;
+import cn.nitrowater.server.service.ai.ConversationService;
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.entity.AiMessage;
 import cn.nitrowater.server.web.dto.ConversationCreateReq;
@@ -46,6 +46,8 @@ public class AiConversationController {
     private static final TypeReference<List<DocSource>> SOURCES_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<List<ToolCall>> TOOLS_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<String>> SKILLS_TYPE = new TypeReference<>() {
     };
 
     private final ConversationService conversations;
@@ -117,6 +119,7 @@ public class AiConversationController {
                 message.getContent(),
                 JsonUtil.parseList(message.getSourcesJson(), SOURCES_TYPE),
                 JsonUtil.parseList(message.getToolsJson(), TOOLS_TYPE),
+                JsonUtil.parseList(message.getSkillsJson(), SKILLS_TYPE),
                 message.getModel(),
                 Boolean.TRUE.equals(message.getModerated()),
                 message.getCreatedAt());

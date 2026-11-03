@@ -80,6 +80,8 @@ go.work.sum
 **/src/main/resources/keys/*.key
 **/keys/*.key
 deploy/config/common-dev-secrets.yml
+# Production values kept outside deploy/docker/.env; passed via `deploy.ps1 -EnvFile <path>`.
+.env.prod.secrets
 
 # Scripts tracked: root bin/ (launch start-* + bin/test smoke) and deploy/bin/ (ops/deploy).
 # The generic `bin/` rule above ignores ANY `bin` directory, so re-include both explicitly

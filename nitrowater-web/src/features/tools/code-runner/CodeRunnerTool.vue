@@ -21,8 +21,7 @@ import {
   VideoPlay,
 } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
-import 'element-plus/es/components/message-box/style/css'
+import { confirm } from '../../../shared/ui/confirm'
 import { useAuth } from '../../../auth/useAuth'
 import { consumeRunnerSeed } from '../../../shared/codeRunnerSeed'
 import { apiFetch } from '../../../auth/bff'
@@ -106,15 +105,12 @@ async function applySeed(): Promise<void> {
 
   const current = cache.content.value
   if (current.trim() && current !== entry.defaultCode && current !== seed.code) {
-    try {
-      await ElMessageBox.confirm(
-        `运行器里「${entry.label}」已有代码，载入会覆盖当前草稿。`,
-        '覆盖现有代码？',
-        { type: 'warning', confirmButtonText: '覆盖', cancelButtonText: '取消' },
-      )
-    } catch {
-      return
-    }
+    if (!(await confirm({
+      title: '覆盖现有代码？',
+      message: `运行器里「${entry.label}」已有代码，载入会覆盖当前草稿。`,
+      confirmText: '覆盖',
+      danger: true,
+    }))) return
   }
 
   languageId.value = language

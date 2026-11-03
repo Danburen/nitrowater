@@ -1,16 +1,20 @@
 package cn.nitrowater.server.ai.agent;
 
-import cn.nitrowater.server.ai.AiAdminSettingsService;
-import cn.nitrowater.server.ai.properties.AiProperties;
-import cn.nitrowater.server.ai.AiStreamChunk;
-import cn.nitrowater.server.ai.AiTokenUsage;
-import cn.nitrowater.server.ai.AiUsageService;
-import cn.nitrowater.server.ai.AiUsageTracker;
-import cn.nitrowater.server.ai.PromptBuilder;
-import cn.nitrowater.server.ai.memory.AiMemoryService;
-import cn.nitrowater.server.ai.profile.AiProfileService;
-import cn.nitrowater.server.ai.skill.SkillRegistry;
-import cn.nitrowater.server.ai.tool.WebSearchProvider;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.model.agent.AgentToolProviders;
+import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
+import cn.nitrowater.server.service.ai.model.agent.AiAgentService;
+import cn.nitrowater.server.service.ai.model.agent.PreparedAgent;
+import cn.nitrowater.server.service.ai.properties.AiProperties;
+import cn.nitrowater.server.service.ai.model.AiStreamChunk;
+import cn.nitrowater.server.service.ai.model.AiTokenUsage;
+import cn.nitrowater.server.service.ai.AiUsageService;
+import cn.nitrowater.server.service.ai.AiUsageTracker;
+import cn.nitrowater.server.service.ai.PromptBuilder;
+import cn.nitrowater.server.service.ai.AiMemoryService;
+import cn.nitrowater.server.service.ai.AiProfileService;
+import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +51,9 @@ import static org.mockito.Mockito.verify;
  * Guards the reason this service bypasses {@code ChatClient}: Spring AI 2.0's
  * {@code ToolCallingAdvisor} aggregates a whole model stream into one element as soon as tool
  * options are present, which made every answer arrive as a single SSE delta.
+ *
+ * <p>Also guards the step protocol: process markers must be one pair per tool invocation (not one
+ * pair per round), carry the tool argument, and never mix into the answer text.</p>
  */
 class AiAgentServiceStreamTest {
 
@@ -67,8 +74,7 @@ class AiAgentServiceStreamTest {
     void forwardsEveryModelChunkInsteadOfOneAggregatedDelta() {
         service = service(new ScriptedChatModel(List.of(chunks("你", "好", "！"))));
 
-        List<String> texts = service.prepare("你好", List.of(), "", false, 7L)
-                .chunks()
+        List<String> texts = prepare().chunks()
                 .map(AiStreamChunk::text)
                 .filter(text -> !text.isEmpty())
                 .collectList()
@@ -79,12 +85,7 @@ class AiAgentServiceStreamTest {
 
     @Test
     void executesToolRoundThenStreamsTheAnswer() {
-        AssistantMessage toolCallMessage = AssistantMessage.builder()
-                .content("正在查阅文档：NitroWater")
-                .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", "searchDocs",
-                        "{\"query\":\"NitroWater\"}")))
-                .build();
-        ChatResponse toolRound = new ChatResponse(List.of(new Generation(toolCallMessage)));
+        AssistantMessage toolCallMessage = callMessage("searchDocs", "{\"query\":\"NitroWater\"}");
         when(toolCallingManager.executeToolCalls(any(Prompt.class), any(ChatResponse.class)))
                 .thenAnswer(invocation -> new StubToolResult(List.of(
                         new SystemMessage("system"),
@@ -93,48 +94,75 @@ class AiAgentServiceStreamTest {
                         new AssistantMessage("这里才是最终回答"))));
 
         service = service(new ScriptedChatModel(List.of(
-                Flux.just(toolRound),
+                Flux.just(new ChatResponse(List.of(new Generation(toolCallMessage)))),
                 chunks("这里才是", "最终回答"))));
 
-        List<String> texts = service.prepare("你好", List.of(), "", false, 7L)
-                .chunks()
+        List<String> texts = prepare().chunks()
                 .map(AiStreamChunk::text)
                 .filter(text -> !text.isEmpty())
                 .collectList()
                 .block();
 
-        assertThat(texts).containsExactly("正在查阅文档：NitroWater", "这里才是", "最终回答");
+        assertThat(texts).containsExactly("这里才是", "最终回答");
         verify(toolCallingManager).executeToolCalls(any(Prompt.class), any(ChatResponse.class));
     }
 
+    /**
+     * One marker pair per invocation, not per round: the round boundary markers are {@code
+     * thinking}, everything tool-shaped comes from the instrumented callback.
+     */
     @Test
-    void emitsLiveActivityStepsAroundTheToolExecution() {
-        AssistantMessage toolCallMessage = AssistantMessage.builder()
-                .content("正在查阅文档：NitroWater")
-                .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", "searchDocs",
-                        "{\"query\":\"NitroWater\"}")))
-                .build();
-        ChatResponse toolRound = new ChatResponse(List.of(new Generation(toolCallMessage)));
-        when(toolCallingManager.executeToolCalls(any(Prompt.class), any(ChatResponse.class)))
-                .thenAnswer(invocation -> new StubToolResult(List.of(
-                        new SystemMessage("system"),
-                        new UserMessage("你好"),
-                        toolCallMessage,
-                        new AssistantMessage("这里才是最终回答"))));
-
+    void emitsOneStepPairPerToolInvocation() {
+        AssistantMessage toolCallMessage = callMessage("searchDocs", "{\"query\":\"NitroWater\"}");
+        stubToolExecution(toolCallMessage);
         service = service(new ScriptedChatModel(List.of(
-                Flux.just(toolRound),
-                chunks("这里才是", "最终回答"))));
+                Flux.just(new ChatResponse(List.of(new Generation(toolCallMessage)))),
+                chunks("最终回答"))));
 
-        List<String> steps = service.prepare("你好", List.of(), "", false, 7L)
-                .chunks()
+        List<AiStreamChunk.Step> steps = prepare().chunks()
                 .filter(chunk -> chunk.step() != null)
-                .map(chunk -> chunk.step().phase() + ":" + chunk.step().tool())
+                .map(AiStreamChunk::step)
+                .collectList()
+                .block();
+
+        assertThat(steps).extracting(AiStreamChunk.Step::phase)
+                .containsExactly("thinking", "tool_start", "tool_end", "thinking");
+        AiStreamChunk.Step start = steps.get(1);
+        assertThat(start.tool()).isEqualTo("searchDocs");
+        assertThat(start.argument()).isEqualTo("NitroWater");
+        assertThat(start.callId()).isNotBlank();
+        AiStreamChunk.Step end = steps.get(2);
+        assertThat(end.callId()).isEqualTo(start.callId());
+        assertThat(end.status()).isEqualTo("tool.ok");
+        assertThat(end.ok()).isTrue();
+        assertThat(end.resultCount()).isNotNull();
+        assertThat(end.durationMs()).isNotNull();
+    }
+
+    /** Two calls in one round must read as two sequential cards, not one batch. */
+    @Test
+    void keepsTwoToolCallsInOneRoundSeparate() {
+        AssistantMessage first = callMessage("searchDocs", "{\"query\":\"one\"}");
+        AssistantMessage second = callMessage("searchDocs", "{\"query\":\"two\"}");
+        AssistantMessage round = AssistantMessage.builder()
+                .toolCalls(concat(first.getToolCalls(), second.getToolCalls()))
+                .build();
+        stubToolExecution(round);
+        service = service(new ScriptedChatModel(List.of(
+                Flux.just(new ChatResponse(List.of(new Generation(round)))),
+                chunks("最终回答"))));
+
+        List<String> steps = prepare().chunks()
+                .filter(chunk -> chunk.step() != null)
+                .map(chunk -> chunk.step().phase() + ":" + chunk.step().argument())
                 .collectList()
                 .block();
 
         assertThat(steps).containsExactly(
-                "tool_start:searchDocs", "tool_end:searchDocs", "thinking:null");
+                "thinking:null",
+                "tool_start:one", "tool_end:null",
+                "tool_start:two", "tool_end:null",
+                "thinking:null");
     }
 
     @Test
@@ -142,7 +170,7 @@ class AiAgentServiceStreamTest {
         ScriptedChatModel chatModel = new ScriptedChatModel(List.of(chunks("好")));
         service = service(chatModel);
 
-        service.prepare("你好", List.of(), "", false, 7L).chunks().blockLast();
+        prepare().chunks().blockLast();
 
         Prompt sent = chatModel.lastPrompt();
         assertThat(sent).isNotNull();
@@ -153,6 +181,34 @@ class AiAgentServiceStreamTest {
         ToolCallingChatOptions options = (ToolCallingChatOptions) sent.getOptions();
         assertThat(options.getToolCallbacks()).hasSize(1);
         assertThat(options.getToolContext()).containsKey(AgentTrace.CONTEXT_KEY);
+    }
+
+    private PreparedAgent prepare() {
+        return service.prepare("你好", List.of(), "", false, 7L, null);
+    }
+
+    /**
+     * Makes the stubbed manager actually invoke the callbacks carried by the prompt, which is what
+     * publishes the per-call step markers in production.
+     */
+    private void stubToolExecution(AssistantMessage round) {
+        when(toolCallingManager.executeToolCalls(any(Prompt.class), any(ChatResponse.class)))
+                .thenAnswer(invocation -> {
+                    Prompt prompt = invocation.getArgument(0);
+                    ToolCallingChatOptions options = (ToolCallingChatOptions) prompt.getOptions();
+                    for (AssistantMessage.ToolCall call : round.getToolCalls()) {
+                        for (ToolCallback callback : options.getToolCallbacks()) {
+                            if (callback.getToolDefinition().name().equals(call.name())) {
+                                callback.call(call.arguments(), null);
+                            }
+                        }
+                    }
+                    return new StubToolResult(List.of(
+                            new SystemMessage("system"),
+                            new UserMessage("你好"),
+                            round,
+                            new AssistantMessage("最终回答")));
+                });
     }
 
     private AiAgentService service(ChatModel chatModel) {
@@ -168,7 +224,7 @@ class AiAgentServiceStreamTest {
 
             @Override
             public String call(String toolInput) {
-                return "{\"count\":0}";
+                return "{\"count\":2}";
             }
         };
         ToolCallbackProvider core = mock(ToolCallbackProvider.class);
@@ -186,6 +242,20 @@ class AiAgentServiceStreamTest {
         return new AiAgentService(chatModel, toolCallingManager, new AgentToolProviders(core, web),
                 webSearch, skills, properties(), new PromptBuilder(), settings, usage, profiles,
                 memories, 10);
+    }
+
+    private static AssistantMessage callMessage(String tool, String arguments) {
+        return AssistantMessage.builder()
+                .toolCalls(List.of(new AssistantMessage.ToolCall("call-" + tool, "function", tool,
+                        arguments)))
+                .build();
+    }
+
+    private static List<AssistantMessage.ToolCall> concat(List<AssistantMessage.ToolCall> first,
+            List<AssistantMessage.ToolCall> second) {
+        List<AssistantMessage.ToolCall> all = new ArrayList<>(first);
+        all.addAll(second);
+        return all;
     }
 
     private static Flux<ChatResponse> chunks(String... texts) {

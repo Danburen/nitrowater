@@ -56,6 +56,10 @@ public class AiMessage {
     @Column(name = "tools_json", columnDefinition = "text")
     private String toolsJson;
 
+    /** Names of the skills loaded by the turn, stored as a JSON array so the trace survives reloads. */
+    @Column(name = "skills_json", columnDefinition = "text")
+    private String skillsJson;
+
     @Column(name = "model", length = 64)
     private String model;
 

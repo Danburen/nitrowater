@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web.dto;
 
-import cn.nitrowater.server.ai.DocSource;
-import cn.nitrowater.server.ai.agent.ToolCall;
+import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 
 import java.time.Instant;
 import java.util.List;
@@ -15,6 +15,7 @@ import java.util.List;
  * @param content message text (original, never pruned)
  * @param sources citations captured when the answer was produced
  * @param tools tool trace captured when the answer was produced
+ * @param skills skills loaded when the answer was produced
  * @param model model that produced the answer, or {@code null}
  * @param moderated whether the stored text was masked by the content gate
  * @param createdAt creation timestamp
@@ -26,6 +27,7 @@ public record ConversationMessageResp(
         String content,
         List<DocSource> sources,
         List<ToolCall> tools,
+        List<String> skills,
         String model,
         boolean moderated,
         Instant createdAt) {

@@ -9,6 +9,11 @@
   --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, 'Liberation Mono', monospace;
 }
 
+/*
+ * Shared page chrome for the account admin screens. Form controls come from Element Plus, so the
+ * only global classes are the ones every view repeats: the page header, the bordered panel and the
+ * two button variants.
+ */
 @layer components {
   .btn {
     @apply inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-soft px-3.5 py-[7px] text-[13.5px] text-ink transition;
@@ -26,33 +31,8 @@
     @apply bg-accent-strong;
   }
 
-  .tag {
-    @apply inline-block rounded-md border border-line bg-soft px-2 py-0.5 text-[11.5px] text-dim;
-  }
-
-  .tag-lock {
-    @apply border-warn/30 bg-warn/10 text-warn;
-  }
-
   .section-head {
     @apply mb-[22px] flex items-end justify-between gap-4;
-  }
-
-  .input,
-  .textarea,
-  .select {
-    @apply w-full rounded-[9px] border border-line bg-bg/60 px-3 py-2 text-sm text-ink outline-none transition;
-  }
-
-  .input::placeholder,
-  .textarea::placeholder {
-    color: var(--color-faint);
-  }
-
-  .input:focus,
-  .textarea:focus,
-  .select:focus {
-    border-color: var(--color-accent);
   }
 
   .panel {

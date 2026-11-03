@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Content-Security-Policy for the hosted pages (login / register / admin shell).
@@ -53,7 +54,7 @@ public class CspPolicy {
     private static String build(List<String> origins) {
         Set<String> normalized = new LinkedHashSet<>();
         for (String raw : origins) {
-            if (raw != null && !raw.isBlank()) {
+            if (StringUtil.isNotBlank(raw)) {
                 normalized.add(origin(raw));
             }
         }
@@ -84,7 +85,7 @@ public class CspPolicy {
         boolean http = "http".equals(scheme) || "https".equals(scheme);
         boolean plainPath = uri.getPath() == null || uri.getPath().isEmpty() || "/".equals(uri.getPath());
         int port = uri.getPort();
-        if (!http || uri.getHost() == null || uri.getHost().isBlank()
+        if (!http || StringUtil.isBlank(uri.getHost())
                 || uri.getUserInfo() != null || !plainPath
                 || uri.getRawQuery() != null || uri.getRawFragment() != null
                 || port < -1 || port > 65535) {

@@ -108,7 +108,10 @@ spring:
         jwt:
           issuer-uri: ${JWT_ISSUER:http://localhost:8090}
           jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
-
+  config:
+    import:
+      - optional:file:./deploy/config/common.yml
+      - optional:file:./deploy/config/common-dev-secrets.yml
 # -------- 本服务的额外 JWT 校验（Spring 默认不校验 aud，这里显式收紧）--------
 # audiences：允许消费的 aud 列表，逗号分隔。必须与 AS 的
 # app.oidc.access-token-audiences 对齐（AS 会额外保留 client_id）。
@@ -146,10 +149,12 @@ app:
     # a classpath: prefix. `public-base-url` empty means markdown-only (citations carry no URL).
     collections:
       - corpus: velochatx
+        description: VeloChatX 插件文档（安装、命令与权限、占位符、配置、排障）
         location: classpath:ai/docs/velochatx
         # Published by bin/dev/sync-docs.ps1 into deploy/plugin-docs (mounted by the docs nginx).
         public-base-url: /plugin/velochatx/docs/
       - corpus: nitrowater
+        description: NitroWater 平台自身文档（架构、SSO/BFF、资源服务、API、部署与运维）
         location: classpath:ai/docs/nitrowater
         # Markdown-only corpus: no published site, so citations carry no URL.
         public-base-url: ''

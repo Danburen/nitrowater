@@ -31,6 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Admin console service for role CRUD and user-role assignment.
@@ -132,7 +133,7 @@ public class RoleAdminService {
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
         Pageable pageable = PageRequest.of(safePage - 1, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
-        String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+        String kw = (StringUtil.isBlank(keyword)) ? null : keyword.trim();
 
         Page<User> result = userRepository.searchByKeyword(kw, pageable);
         List<Long> uids = result.getContent().stream().map(User::getUid).toList();
@@ -234,7 +235,7 @@ public class RoleAdminService {
         Set<String> codes = new LinkedHashSet<>();
         if (raw != null) {
             for (String value : raw) {
-                if (value != null && !value.isBlank()) {
+                if (StringUtil.isNotBlank(value)) {
                     codes.add(normalizeCode(value));
                 }
             }

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from './auth/useAuth'
 import AppHeader from './shared/ui/AppHeader.vue'
 import AuthExpiredBanner from './shared/ui/AuthExpiredBanner.vue'
+import ConfirmHost from './shared/ui/ConfirmHost.vue'
 import ToastHost from './shared/ui/ToastHost.vue'
 
 const route = useRoute()
@@ -31,5 +32,6 @@ watch(
   <AuthExpiredBanner />
   <AppHeader v-if="showHeader" />
   <router-view />
+  <ConfirmHost />
   <ToastHost />
 </template>

@@ -39,7 +39,7 @@ public final class JsonUtil {
     }
 
     public static <T> T fromJson(String json, TypeReference<T> typeRef) {
-        if (json == null || json.isBlank()) {
+        if (StringUtil.isBlank(json)) {
             return null;
         }
         try {
@@ -50,7 +50,7 @@ public final class JsonUtil {
     }
 
     public static <T> T fromJson(String json, Class<T> clazz) {
-        if (json == null || json.isBlank()) {
+        if (StringUtil.isBlank(json)) {
             return null;
         }
         try {

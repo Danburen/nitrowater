@@ -20,7 +20,6 @@ repositories {
 
 dependencies {
     implementation project(':nitrowater-core')
-    implementation project(':nitrowater-core-web')
     // --- nitrowater-lib: 直依赖以便复用共享工具（如 IdentifierGenerator/Romanizer；core 的 implementation 不传递）---
     implementation project(':nitrowater-lib')
     // --- 拼音：离线中文→拉丁音译（slug 生成；替代重量级 ICU，见 .ai/context）---

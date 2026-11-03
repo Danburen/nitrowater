@@ -16,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Enforces the OIDC {@code prompt=login} / {@code prompt=select_account} intent.
@@ -98,7 +99,7 @@ public class PromptLoginFilter extends OncePerRequestFilter {
      * @return whether it asks for an interactive re-authentication
      */
     public static boolean forcesLogin(String prompt) {
-        if (prompt == null || prompt.isBlank()) {
+        if (StringUtil.isBlank(prompt)) {
             return false;
         }
         for (String value : prompt.trim().split("\\s+")) {

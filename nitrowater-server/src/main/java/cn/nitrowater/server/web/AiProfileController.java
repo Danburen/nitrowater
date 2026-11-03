@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web;
 
-import cn.nitrowater.server.ai.profile.AiProfileService;
+import cn.nitrowater.server.service.ai.AiProfileService;
 import cn.nitrowater.server.web.dto.AiProfileUpdateReq;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;

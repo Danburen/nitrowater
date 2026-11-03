@@ -20,7 +20,9 @@ import {
   fetchAiUsage,
   streamAgent,
   type AiDailyUsage,
+  type AiSource,
   type AiStatus,
+  type AiToolCall,
   type ChatTurn,
 } from '../../api/ai'
 import { useConversations, type Conversation } from './composables/useConversations'
@@ -32,7 +34,7 @@ import {
   fetchSlashStatus,
 } from '../../api/slash'
 import { ResponseCode } from '../../api/codes'
-import type { ChatMessage, SystemCard, TimelineItem } from './types'
+import type { ChatMessage, LiveStep, SystemCard, TimelineItem } from './types'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatEmpty from './components/ChatEmpty.vue'
 import ChatComposer from './components/ChatComposer.vue'
@@ -53,6 +55,8 @@ const userInitial = computed(() => (userLabel.value.trim()[0] ?? 'U').toUpperCas
 const activeId = ref<string | null>(null)
 const messages = ref<ChatMessage[]>([])
 const streamingId = ref<string | null>(null)
+/** Live step timeline of the running turn; cleared when it settles. */
+const liveSteps = ref<LiveStep[]>([])
 const input = ref('')
 const status = ref<AiStatus | null>(null)
 const statusError = ref<string | null>(null)
@@ -395,6 +399,45 @@ async function startTurn(conversation: Conversation, question: string, history: 
 }
 
 /**
+ * Merges a continuation's trace into the bubble it extends.
+ *
+ * <p>The server merges the stored row the same way, so what is on screen and what a reload
+ * returns stay identical: known entries are skipped, a reused citation number is pushed past the
+ * highest existing one, and skills are a set.</p>
+ */
+function mergeSources(base: AiSource[], extra: AiSource[]): AiSource[] {
+  const merged = [...base]
+  const seen = new Set(base.map((source) => `${source.index}|${source.kind}|${source.url}|${source.title}|${source.section}`))
+  const used = new Set(base.map((source) => source.index))
+  let next = Math.max(0, ...used) + 1
+  for (const source of extra) {
+    const key = `${source.index}|${source.kind}|${source.url}|${source.title}|${source.section}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const index = used.has(source.index) ? next++ : source.index
+    used.add(index)
+    merged.push({ ...source, index })
+  }
+  return merged
+}
+
+function mergeTools(base: AiToolCall[], extra: AiToolCall[]): AiToolCall[] {
+  const seen = new Set(base.map((tool) => `${tool.name}|${tool.argument}|${tool.status}|${tool.resultCount}`))
+  const merged = [...base]
+  for (const tool of extra) {
+    const key = `${tool.name}|${tool.argument}|${tool.status}|${tool.resultCount}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(tool)
+  }
+  return merged
+}
+
+function mergeSkills(base: string[], extra: string[]): string[] {
+  return [...new Set([...base, ...extra])]
+}
+
+/**
  * Streams a turn into an existing reply bubble.
  *
  * <p>Deltas are revealed by a requestAnimationFrame pump rather than a fixed timer: the provider
@@ -410,9 +453,13 @@ async function streamInto(
   continueGeneration: boolean,
 ): Promise<void> {
   streamingId.value = reply.id
-  reply.activity = null
+  liveSteps.value = []
   controller = new AbortController()
   void scrollToBottomSoon()
+
+  /** Whether a tool is still running; the answer bubble waits for the process to settle. */
+  const toolRunning = (): boolean => liveSteps.value.some((step) => step.phase === 'tool_start')
+  let stepSequence = 0
 
   let received = ''
   let shown = 0
@@ -463,26 +510,72 @@ async function streamInto(
       {
         onConversation: (uuid) => adoptConversationId(conversation, uuid),
         onSources: (sources, grounded) => {
-          reply.sources = sources
-          reply.grounded = grounded
+          reply.sources = continueGeneration ? mergeSources(reply.sources, sources) : sources
+          reply.grounded = grounded || reply.grounded
         },
         onTools: (tools) => {
-          reply.tools = tools
+          reply.tools = continueGeneration ? mergeTools(reply.tools, tools) : tools
         },
         onSkills: (skills) => {
-          reply.skills = skills
+          reply.skills = continueGeneration ? mergeSkills(reply.skills, skills) : skills
         },
         onStep: (step) => {
-          const phase = step.phase === 'tool_start' || step.phase === 'tool_end' ? step.phase : 'thinking'
-          reply.activity = { phase, tool: step.tool }
+          // One card per marker: a round boundary opens a thinking row, a tool start opens its own
+          // card (paired to the end by callId), a tool end settles that card.
+          if (step.phase === 'tool_start') {
+            stepSequence += 1
+            liveSteps.value.push({
+              id: step.callId || `${step.tool ?? 'tool'}-${stepSequence}`,
+              phase: 'tool_start',
+              tool: step.tool,
+              argument: step.argument ?? null,
+              status: null,
+              ok: null,
+              resultCount: null,
+              startedAt: Date.now(),
+              durationMs: null,
+            })
+            return
+          }
+          if (step.phase === 'tool_end') {
+            const plain = [...liveSteps.value].reverse()
+            const target = (step.callId ? liveSteps.value.find((item) => item.id === step.callId) : undefined)
+              ?? plain.find((item) => item.phase === 'tool_start')
+            if (!target) return
+            target.phase = 'tool_end'
+            target.status = step.status ?? null
+            target.ok = step.ok ?? null
+            target.resultCount = step.resultCount ?? null
+            target.durationMs = step.durationMs ?? Date.now() - target.startedAt
+            // Held-back answer text may have arrived while the tool ran.
+            if (received.length > shown) ensurePump()
+            return
+          }
+          if (liveSteps.value.at(-1)?.phase !== 'thinking') {
+            stepSequence += 1
+            liveSteps.value.push({
+              id: `thinking-${stepSequence}`,
+              phase: 'thinking',
+              tool: null,
+              argument: null,
+              status: null,
+              ok: null,
+              resultCount: null,
+              startedAt: Date.now(),
+              durationMs: null,
+            })
+          }
         },
         onDelta: (text) => {
           if (firstDeltaAt === 0) firstDeltaAt = performance.now()
           received += text
-          // The live card describes the pre-answer phase only: once tokens flow, the answer itself
-          // is the feedback and the spinner would just sit above the text.
-          if (reply.activity) reply.activity = null
-          ensurePump()
+          // The process timeline owns everything up to the final round; the answer bubble starts
+          // with the first token that arrives while no tool is running.
+          if (!toolRunning()) {
+            // A trailing "thinking" row only describes the pre-answer phase; the bubble replaces it.
+            if (liveSteps.value.at(-1)?.phase === 'thinking') liveSteps.value.pop()
+            ensurePump()
+          }
         },
         onModeration: (text) => {
           // Tokens that already reached the browser cannot be recalled. Replace the bubble with the
@@ -520,7 +613,7 @@ async function streamInto(
     }
     // Flush whatever the pump had not revealed yet (also covers abort/failure).
     if (shown < received.length) reply.content += received.slice(shown)
-    reply.activity = null
+    liveSteps.value = []
     streamingId.value = null
     controller = null
     void loadUsage()
@@ -825,25 +918,25 @@ function newId(): string {
           </div>
           <div
             v-if="statusError"
-            class="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-[12.5px] text-danger"
+            class="mb-4 rounded-[14px] border border-danger/30 bg-danger/10 px-4 py-2.5 text-[12.5px] text-danger"
           >
             {{ statusError }}
           </div>
           <div
             v-else-if="status && (!status.enabled || status.error)"
-            class="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-[12.5px] text-danger"
+            class="mb-4 rounded-[14px] border border-danger/30 bg-danger/10 px-4 py-2.5 text-[12.5px] text-danger"
           >
             {{ status.error || 'NitroBot 暂不可用' }}
           </div>
           <div
             v-else-if="status && !status.agentEnabled"
-            class="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-[12.5px] text-danger"
+            class="mb-4 rounded-[14px] border border-danger/30 bg-danger/10 px-4 py-2.5 text-[12.5px] text-danger"
           >
             管理后台已关闭 Agent 模式，当前无法对话。
           </div>
           <div
             v-else-if="status && !status.indexed"
-            class="mb-4 rounded-xl border border-warn/30 bg-warn/10 px-4 py-2.5 text-[12.5px] text-warn"
+            class="mb-4 rounded-[14px] border border-warn/30 bg-warn/10 px-4 py-2.5 text-[12.5px] text-warn"
           >
             文档索引尚未构建，回答暂时不会带站点文档引用（通用问题仍可正常回答）。
           </div>
@@ -880,6 +973,7 @@ function newId(): string {
                 :data-msg-id="message.id"
                 :message="message"
                 :streaming="message.id === streamingId"
+                :steps="message.id === streamingId ? liveSteps : []"
                 :can-regenerate="message.role === 'assistant' && index === lastAssistantIndex"
                 :busy="busy"
                 :user-initial="userInitial"

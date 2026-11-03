@@ -5,12 +5,14 @@ import cn.nitrowater.server.infra.ratelimit.RedisRateLimiter;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
 import cn.nitrowater.server.web.dto.RunRequest;
 import cn.nitrowater.server.web.dto.RunResponse;
+import lombok.Getter;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Shared admission and execution path for server-side code runs.
@@ -119,7 +121,7 @@ public class SandboxExecutionGuard {
     }
 
     private static String requireUser(String uid) {
-        if (uid == null || uid.isBlank()) {
+        if (StringUtil.isBlank(uid)) {
             throw new GuardException(HttpStatus.UNAUTHORIZED, "unauthorized",
                     "Login is required to run code");
         }
@@ -127,6 +129,7 @@ public class SandboxExecutionGuard {
     }
 
     /** Raised when admission cannot be granted; carries the HTTP status the endpoint should use. */
+    @Getter
     public static final class GuardException extends RuntimeException {
 
         private final HttpStatus status;
@@ -136,14 +139,6 @@ public class SandboxExecutionGuard {
             super(message);
             this.status = status;
             this.code = code;
-        }
-
-        public HttpStatus status() {
-            return status;
-        }
-
-        public String code() {
-            return code;
         }
     }
 }

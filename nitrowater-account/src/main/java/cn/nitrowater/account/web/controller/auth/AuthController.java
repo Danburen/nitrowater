@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +53,7 @@ import org.springframework.security.core.authority.FactorGrantedAuthority;
 import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import cn.nitrowater.lib.utils.StringUtil;
 
 @Slf4j
 @RestController
@@ -73,9 +75,13 @@ public class AuthController {
 
     @Operation(summary = "获取图形验证码")
     @GetMapping("/captcha")
-    @RateLimit(key = "auth.captcha", permits = 30, window = 60)
-    public void getCaptcha(HttpServletResponse response) throws IOException {
-        LineCaptchaResult result = captchaService.generateCaptcha();
+    // Per-IP, not a literal key: a shared bucket means one busy client locks every user out.
+    @RateLimit(key = "ip", permits = 20, window = 60)
+    public void getCaptcha(HttpSession session, HttpServletResponse response) throws IOException {
+        LineCaptchaResult result = captchaService.generateCaptcha(session);
+        // Diagnostic mirror only: the challenge is bound to the HTTP session (CaptchaServiceImpl),
+        // and verification no longer reads this cookie. Kept so dev tooling can map a rendered image
+        // back to its Redis entry (bin/dev/seed-test-users.ps1 reads the code by this uuid).
         Cookie cookie = new Cookie("CAPTCHA_KEY", result.uuid());
         cookie.setHttpOnly(true);
         cookie.setPath("/");
@@ -101,8 +107,7 @@ public class AuthController {
     public ApiResponse<Void> sendCode(@Valid @RequestBody SendCodeReq dto,
                                       HttpServletRequest request,
                                       HttpServletResponse response) {
-        String captchaKey = CookieUtil.getCookieValue(request.getCookies(), "CAPTCHA_KEY");
-        if (!captchaService.verifyCode(captchaKey, dto.getCaptcha())) {
+        if (!captchaService.verifyCode(request.getSession(false), dto.getCaptcha())) {
             throw new AuthException(AuthCode.CAPTCHA_INVALID);
         }
         CodeResult result = verificationService.sendCodeForAnonymous(dto);
@@ -118,8 +123,7 @@ public class AuthController {
             @Valid @RequestBody ForgotPasswordReAuthReq body,
             HttpServletRequest request,
             HttpServletResponse response) {
-        String captchaKey = CookieUtil.getCookieValue(request.getCookies(), "CAPTCHA_KEY");
-        if (!captchaService.verifyCode(captchaKey, body.getCaptcha())) {
+        if (!captchaService.verifyCode(request.getSession(false), body.getCaptcha())) {
             throw new AuthException(AuthCode.CAPTCHA_INVALID);
         }
         String reAuthKey = accountCoreService.initiateForgotPasswordReAuth(body.getIdentifier());
@@ -186,10 +190,10 @@ public class AuthController {
         LoginResult result = loginService.loginByCode(verify, codeKey);
 
         String deviceFp = body.getDeviceFp();
-        if ((deviceFp == null || deviceFp.isBlank()) && body.getDeviceInfo() != null) {
+        if ((StringUtil.isBlank(deviceFp)) && body.getDeviceInfo() != null) {
             deviceFp = body.getDeviceInfo().getDeviceFp();
         }
-        String did = (deviceFp != null && !deviceFp.isBlank())
+        String did = (StringUtil.isNotBlank(deviceFp))
                 ? deviceService.computeDid(result.user().getUid(), deviceFp)
                 : null;
         SsoUserPrincipal principal = SsoUserPrincipal.of(

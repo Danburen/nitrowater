@@ -12,9 +12,7 @@
  * reviewer between clicks.</p>
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-// Explicit style import: an explicit API import bypasses the on-demand resolver's CSS injection.
-import 'element-plus/es/components/message/style/css'
+import { toast } from '../../../shared/ui/toast'
 import {
   fetchAdminModeration,
   reloadAdminModeration,
@@ -120,10 +118,10 @@ async function reload(): Promise<void> {
     const page = await reloadAdminModeration(query())
     report.value = page
     hits.value = page.hits
-    ElMessage.success(`词表已重载：${page.dictionarySize} 条`)
+    toast.success(`词表已重载：${page.dictionarySize} 条`)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
-    ElMessage.error('词表重载失败')
+    toast.error('词表重载失败')
   } finally {
     reloading.value = false
   }
@@ -171,33 +169,35 @@ function formatTime(value: string): string {
     class="admin-card"
   >
     <template #header>
-      <div class="flex flex-wrap items-center gap-3">
-        <span class="text-sm font-semibold">内容安全审核</span>
-        <el-tag
-          :type="report?.mode === 'ENFORCE' ? 'danger' : report?.mode === 'LOG' ? 'warning' : 'info'"
-          size="small"
-        >
-          {{ modeLabel }}
-        </el-tag>
-        <span class="text-xs text-faint">
-          词表 {{ report?.dictionarySize ?? 0 }} 条 · 近 24h 命中 {{ report?.hitsLast24Hours ?? 0 }} ·
-          {{ filtering ? `筛选命中 ${report?.total ?? 0} 条` : `命中合计 ${report?.total ?? 0} 条` }}
-        </span>
-        <span class="grow" />
-        <el-button
-          size="small"
-          :loading="loading"
-          @click="load"
-        >
-          刷新
-        </el-button>
-        <el-button
-          size="small"
-          :loading="reloading"
-          @click="reload"
-        >
-          重载词表
-        </el-button>
+      <div class="admin-toolbar">
+        <div class="flex flex-wrap items-baseline gap-2">
+          <span class="admin-card-title">内容安全审核</span>
+          <el-tag
+            :type="report?.mode === 'ENFORCE' ? 'danger' : report?.mode === 'LOG' ? 'warning' : 'info'"
+            size="small"
+            effect="plain"
+          >
+            {{ modeLabel }}
+          </el-tag>
+          <span class="admin-card-meta">
+            词表 {{ report?.dictionarySize ?? 0 }} 条 · 近 24h 命中 {{ report?.hitsLast24Hours ?? 0 }} ·
+            {{ filtering ? `筛选命中 ${report?.total ?? 0} 条` : `命中合计 ${report?.total ?? 0} 条` }}
+          </span>
+        </div>
+        <div class="admin-actions">
+          <el-button
+            :loading="loading"
+            @click="load"
+          >
+            刷新
+          </el-button>
+          <el-button
+            :loading="reloading"
+            @click="reload"
+          >
+            重载词表
+          </el-button>
+        </div>
       </div>
     </template>
 
@@ -210,44 +210,51 @@ function formatTime(value: string): string {
       class="mb-4"
     />
 
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <el-select
-        v-model="direction"
-        placeholder="全部来源"
-        clearable
-        size="small"
-        class="w-36"
-      >
-        <el-option
-          v-for="option in DIRECTION_OPTIONS"
-          :key="option.value"
-          :label="option.label"
-          :value="option.value"
-        />
-      </el-select>
-      <el-select
-        v-model="action"
-        placeholder="全部处置"
-        clearable
-        size="small"
-        class="w-36"
-      >
-        <el-option
-          v-for="option in ACTION_OPTIONS"
-          :key="option.value"
-          :label="option.label"
-          :value="option.value"
-        />
-      </el-select>
-      <el-button
-        v-if="filtering"
-        size="small"
-        text
-        @click="resetFilters"
-      >
-        清除筛选
-      </el-button>
-    </div>
+    <el-form
+      :inline="true"
+      class="admin-filter-form mb-3"
+      @submit.prevent="load"
+    >
+      <el-form-item label="来源">
+        <el-select
+          v-model="direction"
+          placeholder="全部"
+          clearable
+          class="w-[120px]!"
+        >
+          <el-option
+            v-for="option in DIRECTION_OPTIONS"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="处置">
+        <el-select
+          v-model="action"
+          placeholder="全部"
+          clearable
+          class="w-[120px]!"
+        >
+          <el-option
+            v-for="option in ACTION_OPTIONS"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </el-form-item>
+      <div class="admin-filter-actions">
+        <el-button
+          size="small"
+          text
+          @click="resetFilters"
+        >
+          清除筛选
+        </el-button>
+      </div>
+    </el-form>
 
     <p class="mb-3 text-xs text-faint">
       只有「用户输入」的命中会计入冷却（连续命中会短暂停用 AI 接口）；回答、记忆与画像偏好的命中只用于
@@ -263,6 +270,7 @@ function formatTime(value: string): string {
       <el-table
         :data="hits"
         size="small"
+        stripe
         empty-text="暂无命中记录"
       >
         <el-table-column

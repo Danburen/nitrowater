@@ -36,8 +36,8 @@
 | 用途 | 文件 |
 |------|------|
 | account 全部配置（扁平） | `nitrowater-account/src/main/resources/application.yml` |
+| account 外部密钥层（`spring.config.import: optional:file:./deploy/config/common-dev-secrets.yml`，其 `KEY: value` 即 Spring 属性） | `deploy/config/common-dev-secrets.yml`（gitignored；依赖 workingDir=仓库根） |
 | 前端 OIDC 配置（Vite env） | `nitrowater-web/.env.local`（模板 `.env.example`） |
-| 开发密钥登记（模板） | `deploy/config/common-dev-secrets.yml` |
 | JWT 密钥对 | `deploy/keys/` |
 | 启动脚本（本地 dev） | `bin/`（`start-*.bat`）；冒烟 `bin/test/` |
 | 运维/部署脚本 | `deploy/bin/`（gen-keys / check-env / backup_mysql / reset-sso-db / deploy） |
@@ -126,13 +126,15 @@
 | `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP 账号 / 密码 | 空 |
 | `MAIL_FROM` | 发件地址（real 必填） | 空 |
 | `MAIL_SMTP_AUTH` / `MAIL_SMTP_STARTTLS` | SMTP 认证 / STARTTLS | `true` / `true` |
-| `ALIYUN_SMS_ACCESS_KEY_ID` / `ALIYUN_SMS_ACCESS_KEY_SECRET` | 阿里云短信凭据（real 必填） | 空 |
+| `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET` | 阿里云短信凭据（real 必填；阿里云标准环境变量，SDK 同名读取，**不进配置文件**） | 空 |
 | `ALIYUN_SMS_SIGN_NAME` / `ALIYUN_SMS_TEMPLATE_CODE` | 短信签名 / 模板（real 必填） | 空 |
 | `ALIYUN_SMS_ENDPOINT` | 阿里云短信 endpoint | `dysmsapi.aliyuncs.com` |
 
 > 本地默认 `COMMUNICATION_MODE=mock`：验证码只写入 account 日志，不会真实发送。
 >
-> 生产必须设置 `COMMUNICATION_MODE=real` 并补齐 SMTP / 阿里云短信配置；mock 模式会泄露验证码到日志，禁止用于生产。
+> `COMMUNICATION_MODE=real` 但某个通道没填凭据时，该发送器会打印一条 WARN（列出缺哪几项）并降级为写日志，服务照常启动；补齐变量后该 WARN 消失、自动走真实发送。
+>
+> 生产必须设置 `COMMUNICATION_MODE=real` 并补齐 SMTP / 阿里云短信配置（`deploy/bin/check-env.*` 会校验）；降级/mock 模式会泄露验证码到日志，禁止用于生产。
 
 ## 9. 内容解耦与挂载（词表 / 文档语料 / 外部 skills）
 
@@ -374,7 +376,7 @@ bash deploy/bin/ops-tunnel.sh --host ops.example.com
 ### 12.3 熔断行为
 
 - 触发条件：`enabled && limit > 0 && (input + output + reserved) >= limit`。
-- 只拦**调用模型**的入口：`/api/ai/chat`、`/api/ai/chat/stream`、`/api/ai/agent/**`，返回
+- 只拦**调用模型**的入口：`/api/ai/agent/**`，返回
   `429 {"error":"global_quota_exceeded","limit":...,"used":...}`。
 - **不受影响**：`/api/ai/status`、`/api/ai/usage`、`/api/ai/slash/**`（确定性查询，不花 token）、
   历史会话（前端本地保存）。

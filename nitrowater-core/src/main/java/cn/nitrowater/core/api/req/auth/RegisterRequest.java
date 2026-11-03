@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import cn.nitrowater.lib.common.validation.PhoneNumber;
 import cn.nitrowater.lib.common.validation.StrongPassword;
+import cn.nitrowater.lib.utils.StringUtil;
 
 @Data
 public class RegisterRequest {
@@ -40,7 +41,7 @@ public class RegisterRequest {
      * @param password raw password from the request
      */
     public void setPassword(String password) {
-        this.password = password == null || password.isBlank() ? null : password;
+        this.password = StringUtil.isBlank(password) ? null : password;
     }
 
     @Email(message = "{valid.email_address.invalid}")

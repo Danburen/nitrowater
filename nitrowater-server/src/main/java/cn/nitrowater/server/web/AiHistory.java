@@ -1,10 +1,11 @@
 package cn.nitrowater.server.web;
 
-import cn.nitrowater.server.ai.ChatTurn;
+import cn.nitrowater.server.service.ai.model.ChatTurn;
 import cn.nitrowater.server.web.dto.AiChatTurn;
 
 import java.util.ArrayList;
 import java.util.List;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /** Shared conversion of the client-supplied turn list into the service's {@link ChatTurn}. */
 public final class AiHistory {
@@ -26,7 +27,7 @@ public final class AiHistory {
         List<ChatTurn> history = new ArrayList<>(turns.size() - from);
         for (int i = from; i < turns.size(); i++) {
             AiChatTurn turn = turns.get(i);
-            if (turn != null && turn.content() != null && !turn.content().isBlank()) {
+            if (turn != null && StringUtil.isNotBlank(turn.content())) {
                 history.add(new ChatTurn(turn.role(), turn.content()));
             }
         }

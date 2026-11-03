@@ -94,7 +94,7 @@ const cards = computed(drawCards)
         v-for="card in cards"
         :key="card.title"
         type="button"
-        class="flex flex-col items-start gap-1 rounded-xl border border-line bg-card px-4 py-3.5 text-left transition hover:-translate-y-px hover:border-accent/50 hover:shadow-md"
+        class="flex flex-col items-start gap-1 rounded-[14px] border border-line bg-card px-4 py-3.5 text-left transition hover:-translate-y-px hover:border-accent/50 hover:shadow-md"
         @click="emit('pick', card.prompt)"
       >
         <svg

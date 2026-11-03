@@ -33,6 +33,36 @@ public final class StringUtil {
         return ! isBlank(string);
     }
 
+    /**
+     * Returns the trimmed value, or throws when it is null/blank.
+     *
+     * <p>Stateless validation helper for construction-time checks (records, config bindings,
+     * request mappers): the failure is a programming/configuration error, so it is an
+     * {@link IllegalArgumentException} rather than a business exception.</p>
+     *
+     * @param value candidate value; may be null
+     * @param field fully qualified field name used in the message, e.g. {@code app.ai.collections[].corpus}
+     * @return the trimmed value
+     * @throws IllegalArgumentException when the value is null or blank
+     */
+    public static String requireText(String value, String field) {
+        if (isBlank(value)) {
+            throw new IllegalArgumentException("%s must not be blank".formatted(field));
+        }
+        return value.trim();
+    }
+
+    /**
+     * Returns the trimmed value, or {@code fallback} when it is null/blank.
+     *
+     * @param value candidate value; may be null
+     * @param fallback value to use when the candidate is blank
+     * @return trimmed value, or the fallback
+     */
+    public static String defaultIfBlank(String value, String fallback) {
+        return isBlank(value) ? fallback : value.trim();
+    }
+
     public static String buildPath(char delimiter, String a,String b) {
         return a + delimiter + b;
     }
@@ -165,7 +195,7 @@ public final class StringUtil {
 
     public static boolean anyIsBlank(String... strings) {
         for (String string : strings) {
-            if (string == null || string.trim().isEmpty()) return true;
+            if (StringUtil.isBlank(string)) return true;
         }
         return false;
     }

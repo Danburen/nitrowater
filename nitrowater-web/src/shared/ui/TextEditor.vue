@@ -247,9 +247,3 @@ defineExpose({ focus, undo, redo, wrapSelection, insertText, insertAfterSelectio
     />
   </div>
 </template>
-
-<style scoped>
-textarea::placeholder {
-  color: var(--color-faint);
-}
-</style>

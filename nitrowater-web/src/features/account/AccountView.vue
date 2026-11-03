@@ -7,7 +7,7 @@
  * target is verified.</p>
  */
 import { reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from '../../shared/ui/toast'
 import { useAuth } from '../../auth/useAuth'
 import {
   activateEmail,
@@ -25,6 +25,7 @@ import {
   type ReAuthScene,
 } from '../../api/account'
 import ReAuthDialog from './ReAuthDialog.vue'
+import AppDialog from '../../shared/ui/AppDialog.vue'
 
 const { session, loading: authLoading, login, logout } = useAuth()
 
@@ -92,7 +93,7 @@ async function load(): Promise<void> {
 async function saveNickname(): Promise<void> {
   const value = nickname.value.trim()
   if (!value || value.length > 12) {
-    ElMessage.warning('昵称长度需为 1-12 个字符')
+    toast.warning('昵称长度需为 1-12 个字符')
     return
   }
   savingNickname.value = true
@@ -100,9 +101,9 @@ async function saveNickname(): Promise<void> {
     await updateNickname(value)
     if (me.value) me.value = { ...me.value, nickname: value }
     if (session.value) session.value = { ...session.value, name: value }
-    ElMessage.success('昵称已更新')
+    toast.success('昵称已更新')
   } catch (cause) {
-    ElMessage.error(message(cause))
+    toast.error(message(cause))
   } finally {
     savingNickname.value = false
   }
@@ -122,7 +123,7 @@ async function onReAuthSuccess(token: string): Promise<void> {
   try {
     await action(token)
   } catch (cause) {
-    ElMessage.error(message(cause))
+    toast.error(message(cause))
   }
 }
 
@@ -139,11 +140,11 @@ function openPassword(): void {
 
 async function savePassword(): Promise<void> {
   if (passwordDialog.newPwd !== passwordDialog.confirmPwd) {
-    ElMessage.warning('两次输入的密码不一致')
+    toast.warning('两次输入的密码不一致')
     return
   }
   if (!PASSWORD_RE.test(passwordDialog.newPwd)) {
-    ElMessage.warning('密码需 8-20 位，且包含大小写字母和数字')
+    toast.warning('密码需 8-20 位，且包含大小写字母和数字')
     return
   }
   passwordDialog.submitting = true
@@ -154,10 +155,10 @@ async function savePassword(): Promise<void> {
       await resetPassword(passwordDialog.newPwd, passwordDialog.confirmPwd, passwordDialog.token)
     }
     passwordDialog.visible = false
-    ElMessage.success(passwordDialog.mode === 'set' ? '密码设置成功，请重新登录' : '密码修改成功，请重新登录')
+    toast.success(passwordDialog.mode === 'set' ? '密码设置成功，请重新登录' : '密码修改成功，请重新登录')
     window.setTimeout(() => logout(), 700)
   } catch (cause) {
-    ElMessage.error(message(cause))
+    toast.error(message(cause))
   } finally {
     passwordDialog.submitting = false
   }
@@ -196,7 +197,7 @@ function openPhoneActivate(): void {
 function openEmailUnbind(): void {
   askReAuth('unbind', async (token) => {
     await unbindEmail(token)
-    ElMessage.success('邮箱已解绑')
+    toast.success('邮箱已解绑')
     await load()
   })
 }
@@ -205,7 +206,7 @@ async function submitTarget(): Promise<void> {
   const value = targetDialog.value.trim()
   const isEmail = targetDialog.kind.endsWith('email')
   if (isEmail ? !EMAIL_RE.test(value) : !PHONE_RE.test(value)) {
-    ElMessage.warning(isEmail ? '请输入有效邮箱地址' : '请输入有效手机号')
+    toast.warning(isEmail ? '请输入有效邮箱地址' : '请输入有效手机号')
     return
   }
   targetDialog.visible = false
@@ -234,7 +235,7 @@ function openCodeDialog(title: string, kind: 'email' | 'phone', verifyKey: strin
 async function submitCode(): Promise<void> {
   const code = codeDialog.code.trim()
   if (code.length < 6) {
-    ElMessage.warning('请输入 6 位验证码')
+    toast.warning('请输入 6 位验证码')
     return
   }
   codeDialog.submitting = true
@@ -245,10 +246,10 @@ async function submitCode(): Promise<void> {
       await verifyChangePhone(codeDialog.verifyKey, code)
     }
     codeDialog.visible = false
-    ElMessage.success(codeDialog.kind === 'email' ? '邮箱已更新' : '手机号已更新')
+    toast.success(codeDialog.kind === 'email' ? '邮箱已更新' : '手机号已更新')
     await load()
   } catch (cause) {
-    ElMessage.error(message(cause))
+    toast.error(message(cause))
   } finally {
     codeDialog.submitting = false
   }
@@ -299,7 +300,7 @@ function message(cause: unknown): string {
     </div>
 
     <div class="grid gap-5 md:grid-cols-[230px_minmax(0,1fr)]">
-      <aside class="h-fit rounded-xl border border-line bg-card p-5">
+      <aside class="h-fit rounded-[14px] border border-line bg-card p-5">
         <div class="mb-5 flex items-center gap-3">
           <span class="grid size-12 shrink-0 place-items-center rounded-full bg-soft text-lg font-semibold text-dim">
             {{ displayName().slice(0, 1) }}
@@ -346,7 +347,7 @@ function message(cause: unknown): string {
         <template v-if="me">
           <section
             id="profile"
-            class="rounded-xl border border-line bg-card p-5"
+            class="rounded-[14px] border border-line bg-card p-5"
           >
             <div class="mb-4">
               <h2 class="text-base font-semibold text-ink">
@@ -379,7 +380,7 @@ function message(cause: unknown): string {
 
           <section
             id="security"
-            class="rounded-xl border border-line bg-card p-5"
+            class="rounded-[14px] border border-line bg-card p-5"
           >
             <div class="mb-4">
               <h2 class="text-base font-semibold text-ink">
@@ -409,7 +410,7 @@ function message(cause: unknown): string {
 
           <section
             id="contact"
-            class="rounded-xl border border-line bg-card p-5"
+            class="rounded-[14px] border border-line bg-card p-5"
           >
             <div class="mb-4">
               <h2 class="text-base font-semibold text-ink">
@@ -522,11 +523,14 @@ function message(cause: unknown): string {
       @success="onReAuthSuccess"
     />
 
-    <el-dialog
+    <AppDialog
       v-model="targetDialog.visible"
       :title="targetDialog.title"
       width="420px"
-      :close-on-click-modal="false"
+      confirm-text="下一步"
+      :confirm-loading="targetDialog.submitting"
+      :close-on-overlay="false"
+      @confirm="submitTarget"
     >
       <label class="block text-sm text-dim">
         {{ targetDialog.label }}
@@ -538,25 +542,15 @@ function message(cause: unknown): string {
           @keyup.enter="submitTarget"
         >
       </label>
-      <template #footer>
-        <el-button @click="targetDialog.visible = false">
-          取消
-        </el-button>
-        <el-button
-          type="primary"
-          :loading="targetDialog.submitting"
-          @click="submitTarget"
-        >
-          下一步
-        </el-button>
-      </template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog
+    <AppDialog
       v-model="codeDialog.visible"
       :title="codeDialog.title"
       width="400px"
-      :close-on-click-modal="false"
+      :close-on-overlay="false"
+      :confirm-loading="codeDialog.submitting"
+      @confirm="submitCode"
     >
       <label class="block text-sm text-dim">
         6 位验证码
@@ -569,25 +563,15 @@ function message(cause: unknown): string {
           @keyup.enter="submitCode"
         >
       </label>
-      <template #footer>
-        <el-button @click="codeDialog.visible = false">
-          取消
-        </el-button>
-        <el-button
-          type="primary"
-          :loading="codeDialog.submitting"
-          @click="submitCode"
-        >
-          确认
-        </el-button>
-      </template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog
+    <AppDialog
       v-model="passwordDialog.visible"
       :title="passwordDialog.mode === 'set' ? '设置密码' : '修改密码'"
       width="420px"
-      :close-on-click-modal="false"
+      :close-on-overlay="false"
+      :confirm-loading="passwordDialog.submitting"
+      @confirm="savePassword"
     >
       <div class="space-y-3">
         <label class="block text-sm text-dim">
@@ -615,18 +599,6 @@ function message(cause: unknown): string {
           修改成功后当前所有会话将失效，需要重新登录。
         </p>
       </div>
-      <template #footer>
-        <el-button @click="passwordDialog.visible = false">
-          取消
-        </el-button>
-        <el-button
-          type="primary"
-          :loading="passwordDialog.submitting"
-          @click="savePassword"
-        >
-          确认
-        </el-button>
-      </template>
-    </el-dialog>
+    </AppDialog>
   </main>
 </template>

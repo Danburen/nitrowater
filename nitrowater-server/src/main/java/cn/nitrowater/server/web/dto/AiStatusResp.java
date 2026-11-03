@@ -1,5 +1,7 @@
 package cn.nitrowater.server.web.dto;
 
+import cn.nitrowater.server.service.ai.AiUsageService;
+
 import java.time.Instant;
 import java.time.ZoneOffset;
 
@@ -67,7 +69,7 @@ public record AiStatusResp(
          * @param usage service snapshot
          * @return the wire view, with the rollover instant derived from the usage date
          */
-        public static GlobalQuota from(cn.nitrowater.server.ai.AiUsageService.GlobalUsage usage) {
+        public static GlobalQuota from(AiUsageService.GlobalUsage usage) {
             Instant resetAt = usage.date().plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
             return new GlobalQuota(usage.enabled(), usage.dailyTokenLimit(), usage.totalTokens(),
                     usage.tripped(), resetAt);

@@ -6,10 +6,10 @@
  * {@code ToolTrace} and is collapsed by default. User turns are plain text.</p>
  */
 import { computed, ref } from 'vue'
-import type { ChatMessage } from '../types'
+import type { ChatMessage, LiveStep } from '../types'
 import MarkdownContent from './MarkdownContent.vue'
 import ToolTrace from './ToolTrace.vue'
-import LiveActivity from './LiveActivity.vue'
+import AgentLiveSteps from './AgentLiveSteps.vue'
 
 const props = defineProps<{
   message: ChatMessage
@@ -17,6 +17,8 @@ const props = defineProps<{
   canRegenerate: boolean
   busy: boolean
   userInitial: string
+  /** Live step timeline of the running turn; empty for every settled message. */
+  steps: readonly LiveStep[]
 }>()
 
 const emit = defineEmits<{
@@ -67,7 +69,13 @@ async function copy(): Promise<void> {
         >内容已过滤</span>
       </div>
 
+      <AgentLiveSteps
+        v-if="!isUser && steps.length"
+        :steps="steps"
+      />
+
       <div
+        v-if="isUser || message.content || message.error || message.stopped"
         class="w-fit max-w-full rounded-2xl px-4 py-2.5 text-[14px] leading-[1.65]"
         :class="isUser
           ? 'rounded-tr-[6px] bg-accent/10 text-ink'
@@ -80,10 +88,6 @@ async function copy(): Promise<void> {
           {{ message.content }}
         </p>
         <template v-else>
-          <LiveActivity
-            v-if="streaming && (message.activity != null || !message.content)"
-            :activity="message.activity ?? null"
-          />
           <MarkdownContent
             v-if="message.content"
             :text="message.content"
@@ -91,7 +95,7 @@ async function copy(): Promise<void> {
             :sources="message.sources"
           />
           <span
-            v-if="streaming"
+            v-if="streaming && message.content"
             class="ml-0.5 inline-block h-[0.95em] w-[3px] animate-pulse rounded-sm bg-accent align-[-0.15em]"
           />
           <p

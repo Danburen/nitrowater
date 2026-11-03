@@ -50,8 +50,8 @@ class SandboxExecutionGuardTest {
 
         assertThatThrownBy(() -> guard.admit("u1"))
                 .isInstanceOfSatisfying(SandboxExecutionGuard.GuardException.class, ex -> {
-                    assertThat(ex.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
-                    assertThat(ex.code()).isEqualTo("rate_limited");
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+                    assertThat(ex.getCode()).isEqualTo("rate_limited");
                 });
     }
 
@@ -66,8 +66,8 @@ class SandboxExecutionGuardTest {
 
         assertThatThrownBy(() -> guard.admit("u1"))
                 .isInstanceOfSatisfying(SandboxExecutionGuard.GuardException.class, ex -> {
-                    assertThat(ex.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
-                    assertThat(ex.code()).isEqualTo("daily_quota");
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+                    assertThat(ex.getCode()).isEqualTo("daily_quota");
                 });
     }
 
@@ -82,8 +82,8 @@ class SandboxExecutionGuardTest {
 
         assertThatThrownBy(() -> guard.admit("u1"))
                 .isInstanceOfSatisfying(SandboxExecutionGuard.GuardException.class, ex -> {
-                    assertThat(ex.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
-                    assertThat(ex.code()).isEqualTo("queue_full");
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+                    assertThat(ex.getCode()).isEqualTo("queue_full");
                 });
     }
 
@@ -118,8 +118,8 @@ class SandboxExecutionGuardTest {
 
         assertThatThrownBy(() -> guard.admit(" "))
                 .isInstanceOfSatisfying(SandboxExecutionGuard.GuardException.class, ex -> {
-                    assertThat(ex.status()).isEqualTo(HttpStatus.UNAUTHORIZED);
-                    assertThat(ex.code()).isEqualTo("unauthorized");
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(ex.getCode()).isEqualTo("unauthorized");
                 });
     }
 }

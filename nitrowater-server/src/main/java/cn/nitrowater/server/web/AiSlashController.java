@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web;
 
-import cn.nitrowater.server.ai.conversation.ConversationService;
-import cn.nitrowater.server.ai.slash.AiSlashService;
+import cn.nitrowater.server.service.ai.ConversationService;
+import cn.nitrowater.server.service.ai.AiSlashService;
 import cn.nitrowater.server.web.dto.AiSlashClearReq;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;

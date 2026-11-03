@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web.dto;
 
-import cn.nitrowater.server.ai.DocSource;
-import cn.nitrowater.server.ai.agent.ToolCall;
+import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 
 import java.util.List;
 

@@ -162,10 +162,12 @@ export interface AiToolCall {
   name: string
   argument: string
   resultCount: number
-  /** Normalised outcome, e.g. ok / compile_error / queued / retry_exhausted. */
+  /** Outcome code, e.g. tool.ok / tool.compile_error / tool.queued. */
   status?: string
   /** Short human-readable detail for the tool chip. */
   summary?: string | null
+  /** Whether the call was handled; absent only on rows stored before the code vocabulary. */
+  ok?: boolean
 }
 
 /** A tool in the admin catalog. */
@@ -183,10 +185,22 @@ export interface ChatTurn {
   content: string
 }
 
-/** One live progress marker from the agent loop. */
+/** One live progress marker of an agent turn (wire shape of the {@code step} SSE event). */
 export interface AgentStep {
   phase: 'thinking' | 'tool_start' | 'tool_end' | string
   tool: string | null
+  /** Per-invocation id, so a start can be paired with its end. */
+  callId?: string | null
+  /** Human-readable argument summary, sent on {@code tool_start}. */
+  argument?: string | null
+  /** Outcome code (tool.ok / tool.compile_error / tool.queued …), sent on {@code tool_end}. */
+  status?: string | null
+  /** Whether the call was handled; the badge reads this instead of comparing codes. */
+  ok?: boolean | null
+  /** Results produced, sent on {@code tool_end}. */
+  resultCount?: number | null
+  /** Wall-clock duration of the invocation, sent on {@code tool_end}. */
+  durationMs?: number | null
 }
 
 /** How the model ended the turn. */

@@ -182,7 +182,7 @@ defineExpose({ focus })
           >
             <button
               type="button"
-              class="chip-toggle"
+              class="chip-toggle inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11.5px] text-dim transition hover:border-line-strong hover:text-ink"
               :class="{ 'is-on': webSearch }"
               :aria-pressed="webSearch"
               :title="webSearch ? '本轮联网：开' : '本轮联网：关'"
@@ -267,3 +267,13 @@ defineExpose({ focus })
     </form>
   </div>
 </template>
+
+<style scoped>
+/* On-state only: the base pill is utilities in the template, and swapping border/text colours from
+   a state class keeps them from fighting the base utilities over CSS order. */
+.chip-toggle.is-on {
+  border-color: color-mix(in oklab, var(--color-accent) 40%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
+}
+</style>

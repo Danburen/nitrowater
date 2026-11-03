@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web;
 
-import cn.nitrowater.server.ai.AiQuotaExceededException;
+import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

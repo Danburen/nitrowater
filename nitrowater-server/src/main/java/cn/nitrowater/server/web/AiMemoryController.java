@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web;
 
-import cn.nitrowater.server.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.AiMemoryService;
 import cn.nitrowater.server.web.dto.AiMemoryResp;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -1,10 +1,11 @@
 package cn.nitrowater.server.ai.tool;
 
-import cn.nitrowater.server.ai.agent.AgentTrace;
-import cn.nitrowater.server.ai.agent.ToolCall;
+import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
+import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 import cn.nitrowater.server.config.properties.SandboxProperties;
 import cn.nitrowater.server.infra.exception.SandboxException;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
+import cn.nitrowater.server.service.ai.tool.RunCodeTool;
 import cn.nitrowater.server.service.sandbox.SandboxExecutionGuard;
 import cn.nitrowater.server.web.dto.RunRequest;
 import cn.nitrowater.server.web.dto.RunResponse;
@@ -44,9 +45,9 @@ class RunCodeToolTest {
         String json = new RunCodeTool(guard, properties())
                 .runCode("java", "class Main {}", null, context(trace));
 
-        assertThat(json).contains("\"status\":\"ok\"", "\"stdout\":\"hello\"", "\"attempt\":1");
+        assertThat(json).contains("\"code\":\"tool.ok\"", "\"stdout\":\"hello\"", "\"attempt\":1");
         assertThat(trace.calls()).containsExactly(
-                new ToolCall("runCode", "java · class Main {}", 1, "ok", "运行成功 · 5ms"));
+                new ToolCall("runCode", "java · class Main {}", 1, "tool.ok", "运行成功 · 5ms"));
     }
 
     @Test
@@ -58,8 +59,8 @@ class RunCodeToolTest {
         String json = new RunCodeTool(guard, properties())
                 .runCode("java", "class Main {}", null, context(trace));
 
-        assertThat(json).contains("\"status\":\"queued\"", "\"waiting\":3");
-        assertThat(trace.calls()).extracting(ToolCall::status).containsExactly("queued");
+        assertThat(json).contains("\"code\":\"tool.queued\"", "\"waiting\":3");
+        assertThat(trace.calls()).extracting(ToolCall::status).containsExactly("tool.queued");
         assertThat(trace.runCodeAttempts()).isZero();
         verify(guard, never()).execute(anyString(), any(), anyLong());
     }
@@ -72,7 +73,7 @@ class RunCodeToolTest {
         String json = new RunCodeTool(guard, properties())
                 .runCode("java", "class Main {}", null, context(new AgentTrace("u1")));
 
-        assertThat(json).contains("\"status\":\"queue_full\"");
+        assertThat(json).contains("\"code\":\"tool.queue_full\"");
         verify(guard, never()).execute(anyString(), any(), anyLong());
     }
 
@@ -91,10 +92,11 @@ class RunCodeToolTest {
         tool.runCode("java", "class Main { broken }", null, context(trace));
         String fourth = tool.runCode("java", "class Main { broken }", null, context(trace));
 
-        assertThat(first).contains("\"status\":\"compile_error\"", "cannot find symbol");
-        assertThat(fourth).contains("\"status\":\"retry_exhausted\"", "\"attempt\":4");
+        assertThat(first).contains("\"code\":\"tool.compile_error\"", "cannot find symbol");
+        assertThat(fourth).contains("\"code\":\"tool.retry_exhausted\"", "\"attempt\":4");
         assertThat(trace.calls()).extracting(ToolCall::status)
-                .containsExactly("compile_error", "compile_error", "compile_error", "retry_exhausted");
+                .containsExactly("tool.compile_error", "tool.compile_error", "tool.compile_error",
+                        "tool.retry_exhausted");
         assertThat(trace.runCodeAttempts()).isEqualTo(4);
         verify(guard, times(3)).execute(eq("u1"), any(RunRequest.class), eq(WAIT_MS));
     }
@@ -110,14 +112,14 @@ class RunCodeToolTest {
         RunCodeTool tool = new RunCodeTool(guard, properties());
 
         String limited = tool.runCode("java", "class Main {}", null, context(trace));
-        assertThat(limited).contains("\"status\":\"rate_limited\"")
+        assertThat(limited).contains("\"code\":\"tool.rate_limited\"")
                 .doesNotContain("internal quota detail");
 
         when(guard.execute(eq("u1"), any(RunRequest.class), eq(WAIT_MS)))
                 .thenThrow(new SandboxException(HttpStatus.SERVICE_UNAVAILABLE,
                         "sandbox_unavailable", "piston stack trace"));
         String unavailable = tool.runCode("java", "class Main {}", null, context(trace));
-        assertThat(unavailable).contains("\"status\":\"server_unavailable\"")
+        assertThat(unavailable).contains("\"code\":\"tool.unavailable\"")
                 .doesNotContain("piston stack trace");
     }
 
@@ -128,7 +130,7 @@ class RunCodeToolTest {
         String json = new RunCodeTool(guard, properties())
                 .runCode("java", "class Main {}", null, context(new AgentTrace()));
 
-        assertThat(json).contains("\"status\":\"unauthorized\"");
+        assertThat(json).contains("\"code\":\"tool.unauthorized\"");
         verify(guard, never()).snapshot();
     }
 

@@ -7,6 +7,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Adds {@code prompt=login} when the SPA asks to add another account.
@@ -53,7 +54,7 @@ public class SwitchAccountAuthorizationRequestResolver implements OAuth2Authoriz
         OAuth2AuthorizationRequest.Builder builder = OAuth2AuthorizationRequest.from(request)
                 .additionalParameters(additional);
         String uri = request.getAuthorizationRequestUri();
-        if (uri != null && !uri.isBlank()) {
+        if (StringUtil.isNotBlank(uri)) {
             builder.authorizationRequestUri(UriComponentsBuilder.fromUriString(uri)
                     .replaceQueryParam(PROMPT_PARAMETER, "login")
                     .build(true)

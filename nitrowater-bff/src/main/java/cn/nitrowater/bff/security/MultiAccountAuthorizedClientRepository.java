@@ -69,9 +69,10 @@ public class MultiAccountAuthorizedClientRepository implements OAuth2AuthorizedC
         if (authorizedClient == null || principal == null) {
             return;
         }
-        Map<String, OAuth2AuthorizedClient> clients = writable(request);
+        Map<String, OAuth2AuthorizedClient> clients = copy(request);
         clients.put(key(authorizedClient.getClientRegistration().getRegistrationId(),
                 principal.getName()), authorizedClient);
+        write(request, clients);
     }
 
     @Override
@@ -80,8 +81,9 @@ public class MultiAccountAuthorizedClientRepository implements OAuth2AuthorizedC
         if (registrationId == null || principal == null) {
             return;
         }
-        Map<String, OAuth2AuthorizedClient> clients = writable(request);
+        Map<String, OAuth2AuthorizedClient> clients = copy(request);
         clients.remove(key(registrationId, principal.getName()));
+        write(request, clients);
     }
 
     /**
@@ -97,8 +99,9 @@ public class MultiAccountAuthorizedClientRepository implements OAuth2AuthorizedC
         if (registrationId == null || uid == null) {
             return;
         }
-        Map<String, OAuth2AuthorizedClient> clients = writable(request);
+        Map<String, OAuth2AuthorizedClient> clients = copy(request);
         clients.remove(key(registrationId, uid));
+        write(request, clients);
     }
 
     /**
@@ -130,20 +133,38 @@ public class MultiAccountAuthorizedClientRepository implements OAuth2AuthorizedC
     }
 
     /**
-     * Returns a mutable map and writes it back into the (possibly new) session.
+     * Reads the current map into a mutable copy.
      *
-     * <p>A fresh map is always created: the object read from Redis-backed sessions must not be
-     * assumed mutable, and re-setting the attribute guarantees Spring Session sees the change.</p>
+     * <p>Callers mutate the copy and then {@link #write} it back: the attribute must be set
+     * <b>after</b> the change, otherwise a store that flushes on {@code setAttribute} (Spring
+     * Session's {@code immediate} mode, used by this service) would persist the untouched copy and
+     * silently drop the new token.</p>
+     *
+     * @param request current request
+     * @return a mutable copy of the stored map, empty when the session has none yet
      */
-    private static Map<String, OAuth2AuthorizedClient> writable(HttpServletRequest request) {
-        HttpSession session = request.getSession(true);
+    private static Map<String, OAuth2AuthorizedClient> copy(HttpServletRequest request) {
         Map<String, OAuth2AuthorizedClient> clients = new LinkedHashMap<>();
-        Map<String, OAuth2AuthorizedClient> existing = read(session);
+        HttpSession session = request.getSession(false);
+        Map<String, OAuth2AuthorizedClient> existing = session == null ? null : read(session);
         if (existing != null) {
             clients.putAll(existing);
         }
-        session.setAttribute(SESSION_ATTRIBUTE, clients);
         return clients;
+    }
+
+    /**
+     * Stores the map, creating the session when necessary.
+     *
+     * <p>A fresh map instance is always written: the object read from a Redis-backed session must
+     * not be assumed mutable, and re-setting the attribute is also what tells Spring Session the
+     * attribute changed.</p>
+     *
+     * @param request current request
+     * @param clients map to persist
+     */
+    private static void write(HttpServletRequest request, Map<String, OAuth2AuthorizedClient> clients) {
+        request.getSession(true).setAttribute(SESSION_ATTRIBUTE, clients);
     }
 
     private static Map<String, OAuth2AuthorizedClient> read(HttpSession session) {

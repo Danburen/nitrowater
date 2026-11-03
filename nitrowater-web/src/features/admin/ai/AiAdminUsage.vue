@@ -2,15 +2,17 @@
 /**
  * Per-user UTC-day usage with selection and reset.
  *
- * <p>Element Plus table: the selection column replaces the hand-rolled checkboxes, and reset goes
- * through {@code ElMessageBox.confirm} instead of {@code window.confirm}.</p>
+ * <p>Element Plus table: the selection column replaces the hand-rolled checkboxes; resets go
+ * through the shared {@link confirm} instead of {@code window.confirm}, so the dialog matches the
+ * rest of the business pages.</p>
+ *
+ * <p>Reset sits on the object it acts on: one user is reset from their row, a selection from the
+ * list header. Only the platform-wide breaker lives in the danger zone — a page-level block is for
+ * standalone destructive actions (resets that do not target a row), not for per-row maintenance.</p>
  */
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-// Imported explicitly alongside the API: the on-demand resolver only injects these styles when it
-// is the one importing the symbol, and an unstyled MessageBox renders at the top-left corner.
-import 'element-plus/es/components/message/style/css'
-import 'element-plus/es/components/message-box/style/css'
+import { confirm } from '../../../shared/ui/confirm'
+import { toast } from '../../../shared/ui/toast'
 import {
   fetchAdminAiUsage,
   fetchAdminAiUsageSummary,
@@ -19,12 +21,16 @@ import {
   type AiUsageSummary,
   type AiUserUsage,
 } from '../../../api/ai'
+import AdminDangerRow from '../AdminDangerRow.vue'
+import AdminDangerZone from '../AdminDangerZone.vue'
 
 const rows = ref<AiUserUsage[]>([])
 const summary = ref<AiUsageSummary | null>(null)
 const selected = ref<number[]>([])
 const loading = ref(false)
 const resetting = ref(false)
+/** Row whose own reset is in flight, so only that button spins. */
+const resettingUid = ref<number | null>(null)
 const globalResetting = ref(false)
 const error = ref('')
 /** False until the first load settles; prevents an empty table / empty state from flashing. */
@@ -63,24 +69,21 @@ async function load(): Promise<void> {
 
 /** Clears today's platform-wide counter, which also lifts the breaker for the rest of the day. */
 async function resetGlobal(): Promise<void> {
-  try {
-    await ElMessageBox.confirm('将清空今日全站用量并立即解除熔断，继续？', '确认解除', {
-      type: 'warning',
-      confirmButtonText: '解除',
-      cancelButtonText: '取消',
-    })
-  } catch {
-    return
-  }
+  if (!(await confirm({
+    title: '确认解除',
+    message: '将清空今日全站用量并立即解除熔断，继续？',
+    confirmText: '解除',
+    danger: true,
+  }))) return
   globalResetting.value = true
   error.value = ''
   try {
     await resetAdminGlobalUsage()
-    ElMessage.success('已解除今日全站熔断')
+    toast.success('已解除今日全站熔断')
     await load()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
-    ElMessage.error('解除失败')
+    toast.error('解除失败')
   } finally {
     globalResetting.value = false
   }
@@ -110,28 +113,38 @@ function onSelectionChange(picked: AiUserUsage[]): void {
   selected.value = picked.map((row) => row.uid)
 }
 
-async function reset(uids: readonly number[], label: string): Promise<void> {
-  try {
-    await ElMessageBox.confirm(`重置${label}今日 token 用量？`, '确认重置', {
-      type: 'warning',
-      confirmButtonText: '重置',
-      cancelButtonText: '取消',
-    })
-  } catch {
-    return
+/**
+ * Clears today's tokens for the given users.
+ *
+ * @param uids  users to reset
+ * @param label user-facing target description for the confirm dialog
+ * @param uid   single-user mode: the row that owns the spinner, {@code null} for a bulk reset
+ */
+async function reset(uids: readonly number[], label: string, uid: number | null = null): Promise<void> {
+  if (resetting.value || resettingUid.value !== null) return
+  if (!(await confirm({
+    title: '确认重置',
+    message: `重置${label}今日 token 用量？`,
+    confirmText: '重置',
+    danger: true,
+  }))) return
+  if (uid === null) {
+    resetting.value = true
+  } else {
+    resettingUid.value = uid
   }
-  resetting.value = true
   error.value = ''
   try {
     const count = await resetAdminAiUsage(uids)
     selected.value = []
-    ElMessage.success(`已重置 ${count} 位用户的今日用量`)
+    toast.success(`已重置 ${count} 位用户的今日用量`)
     await load()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
-    ElMessage.error('重置用量失败')
+    toast.error('重置用量失败')
   } finally {
     resetting.value = false
+    resettingUid.value = null
   }
 }
 </script>
@@ -144,7 +157,6 @@ async function reset(uids: readonly number[], label: string): Promise<void> {
       type="error"
       show-icon
       :closable="false"
-      class="mb-3"
     />
 
     <el-card
@@ -152,7 +164,7 @@ async function reset(uids: readonly number[], label: string): Promise<void> {
       class="admin-card"
     >
       <template #header>
-        <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="admin-toolbar">
           <div class="flex items-baseline gap-2">
             <span class="admin-card-title">全站用量</span>
             <span class="admin-card-meta">UTC {{ summary?.today ?? '—' }} · 近 31 天</span>
@@ -179,33 +191,24 @@ async function reset(uids: readonly number[], label: string): Promise<void> {
             >
               正常
             </el-tag>
-            <el-button
-              type="warning"
-              plain
-              :disabled="globalResetting"
-              :loading="globalResetting"
-              @click="resetGlobal"
-            >
-              解除今日熔断
-            </el-button>
           </div>
         </div>
       </template>
 
       <div class="mb-4 grid gap-3 sm:grid-cols-3">
-        <div class="admin-stat">
-          <div class="admin-stat-label">今日用量</div>
-          <div class="admin-stat-value">{{ formatTokens(summary?.todayTokens ?? 0) }}</div>
+        <div class="rounded-[12px] border border-line bg-card p-3">
+          <div class="text-[12px] text-faint">今日用量</div>
+          <div class="mt-1 font-mono text-[17px] leading-tight text-ink">{{ formatTokens(summary?.todayTokens ?? 0) }}</div>
         </div>
-        <div class="admin-stat">
-          <div class="admin-stat-label">每日上限</div>
-          <div class="admin-stat-value">
+        <div class="rounded-[12px] border border-line bg-card p-3">
+          <div class="text-[12px] text-faint">每日上限</div>
+          <div class="mt-1 font-mono text-[17px] leading-tight text-ink">
             {{ summary && summary.globalDailyTokenLimit > 0 ? formatTokens(summary.globalDailyTokenLimit) : '不限制' }}
           </div>
         </div>
-        <div class="admin-stat">
-          <div class="admin-stat-label">今日请求数 · 占用</div>
-          <div class="admin-stat-value">
+        <div class="rounded-[12px] border border-line bg-card p-3">
+          <div class="text-[12px] text-faint">今日请求数 · 占用</div>
+          <div class="mt-1 font-mono text-[17px] leading-tight text-ink">
             {{ formatTokens(summary?.todayRequests ?? 0) }}
             <span class="ml-2 text-xs text-faint">{{ globalPercent }}%</span>
           </div>
@@ -216,6 +219,7 @@ async function reset(uids: readonly number[], label: string): Promise<void> {
         :data="summary?.days ?? []"
         size="small"
         max-height="240"
+        stripe
         empty-text="暂无用量记录"
       >
         <el-table-column
@@ -258,32 +262,25 @@ async function reset(uids: readonly number[], label: string): Promise<void> {
       class="admin-card"
     >
       <template #header>
-        <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="admin-toolbar">
           <div class="flex items-baseline gap-2">
             <span class="admin-card-title">用户今日用量</span>
             <span class="admin-card-meta">UTC · {{ usageDate }}</span>
           </div>
           <div class="admin-actions">
             <el-button
+              type="danger"
+              plain
+              :disabled="!hasSelection || loading || resetting || resettingUid !== null"
+              @click="reset(selected, '所选用户')"
+            >
+              重置所选{{ hasSelection ? `（${selected.length}）` : '' }}
+            </el-button>
+            <el-button
               :disabled="loading || resetting"
               @click="load"
             >
               刷新
-            </el-button>
-            <el-button
-              type="danger"
-              plain
-              :disabled="!hasSelection || resetting"
-              @click="reset(selected, '所选用户')"
-            >
-              重置所选（{{ selected.length }}）
-            </el-button>
-            <el-button
-              :disabled="rows.length === 0 || resetting"
-              :loading="resetting"
-              @click="reset([], '所有用户')"
-            >
-              重置全部
             </el-button>
           </div>
         </div>
@@ -301,6 +298,7 @@ async function reset(uids: readonly number[], label: string): Promise<void> {
         :data="rows"
         row-key="uid"
         size="small"
+        stripe
         @selection-change="onSelectionChange"
       >
         <template #empty>
@@ -369,7 +367,38 @@ async function reset(uids: readonly number[], label: string): Promise<void> {
           align="right"
           prop="usage.estimatedRequests"
         />
+        <el-table-column
+          label="操作"
+          width="80"
+          align="right"
+        >
+          <template #default="{ row }">
+            <el-button
+              link
+              type="danger"
+              :disabled="resetting || resettingUid !== null"
+              :loading="resettingUid === row.uid"
+              @click="reset([row.uid], displayName(row), row.uid)"
+            >
+              重置
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
+
+    <AdminDangerZone>
+      <AdminDangerRow label="解除今日熔断">
+        <el-button
+          type="danger"
+          plain
+          :disabled="globalResetting"
+          :loading="globalResetting"
+          @click="resetGlobal"
+        >
+          解除熔断
+        </el-button>
+      </AdminDangerRow>
+    </AdminDangerZone>
   </div>
 </template>

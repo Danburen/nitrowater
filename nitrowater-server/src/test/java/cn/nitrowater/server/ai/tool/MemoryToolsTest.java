@@ -1,8 +1,9 @@
 package cn.nitrowater.server.ai.tool;
 
-import cn.nitrowater.server.ai.agent.AgentTrace;
-import cn.nitrowater.server.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
+import cn.nitrowater.server.service.ai.AiMemoryService;
 import cn.nitrowater.server.infra.enums.MemoryKind;
+import cn.nitrowater.server.service.ai.tool.MemoryTools;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 
@@ -34,13 +35,29 @@ class MemoryToolsTest {
 
         String json = tools.saveMemory("preference", "Use Java 25", context(trace));
 
-        assertThat(json).contains("\"status\":\"saved\"")
+        assertThat(json).contains("\"code\":\"tool.saved\"")
                 .contains("\"uuid\":\"m-1\"")
                 .contains("\"kind\":\"PREFERENCE\"");
         assertThat(trace.calls()).singleElement().satisfies(call -> {
             assertThat(call.name()).isEqualTo("saveMemory");
-            assertThat(call.status()).isEqualTo("saved");
+            assertThat(call.status()).isEqualTo("tool.saved");
+            assertThat(call.ok()).isTrue();
         });
+    }
+
+    @Test
+    void updatingAnExistingMemoryIsReportedAsSuccessNotFailure() {
+        AgentTrace trace = new AgentTrace("7", "conversation-1");
+        AiMemoryService.MemoryView view = new AiMemoryService.MemoryView(
+                "m-2", "FACT", "Use Java 25", (short) 100, Instant.now(), null);
+        when(memories.save(7L, "conversation-1", MemoryKind.FACT, "Use Java 25"))
+                .thenReturn(new AiMemoryService.SaveResult("updated", view, null));
+
+        String json = tools.saveMemory("FACT", "Use Java 25", context(trace));
+
+        assertThat(json).contains("\"code\":\"tool.updated\"").contains("\"success\":true");
+        assertThat(trace.calls()).singleElement()
+                .satisfies(call -> assertThat(call.ok()).isTrue());
     }
 
     @Test
@@ -49,17 +66,19 @@ class MemoryToolsTest {
 
         String json = tools.saveMemory("NOT_A_KIND", "Use Java 25", context(trace));
 
-        assertThat(json).contains("\"status\":\"rejected\"");
+        assertThat(json).contains("\"code\":\"tool.invalid_request\"");
         verify(memories, never()).save(anyLong(), anyString(), any(MemoryKind.class), anyString());
-        assertThat(trace.calls()).singleElement()
-                .satisfies(call -> assertThat(call.status()).isEqualTo("rejected"));
+        assertThat(trace.calls()).singleElement().satisfies(call -> {
+            assertThat(call.status()).isEqualTo("tool.invalid_request");
+            assertThat(call.ok()).isFalse();
+        });
     }
 
     @Test
     void missingUserIsRejectedWithoutCallingTheService() {
         String json = tools.saveMemory("FACT", "Use Java 25", context(new AgentTrace()));
 
-        assertThat(json).contains("\"status\":\"rejected\"");
+        assertThat(json).contains("\"code\":\"tool.unauthorized\"");
         verify(memories, never()).save(anyLong(), anyString(), any(MemoryKind.class), anyString());
     }
 

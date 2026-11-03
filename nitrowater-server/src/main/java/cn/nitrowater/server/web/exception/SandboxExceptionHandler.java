@@ -12,10 +12,10 @@ public class SandboxExceptionHandler {
 
     /**
      * @param ex the sandbox failure
-     * @return {@code success=false} with {@link SandboxException#status()}
+     * @return {@code success=false} with {@link SandboxException#getStatus()}
      */
     @ExceptionHandler(SandboxException.class)
     public ResponseEntity<ApiResponse<Void>> handle(SandboxException ex) {
-        return ResponseEntity.status(ex.status()).body(ApiResponse.reject(ex.code(), ex.getMessage(), null));
+        return ResponseEntity.status(ex.getStatus()).body(ApiResponse.reject(ex.getCode(), ex.getMessage(), null));
     }
 }

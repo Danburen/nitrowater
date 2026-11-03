@@ -1,6 +1,7 @@
 package cn.nitrowater.server.ai.memory;
 
-import cn.nitrowater.server.ai.moderation.AiModerationService;
+import cn.nitrowater.server.service.ai.AiMemoryService;
+import cn.nitrowater.server.service.ai.AiModerationService;
 import cn.nitrowater.server.infra.entity.AiMemory;
 import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.infra.enums.MemoryStatus;
@@ -19,8 +20,6 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;

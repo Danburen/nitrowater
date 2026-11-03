@@ -15,6 +15,7 @@ import tools.jackson.core.type.TypeReference;
 
 import java.time.Instant;
 import java.util.List;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Reads and writes plugin-center metadata.
@@ -129,7 +130,7 @@ public class PluginService {
     }
 
     private static String blankToNull(String value) {
-        return (value == null || value.isBlank()) ? null : value;
+        return (StringUtil.isBlank(value)) ? null : value;
     }
 
     private static String tagsToJson(List<String> tags) {
@@ -137,7 +138,7 @@ public class PluginService {
             return null;
         }
         List<String> cleaned = tags.stream()
-                .filter(tag -> tag != null && !tag.isBlank())
+                .filter(tag -> StringUtil.isNotBlank(tag))
                 .map(String::trim)
                 .toList();
         return cleaned.isEmpty() ? null : JsonUtil.toJson(cleaned);

@@ -3,15 +3,17 @@ package cn.nitrowater.core.application.auth;
 import cn.nitrowater.core.api.auth.LoginResult;
 import cn.nitrowater.core.api.req.auth.PwdLoginReq;
 import cn.nitrowater.core.api.req.auth.VerifyCodeDto;
+import jakarta.servlet.http.HttpSession;
 
 public interface LoginService {
     /**
      * Normal pwd login, must not be an administrator
      * @param body {@link PwdLoginReq} (contains deviceFp)
-     * @param verifyUuidKey captcha verify login key
+     * @param session HTTP session the captcha challenge is bound to; {@code null} means no challenge
+     *                can be resolved, so the login fails
      * @return {@link LoginResult}
      */
-    LoginResult login(PwdLoginReq body, String verifyUuidKey);
+    LoginResult login(PwdLoginReq body, HttpSession session);
 
     /**
      * One-time-code login (SMS / email).

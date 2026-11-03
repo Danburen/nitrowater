@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.function.Supplier;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Redis cache for presigned read URLs (aligned with waterfun's read-cache pattern).
@@ -41,7 +42,7 @@ public class PresignedUrlCache {
     public String getOrSign(String uuid, Duration presignExpiry, int safetyMarginSeconds, Supplier<String> signer) {
         String key = key(uuid);
         String cached = getQuietly(key);
-        if (cached != null && !cached.isBlank()) {
+        if (StringUtil.isNotBlank(cached)) {
             return cached;
         }
         String url = signer.get();

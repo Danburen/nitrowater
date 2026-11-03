@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.ToIntFunction;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /** Small mapping helpers shared by the resource controllers (application DTOs -> web DTOs). */
 final class ResourceWebMapper {
@@ -44,7 +45,7 @@ final class ResourceWebMapper {
         if (uid == null) {
             uid = jwt.getSubject();
         }
-        if (uid == null || uid.isBlank()) {
+        if (StringUtil.isBlank(uid)) {
             throw new ResourceException(HttpStatus.UNAUTHORIZED, "no_uid", "Token carries no uid");
         }
         try {
@@ -74,7 +75,7 @@ final class ResourceWebMapper {
      * @throws ResourceException 400 when the value is not a known status
      */
     static ResourceStatus statusOf(String status) {
-        if (status == null || status.isBlank()) {
+        if (StringUtil.isBlank(status)) {
             return null;
         }
         String value = status.trim();
@@ -99,7 +100,7 @@ final class ResourceWebMapper {
      * @throws ResourceException 400 when the value is not a known source type
      */
     static SourceType sourceTypeOf(String sourceType) {
-        if (sourceType == null || sourceType.isBlank()) {
+        if (StringUtil.isBlank(sourceType)) {
             return null;
         }
         String value = sourceType.trim();
@@ -118,7 +119,7 @@ final class ResourceWebMapper {
 
     /** @return the requested backend, or {@code null} to fall back to the configured default */
     static StorageBackend backendOf(String backend) {
-        if (backend == null || backend.isBlank()) {
+        if (StringUtil.isBlank(backend)) {
             return null;
         }
         return switch (backend.toLowerCase()) {

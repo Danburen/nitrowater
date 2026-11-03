@@ -1,20 +1,22 @@
 package cn.nitrowater.bff.web;
 
+import cn.nitrowater.bff.security.BffTokenService;
+import cn.nitrowater.bff.security.ReauthRequiredException;
 import cn.nitrowater.bff.security.SessionEpochFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
@@ -31,8 +33,8 @@ import java.util.Locale;
  *
  * <p>Requests are routed by path prefix: {@code /api/resource/**} (and its {@code /api/public/...}
  * form) go to the resource service; everything else goes to the business API. The access token is
- * obtained through {@link OAuth2AuthorizedClientManager}, so it is refreshed with the refresh token
- * when expired — the SPA never deals with tokens at all.</p>
+ * obtained through {@link BffTokenService}, so it is refreshed with the refresh token when expired —
+ * the SPA never deals with tokens at all.</p>
  */
 @RestController
 public class ApiProxyController {
@@ -40,24 +42,26 @@ public class ApiProxyController {
     private final RestClient serverRestClient;
     private final RestClient resourceRestClient;
     private final RestClient accountRestClient;
-    private final OAuth2AuthorizedClientManager authorizedClientManager;
-    private final String registrationId;
+    private final BffTokenService tokens;
 
     public ApiProxyController(
             @Value("${app.rs.base-url}") String rsBaseUrl,
             @Value("${app.resource.base-url:http://localhost:8093}") String resourceBaseUrl,
             @Value("${app.account.base-url:http://localhost:8090}") String accountBaseUrl,
+            @Value("${app.api.connect-timeout-ms:3000}") long connectTimeoutMs,
             @Value("${app.api.read-timeout-ms:45000}") long readTimeoutMs,
-            OAuth2AuthorizedClientManager authorizedClientManager,
-            @Value("${app.oidc.registration-id:nitrowater}") String registrationId) {
-        JdkClientHttpRequestFactory requestFactory =
-                new JdkClientHttpRequestFactory(HttpClient.newHttpClient());
+            BffTokenService tokens) {
+        // A connect timeout is not optional here: the JDK client waits forever by default, so an
+        // unreachable host that drops packets would pin the request thread and every retry with it.
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
         this.serverRestClient = RestClient.builder().baseUrl(rsBaseUrl).requestFactory(requestFactory).build();
         this.resourceRestClient = RestClient.builder().baseUrl(resourceBaseUrl).requestFactory(requestFactory).build();
         this.accountRestClient = RestClient.builder().baseUrl(accountBaseUrl).requestFactory(requestFactory).build();
-        this.authorizedClientManager = authorizedClientManager;
-        this.registrationId = registrationId;
+        this.tokens = tokens;
     }
 
     /** Account-management paths belong to the SSO service, not the business API. */
@@ -81,18 +85,25 @@ public class ApiProxyController {
     }
 
     @RequestMapping("/api/**")
-    public ResponseEntity<Resource> proxy(HttpServletRequest request, Authentication authentication) throws IOException {
+    public ResponseEntity<Resource> proxy(HttpServletRequest request, Authentication authentication,
+            HttpServletResponse response) throws IOException {
         String path = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
         String query = request.getQueryString();
         String target = query == null || query.isEmpty() ? path : path + "?" + query;
 
-        OAuth2AuthorizedClient client = (authentication != null
-                && !(authentication instanceof AnonymousAuthenticationToken))
-                ? authorizedClientManager.authorize(
-                        OAuth2AuthorizeRequest.withClientRegistrationId(registrationId)
-                                .principal(authentication)
-                                .build())
-                : null;
+        String accessToken = null;
+        if (authentication != null && !(authentication instanceof AnonymousAuthenticationToken)) {
+            try {
+                accessToken = this.tokens.accessToken(authentication, request, response);
+            } catch (ReauthRequiredException ex) {
+                // The session is gone (no authorized client, or a refresh the AS rejected): answer
+                // 401 in the same shape as the security chain so the SPA re-authenticates instead of
+                // reporting a server error on every call.
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .headers(ReauthResponse.headers(ex.reason()))
+                        .body(new ByteArrayResource(ReauthResponse.body(ex.reason())));
+            }
+        }
 
         HttpMethod method = HttpMethod.valueOf(request.getMethod());
         long contentLength = request.getContentLengthLong();
@@ -104,8 +115,8 @@ public class ApiProxyController {
                 .method(method)
                 .uri(target);
         spec.headers(headers -> ProxyHeaders.forEachForwardedHeader(request, headers::add));
-        if (client != null && client.getAccessToken() != null) {
-            spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + client.getAccessToken().getTokenValue());
+        if (accessToken != null) {
+            spec.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
         }
         // Stamp the real client address for downstream per-IP rate limiting. The BFF is the only
         // edge in this topology; if a trusted reverse proxy fronts it, use that proxy's value instead.

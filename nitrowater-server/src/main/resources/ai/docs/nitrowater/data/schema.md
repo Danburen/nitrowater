@@ -90,6 +90,7 @@
 | `tokens` | `INT UNSIGNED` | 估算或实际 usage |
 | `sources_json` | `TEXT` | 引用元数据 |
 | `tools_json` | `TEXT` | 工具轨迹 |
+| `skills_json` | `TEXT` | 该轮加载的技能名（JSON 数组，`V1_1` 追加） |
 | `model` | `VARCHAR(64)` | 生成该条回答的模型 |
 | `is_pruned` | `TINYINT(1)` | `1`=长工具结果已折叠为占位符 |
 | `created_at` | `TIMESTAMP(3)` | 创建时间 |

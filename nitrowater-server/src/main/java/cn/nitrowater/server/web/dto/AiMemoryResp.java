@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.dto;
 
-import cn.nitrowater.server.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.AiMemoryService;
 
 import java.time.Instant;
 

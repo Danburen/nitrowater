@@ -77,10 +77,10 @@ function onBlur(event: FocusEvent): void {
     :aria-label="ariaLabel"
     :spellcheck="spellcheck"
     :style="{ minHeight }"
-    class="textarea"
+    class="w-full rounded-[9px] border border-line bg-bg/60 px-3 py-2 text-sm text-ink outline-none transition placeholder:text-faint focus:border-accent"
     :class="[
       invalid ? 'border-danger/60' : '',
-      mono ? '' : 'font-sans',
+      mono ? 'font-mono leading-relaxed' : 'font-sans leading-relaxed',
       disabled ? 'cursor-not-allowed opacity-60' : '',
     ]"
     @input="onInput"

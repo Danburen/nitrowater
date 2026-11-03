@@ -1,7 +1,10 @@
 package cn.nitrowater.server.ai.tool;
 
-import cn.nitrowater.server.ai.agent.AgentTrace;
-import cn.nitrowater.server.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
+import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
+import cn.nitrowater.server.service.ai.model.WebSearchResult;
+import cn.nitrowater.server.service.ai.tool.WebSearchTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 
@@ -31,9 +34,9 @@ class WebSearchToolTest {
         String payload = tool.webSearch("spring boot 4 release notes", context(trace));
 
         assertThat(payload)
+                .contains("\"code\":\"tool.ok\"")
                 .contains("\"count\":3")
                 .contains("\"remaining\":2")
-                .contains("\"hint\"")
                 .doesNotContain("\"snippet\"");
         verify(provider).search("spring boot 4 release notes", 3);
         assertThat(trace.sources()).hasSize(3);
@@ -52,7 +55,8 @@ class WebSearchToolTest {
         String failed = tool.webSearch("recent release", context(trace));
         String recovered = tool.webSearch("recent release", context(trace));
 
-        assertThat(failed).contains("\"retryable\":true").contains("\"remaining\":3");
+        assertThat(failed).contains("\"code\":\"tool.unavailable\"").contains("\"retryable\":true")
+                .contains("\"remaining\":3");
         assertThat(recovered).contains("\"remaining\":2");
         assertThat(trace.webSearchSuccesses()).isEqualTo(1);
     }
@@ -68,7 +72,7 @@ class WebSearchToolTest {
         tool.webSearch("Java 21", context(trace));
         String duplicate = tool.webSearch("  java   21 ", context(trace));
 
-        assertThat(duplicate).contains("duplicate query").contains("\"remaining\":2");
+        assertThat(duplicate).contains("\"code\":\"tool.duplicate\"").contains("\"remaining\":2");
         verify(provider, times(1)).search(anyString(), anyInt());
     }
 
@@ -84,7 +88,7 @@ class WebSearchToolTest {
         String second = tool.webSearch("second gap", context(trace));
 
         assertThat(first).contains("\"remaining\":0");
-        assertThat(second).contains("limit reached").contains("\"remaining\":0");
+        assertThat(second).contains("\"code\":\"tool.limit_reached\"").contains("\"remaining\":0");
         verify(provider, times(1)).search(anyString(), anyInt());
     }
 

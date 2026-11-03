@@ -8,11 +8,11 @@ import cn.nitrowater.core.api.req.auth.PwdLoginReq;
 import cn.nitrowater.core.domain.user.User;
 import cn.nitrowater.core.exception.threshold.AttemptLimitExceededException;
 import cn.nitrowater.core.exception.threshold.DailyLimitExceededException;
-import cn.nitrowater.core.infrastructure.utils.CookieUtil;
 import cn.nitrowater.core.application.auth.DeviceService;
 import cn.nitrowater.core.application.auth.impl.LoginServiceImpl;
 import cn.nitrowater.lib.common.exceptions.AuthException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.AuthenticationServiceException;
@@ -29,6 +29,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Phase 2: delegates authentication to the existing {@link LoginServiceImpl}
@@ -53,21 +54,22 @@ public class SsoAuthenticationProvider implements AuthenticationProvider {
         HttpServletRequest request = currentRequest();
         String captcha = request != null ? request.getParameter("captcha") : null;
         String deviceFp = request != null ? request.getParameter("deviceFp") : null;
-        String captchaKey = request != null
-                ? CookieUtil.getCookieValue(request.getCookies(), "CAPTCHA_KEY") : null;
+        // The challenge lives in the servlet session, never in a cookie: the captcha image request
+        // created it a moment ago, and a stale/aborted CAPTCHA_KEY must not decide what we verify.
+        HttpSession session = request != null ? request.getSession(false) : null;
 
         PwdLoginReq req = new PwdLoginReq();
         req.setIdentifier(identifier);
         req.setPassword(password);
         req.setCaptcha(captcha);
         DeviceInfo di = new DeviceInfo();
-        di.setDeviceFp(deviceFp != null && !deviceFp.isBlank() ? deviceFp : "sso-unknown-device");
+        di.setDeviceFp(StringUtil.isNotBlank(deviceFp) ? deviceFp : "sso-unknown-device");
         req.setDeviceInfo(di);
 
         try {
-            LoginResult result = loginService.login(req, captchaKey);
+            LoginResult result = loginService.login(req, session);
             User user = result.user();
-            String did = (deviceFp != null && !deviceFp.isBlank())
+            String did = (StringUtil.isNotBlank(deviceFp))
                     ? deviceService.computeDid(user.getUid(), deviceFp)
                     : null;
             SsoUserPrincipal principal = SsoUserPrincipal.of(

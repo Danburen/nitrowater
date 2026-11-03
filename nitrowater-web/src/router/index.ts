@@ -50,13 +50,13 @@ const router = createRouter({
     {
       path: 'ai/index',
       name: 'admin-ai-index',
-      component: () => import('../features/admin/ai/AdminAiCatalogPage.vue'),
+      component: () => import('../features/admin/components/AdminAiCatalogPage.vue'),
       props: { section: 'index' },
     },
     {
       path: 'ai/catalog',
       name: 'admin-ai-catalog',
-      component: () => import('../features/admin/ai/AdminAiCatalogPage.vue'),
+      component: () => import('../features/admin/components/AdminAiCatalogPage.vue'),
       props: { section: 'capabilities' },
     },
       ],

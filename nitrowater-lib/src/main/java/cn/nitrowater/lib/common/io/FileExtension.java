@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import cn.nitrowater.lib.utils.StringUtil;
 
 @Getter
 @RequiredArgsConstructor
@@ -96,7 +97,7 @@ public enum FileExtension {
     private final ResourceType resourceType;
 
     public static FileExtension fromExt(String ext) {
-        if (ext == null || ext.isBlank()) {
+        if (StringUtil.isBlank(ext)) {
             return UNKNOWN;
         }
         String clean = ext.toLowerCase(Locale.ROOT).replaceFirst("^\\.", "");
@@ -125,7 +126,7 @@ public enum FileExtension {
     }
 
     public static FileExtension fromMimeType(String mimeType) {
-        if (mimeType == null || mimeType.isBlank()) return UNKNOWN;
+        if (StringUtil.isBlank(mimeType)) return UNKNOWN;
         String normalized = mimeType.trim().toLowerCase(Locale.ROOT);
 
         for (FileExtension fe : values()) {

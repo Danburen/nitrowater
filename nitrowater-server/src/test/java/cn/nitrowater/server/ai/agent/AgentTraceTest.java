@@ -1,6 +1,9 @@
 package cn.nitrowater.server.ai.agent;
 
-import cn.nitrowater.server.ai.DocChunkBuilder;
+import cn.nitrowater.server.service.ai.DocChunkBuilder;
+import cn.nitrowater.server.service.ai.model.agent.AgentDoc;
+import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
+import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 

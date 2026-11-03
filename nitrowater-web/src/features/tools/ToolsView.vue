@@ -9,7 +9,7 @@ const groups = toolCategories.map((category) => ({
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-5">
+  <div class="h-full overflow-y-auto px-4 py-6 sm:px-6">
     <header class="mb-6">
       <h1 class="text-lg font-semibold tracking-tight text-ink">
         在线工具箱

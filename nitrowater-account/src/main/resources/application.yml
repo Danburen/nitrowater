@@ -83,6 +83,10 @@ spring:
       static-locations: "file:./nitrowater-account/src/main/resources/static/,classpath:/static/"
       cache:
         period: 0
+  config:
+    import:
+      - optional:file:./deploy/config/common.yml
+      - optional:file:./deploy/config/common-dev-secrets.yml
 
   jackson:
     mapper:
@@ -146,19 +150,21 @@ generator:
 # OIDC issuer 统一取自 jwt.issuer（见上）：不再单独配置 sso.issuer，避免两份配置漂移。
 # -------- CORS 白名单（同主域子域）--------
 # 同主域：https://*.nitrowater.cn（跨主域 waterfun.top 已移除）
-# 本地只放开两个真实前端端口（Vite 5173 / BFF 8080）。不要用 localhost:* —— 带凭证的通配符让
-# 任意本地端口的页面都能读走 /api/auth/account 之类的个人数据。
+# 本地只放开真实前端端口（Vite 5173 / auth-ui dev 5175 / BFF 8080）。不要用 localhost:* —— 带凭证的
+# 通配符让任意本地端口的页面都能读走 /api/auth/account 之类的个人数据。
 # Cookie 属性（SameSite 等）统一在 server.servlet.session.cookie 下配置，见文件头部。
 app:
   # Verification-code delivery. Local development defaults to mock: codes are logged, not sent.
   # Set COMMUNICATION_MODE=real plus the provider credentials below for production.
+  # `real` with an unconfigured provider (SMTP / Aliyun SMS) degrades to logging instead of failing
+  # the startup, so a local run still works; the missing keys are named in a startup WARN.
+  # Aliyun SMS credentials are NOT config: they come from the standard environment variables
+  # ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET (same names the Aliyun SDK uses).
   communication:
-    mode: ${COMMUNICATION_MODE:mock}
+    mode: ${COMMUNICATION_MODE:real}
     email:
       from: ${MAIL_FROM:}
     sms:
-      access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID:}
-      access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
       sign-name: ${ALIYUN_SMS_SIGN_NAME:}
       template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
       endpoint: ${ALIYUN_SMS_ENDPOINT:dysmsapi.aliyuncs.com}
@@ -174,7 +180,7 @@ app:
   csp:
     form-action-origins: "${SSO_FORM_ACTION_ORIGINS:http://localhost:5173,http://localhost:8080,https://nitrowater.cn}"
   cors:
-    allowed-origin-patterns: "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn"
+    allowed-origin-patterns: "http://localhost:5173,http://localhost:5175,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5175,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn"
   # 头像：OIDC picture claim 由 user.avatar_resource_uuid 派生（稳定读路径，非存储URL）。
   # 此处为资源服务对外的稳定基址；生产设 https://files.nitrowater.cn（或网关域名）。
   avatar:

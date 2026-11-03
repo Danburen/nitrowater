@@ -2,6 +2,7 @@ package cn.nitrowater.bff.config;
 
 import cn.nitrowater.bff.security.MultiAccountAuthorizedClientRepository;
 import cn.nitrowater.bff.security.SwitchAccountAuthorizationRequestResolver;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -22,6 +23,7 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
  * access token with the refresh token before a business call. This is the mechanism that
  * replaces the browser-side iframe silent renew.</p>
  */
+@Slf4j
 @Configuration
 public class OAuth2ClientConfig {
 
@@ -56,6 +58,14 @@ public class OAuth2ClientConfig {
         DefaultOAuth2AuthorizedClientManager manager =
                 new DefaultOAuth2AuthorizedClientManager(clientRegistrationRepository, authorizedClientRepository);
         manager.setAuthorizedClientProvider(provider);
+        // Do NOT keep the framework default (RemoveAuthorizedClientOAuth2AuthorizationFailureHandler):
+        // it deletes the authorized client on invalid_grant/invalid_token and leaves the session
+        // authenticated but unable to call upstream — every later request then failed with a 500.
+        // Deciding what a rejected refresh means belongs to BffTokenService, which either recovers a
+        // token a concurrent request just rotated or drops the whole session and answers 401.
+        manager.setAuthorizationFailureHandler((ex, principal, attributes) -> log.warn(
+                "OAuth2 authorization failed for '{}': {}",
+                principal == null ? "unknown" : principal.getName(), ex.getError()));
         return manager;
     }
 }

@@ -1,10 +1,13 @@
 package cn.nitrowater.server.ai;
 
-import cn.nitrowater.server.ai.AiAdminSettingsService.Settings;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService.Settings;
 import cn.nitrowater.server.infra.entity.AiDailyUsageEntity;
 import cn.nitrowater.server.infra.entity.AiDailyUsageId;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.infra.repository.AiDailyUsageRepository;
+import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
+import cn.nitrowater.server.service.ai.AiUsageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;

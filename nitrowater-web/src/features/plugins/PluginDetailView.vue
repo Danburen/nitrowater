@@ -129,7 +129,7 @@ function fmtDate(iso: string | null): string {
   <!-- The section layout's <main> clips overflow (overflow-hidden) and delegates scrolling to the
        page, so this root must own a definite height + its own scroll container. -->
   <div class="h-full overflow-y-auto">
-    <div class="mx-auto max-w-[860px] px-6 py-8">
+    <div class="mx-auto max-w-[860px] px-4 py-6 sm:px-6 sm:py-8">
       <p
         v-if="loadingPlugin"
         class="text-[13px] text-dim"

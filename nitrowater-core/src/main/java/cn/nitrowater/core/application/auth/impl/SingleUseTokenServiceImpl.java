@@ -38,7 +38,7 @@ public class SingleUseTokenServiceImpl implements SingleUseTokenService {
 
     @Override
     public Long consumeVerifyToken(String token, String scene) {
-        if (token == null || token.isBlank()) {
+        if (StringUtil.isBlank(token)) {
             throw new TokenInvalidOrExpireException();
         }
         String val = redisHelper.getAndDel(verifyKey(token, scene));

@@ -32,6 +32,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import cn.nitrowater.lib.utils.StringUtil;
 
 @Slf4j
 @Service
@@ -88,7 +89,7 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     public CodeResult activateEmail(long userUid, String email, DeviceInfo deviceInfo) {
         String current = userDatumCoreService.getRawEmail(userUid);
         if (current == null) {
-            if (email == null || email.isBlank()) {
+            if (StringUtil.isBlank(email)) {
                 throw new BizException(BaseResponseCode.EMAIL_NOT_FOUND);
             }
             return changeEmail(userUid, email, deviceInfo);
@@ -195,7 +196,7 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     public CodeResult activatePhone(long userUid, String phone, DeviceInfo deviceInfo) {
         String current = userDatumCoreService.getRawPhone(userUid);
         if (current == null) {
-            if (phone == null || phone.isBlank()) {
+            if (StringUtil.isBlank(phone)) {
                 throw new BizException(BaseResponseCode.NOT_FOUND);
             }
             return changePhone(userUid, phone, deviceInfo);
@@ -319,7 +320,7 @@ public class AccountCoreServiceImpl implements AccountCoreService {
     @Override
     @Transactional
     public void updateAvatarResourceUuid(long userUid, String resourceUuid) {
-        String normalized = (resourceUuid == null || resourceUuid.isBlank()) ? null : resourceUuid.trim();
+        String normalized = (StringUtil.isBlank(resourceUuid)) ? null : resourceUuid.trim();
         int updated = userRepository.updateAvatarResourceUuid(userUid, normalized);
         if (updated == 0) {
             throw new BizException(BaseResponseCode.USER_NOT_FOUND);

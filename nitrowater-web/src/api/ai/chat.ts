@@ -13,6 +13,7 @@ import type {
   AiSource,
   AiStatus,
   AiToolCall,
+  AgentStep,
   AgentStreamHandlers,
   ChatTurn,
 } from './types'
@@ -141,8 +142,10 @@ function dispatchAgent(event: string, payload: string, handlers: AgentStreamHand
       const parsed = JSON.parse(payload) as { text?: string }
       if (parsed.text) handlers.onDelta?.(parsed.text)
     } else if (event === 'step') {
-      const parsed = JSON.parse(payload) as { phase?: string; tool?: string | null }
-      if (parsed.phase) handlers.onStep?.({ phase: parsed.phase, tool: parsed.tool ?? null })
+      // Forward the whole marker: argument/callId/status/ok/resultCount/durationMs are what make a
+      // card informative and let a start be paired with its own end.
+      const parsed = JSON.parse(payload) as AgentStep
+      if (parsed.phase) handlers.onStep?.(parsed)
     } else if (event === 'moderation') {
       const parsed = JSON.parse(payload) as { text?: string }
       handlers.onModeration?.(parsed.text ?? '')

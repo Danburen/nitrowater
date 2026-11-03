@@ -1,6 +1,7 @@
 package cn.nitrowater.resource.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Configuration for the resource service ({@code app.resource.*}).
@@ -57,7 +58,7 @@ public record ResourceProperties(
 
     /** @return whether the internal publish endpoints are enabled (a token is configured) */
     public boolean internalPublishEnabled() {
-        return internal != null && internal.token() != null && !internal.token().isBlank();
+        return internal != null && StringUtil.isNotBlank(internal.token());
     }
 
     /** @return the configured internal token, or {@code null} when unset */

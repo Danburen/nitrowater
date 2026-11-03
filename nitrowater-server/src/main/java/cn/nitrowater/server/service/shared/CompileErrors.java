@@ -1,6 +1,7 @@
 package cn.nitrowater.server.service.shared;
 
 import java.util.regex.Pattern;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Recognises whether a sandbox execution failed to compile (as opposed to failing at runtime),
@@ -110,7 +111,7 @@ public final class CompileErrors {
     }
 
     private static boolean looksLikeCompileError(String pistonLanguage, String stderr) {
-        if (stderr == null || stderr.isBlank()) {
+        if (StringUtil.isBlank(stderr)) {
             return false;
         }
         return switch (pistonLanguage) {
@@ -123,7 +124,7 @@ public final class CompileErrors {
 
     private static String firstNonBlank(String... candidates) {
         for (String candidate : candidates) {
-            if (candidate != null && !candidate.isBlank()) {
+            if (StringUtil.isNotBlank(candidate)) {
                 return candidate;
             }
         }

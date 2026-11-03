@@ -234,13 +234,13 @@ POST /logout (顶层表单, 带 _csrf)
   Content-Type: application/x-www-form-urlencoded
 
 username=xxx&password=xxx&captcha=xxx&deviceFp=xxx
-Cookie: CAPTCHA_KEY=...
-注意：这个 POST 是直接发往 http://localhost:8090/login（Account 端口），不是发到 BFF。 BFF 此时根本没参与这一步，用户凭证也没有经过 BFF。
+Cookie: JSESSIONID=...
+注意：验证码挑战绑定在 Account 的 HttpSession 上（`CaptchaServiceImpl.SESSION_CAPTCHA_KEY`），`CAPTCHA_KEY` cookie 只是诊断镜像、不参与校验。 这个 POST 是直接发往 http://localhost:8090/login（Account 端口），不是发到 BFF。 BFF 此时根本没参与这一步，用户凭证也没有经过 BFF。
 步骤 6. Account 校验凭证（SsoAuthenticationProvider）
 Spring Security 的 formLogin 在 Account 端拦截 /login POST，调用 SsoAuthenticationProvider.authenticate()（SsoAuthenticationProvider:35-90）：
 
-1. 从请求参数读取 captcha、deviceFp，从 Cookie 读取 CAPTCHA_KEY
-2. 构造 PwdLoginReq，调用 loginService.login(req, captchaKey)
+1. 从请求参数读取 captcha、deviceFp，取当前 HttpSession（`request.getSession(false)`）
+2. 构造 PwdLoginReq，调用 loginService.login(req, session)
 3. LoginServiceImpl 校验验证码、密码（BCrypt）、失败次数/锁定（Redis）
 4. 校验成功后，计算 did，查角色 userRoleService.findRoleCodes(uid)
 5. 构建 SsoUserPrincipal（sub = uid，添加 PASSWORD_AUTHORITY）

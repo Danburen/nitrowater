@@ -211,7 +211,7 @@ function toChatMessage(message: ServerMessage): ChatMessage {
     content: message.content,
     sources: message.sources ?? [],
     tools: message.tools ?? [],
-    skills: [],
+    skills: message.skills ?? [],
     grounded: (message.sources?.length ?? 0) > 0,
     error: message.role === 'error' ? message.content : null,
     moderated: message.moderated === true ? true : undefined,

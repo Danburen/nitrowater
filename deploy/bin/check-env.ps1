@@ -172,7 +172,7 @@ $mode = Get-EnvValue 'COMMUNICATION_MODE'
 if ([string]::IsNullOrEmpty($mode)) { $mode = 'mock' }
 if ($mode -eq 'real') {
     foreach ($name in 'MAIL_HOST', 'MAIL_PORT', 'MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_FROM',
-        'ALIYUN_SMS_ACCESS_KEY_ID', 'ALIYUN_SMS_ACCESS_KEY_SECRET', 'ALIYUN_SMS_SIGN_NAME',
+        'ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIYUN_SMS_SIGN_NAME',
         'ALIYUN_SMS_TEMPLATE_CODE') {
         $value = Get-EnvValue $name
         if ([string]::IsNullOrEmpty($value)) {

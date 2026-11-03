@@ -20,19 +20,33 @@ Usage (from repo root):
   .\deploy\bin\deploy.ps1 -Content          # force the content overlay
   .\deploy\bin\deploy.ps1 -Edge             # add the TLS edge (nginx-proxy + acme-companion)
   .\deploy\bin\deploy.ps1 -SkipCheck        # skip the check-env gate
+  .\deploy\bin\deploy.ps1 -EnvFile deploy\config\.env.prod.secrets   # use another env file
+
+Env file: `deploy/docker/.env` by default. docker compose only auto-loads a file literally named
+`.env`; anything else must be passed with --env-file, which -EnvFile does for every compose call
+(and for check-env.ps1). Precedence is the usual one: shell env > env file.
 #>
 param(
   [switch]$InfraOnly,
   [switch]$Build,
   [switch]$Content,
   [switch]$Edge,
-  [switch]$SkipCheck
+  [switch]$SkipCheck,
+  [string]$EnvFile
 )
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path $PSScriptRoot -Parent          # deploy/
+$repoRoot = Split-Path $root -Parent
 $dockerDir = Join-Path $root 'docker'
-$envFile = Join-Path $dockerDir '.env'
+# `-EnvFile` keeps prod secrets outside deploy/docker (e.g. deploy/config/.env.prod.secrets):
+# docker compose does NOT auto-load any file other than `.env`, so every call below passes
+# --env-file explicitly. A relative path resolves against the repo root, like the doc says.
+$envFile = if ($EnvFile) {
+  if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $repoRoot $EnvFile }
+} else {
+  Join-Path $dockerDir '.env'
+}
 $infra = Join-Path $dockerDir 'docker-compose.infra.yml'
 $app = Join-Path $dockerDir 'docker-compose.app.yml'
 $contentYml = Join-Path $dockerDir 'docker-compose.content.yml'
@@ -40,7 +54,7 @@ $edgeYml = Join-Path $dockerDir 'docker-compose.edge.yml'
 $contentDir = Join-Path $root 'content'
 
 if (-not (Test-Path -LiteralPath $envFile)) {
-  Write-Host "[ERROR] missing $envFile  (copy .env.example to .env and fill values)" -ForegroundColor Red
+  Write-Host "[ERROR] missing $envFile  (copy deploy/docker/.env.example to it and fill values, or pass -EnvFile <path>)" -ForegroundColor Red
   exit 1
 }
 docker version *> $null

@@ -11,6 +11,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
 import java.security.Principal;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Enforces quotas and admission control on the sandbox run endpoint.
@@ -38,7 +39,7 @@ public class SandboxRateLimitInterceptor implements HandlerInterceptor {
             throws IOException {
         String uid = userId(request);
         if (uid == null) {
-            reject(response, HttpStatus.UNAUTHORIZED, "unauthorized", "Login is required to run code");
+            ApiResponseWriter.error(response, HttpStatus.UNAUTHORIZED.value(), "unauthorized", "Login is required to run code");
             return false;
         }
 
@@ -46,7 +47,7 @@ public class SandboxRateLimitInterceptor implements HandlerInterceptor {
             request.setAttribute(LEASE_ATTRIBUTE, guard.admit(uid));
             return true;
         } catch (SandboxExecutionGuard.GuardException ex) {
-            reject(response, ex.status(), ex.code(), ex.getMessage());
+            ApiResponseWriter.error(response, ex.getStatus().value(), ex.getCode(), ex.getMessage());
             return false;
         }
     }
@@ -62,15 +63,9 @@ public class SandboxRateLimitInterceptor implements HandlerInterceptor {
     /** The authenticated user id, taken from the JWT {@code sub} exposed as the principal name. */
     private static String userId(HttpServletRequest request) {
         Principal principal = request.getUserPrincipal();
-        if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
+        if (principal == null || StringUtil.isBlank(principal.getName())) {
             return null;
         }
         return principal.getName();
-    }
-
-    /** Writes a JSON error body and stops the chain. */
-    private static void reject(HttpServletResponse response, HttpStatus status, String code, String message)
-            throws IOException {
-        ApiResponseWriter.error(response, status.value(), code, message);
     }
 }

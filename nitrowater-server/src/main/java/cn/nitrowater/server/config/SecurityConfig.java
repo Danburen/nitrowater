@@ -31,6 +31,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * OAuth2 Resource Server: the business API validates the SSO-issued JWT (Bearer) on every
@@ -120,7 +121,7 @@ public class SecurityConfig {
             List<String> roles = jwt.getClaimAsStringList("roles");
             if (roles != null) {
                 for (String role : roles) {
-                    if (role != null && !role.isBlank()) {
+                    if (StringUtil.isNotBlank(role)) {
                         authorities.add(new SimpleGrantedAuthority(role));
                     }
                 }

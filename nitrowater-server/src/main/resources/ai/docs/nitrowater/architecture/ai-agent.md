@@ -1,18 +1,16 @@
 # NitroBot：AI 文档助手与 Agent
 
-NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它有两种调用形态：普通 RAG（只基于检索到的文档回答）与 Agent（可调用工具）。产品上只暴露 Agent 形态，检索、技能、工具由服务端自动决定，不再给用户开关。
+NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调用形态：**Agent**（模型按需调用工具）；模型判断不需要工具时就是一次普通回答（单轮、无工具、无引用）。检索、技能、工具由服务端自动决定，不给用户开关。
 
 ## 1. 能力与端点
 
-| 端点 | 形态 | 说明 |
-|---|---|---|
-| `POST /api/ai/chat` | RAG | 一次调用，返回答案 + 引用 |
-| `POST /api/ai/chat/stream` | RAG | SSE：`delta*` → `sources` → `done` |
-| `POST /api/ai/agent/chat` | Agent | 完整一轮（含工具调用） |
-| `POST /api/ai/agent/chat/stream` | Agent | SSE：`start` → `delta*` → `sources` → `tools` → `skills` → `done` |
-| `GET /api/ai/status` | 状态 | 索引/模型可用性 |
-| `GET /api/ai/skills` | 技能 | 可用技能清单（管理台与调试用） |
-| `POST /api/admin/ai/reindex` | 管理 | 重建文档索引 |
+| 端点 | 说明 |
+|---|---|
+| `POST /api/ai/agent/chat` | Agent 一次性回答（含工具调用） |
+| `POST /api/ai/agent/chat/stream` | SSE：`start` → `step`/`delta`* → `sources` → `tools` → `skills` → `done` |
+| `GET /api/ai/status` | 索引/模型可用性 |
+| `GET /api/ai/skills` | 可用技能清单（管理台与调试用） |
+| `POST /api/admin/ai/reindex` | 管理：重建文档索引 |
 
 所有接口都经 BFF 代理；SSE 由 `AiStreamProxyController` 逐块透传，BFF 的异步请求超时配置为 180s。
 
@@ -41,7 +39,8 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它有两种调用�
 ## 3. 文档语料与索引
 
 - 语料位置：`nitrowater-server/src/main/resources/ai/docs/{nitrowater,velochatx}`，支持 `classpath:` 与文件系统路径。
-- 每个 collection 有独立的 `corpus` 与 `public-base-url`，检索与引用都按 corpus 区分。
+- 每个 collection 有独立的 `corpus`、`public-base-url` 与 `description`，检索与引用都按 corpus 区分。
+- `description` 会拼进 agent 系统提示的「知识库文档」段（写清该语料覆盖什么），让通用 agent 知道本服务提供哪些文档可查；未配置时只显示 corpus 名。
 - 索引流程：markdown → 去掉 UTF-8 BOM 与 YAML front matter → 按标题/Token 切块 → embedding → 写入 Qdrant。
 - 重建是破坏式替换：先删该 corpus 的旧点再写入；chunk id 稳定，便于引用对齐。
 - `app.ai.ingest-on-startup: true` 时启动会检查并补索引；也可由管理员手动触发重建。
@@ -68,7 +67,11 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它有两种调用�
 | `runCode(language, code, stdin)` | 在 Piston 沙箱编译并运行 | 用户明确要求运行/测试/验证代码 |
 | `webSearch(query)` | 联网搜索（DeepSeek 搜索 API），默认 1 次够用即停，单轮成功上限 3 次 | 近期事件/实时数据/可能变更，或用户明确要求 |
 
-工具轨迹由 `AgentTrace` 汇总：`name`、`argument`、`resultCount`、`status`、耗时。SSE 在结束前发送 `tools` 与 `skills`，前端据此渲染「过程」折叠区。
+工具轨迹由 `AgentTrace` 汇总：`name`、`argument`、`resultCount`、`status`（`ToolCode` 码，如 `tool.ok`）、`ok`、`summary`、耗时。SSE 在结束前发送 `tools` 与 `skills`，前端据此渲染「过程」折叠区；运行期间的 `step` 事件由步骤卡片实时渲染。
+
+引用、工具轨迹与技能名随回答一起落库（`sources_json` / `tools_json` / `skills_json`），所以刷新或切换会话后「过程」折叠区仍完整。`conversation` / `start` / 首个 `step{thinking}` 在请求处理器返回时即写出，早于上下文组装，客户端不必等首个 token 才显示过程卡片。
+
+「继续生成」复用同一条 assistant 行：新文本追加、`tokens` 累加、引用/工具/技能合并（重复的引用编号会顺延），不会在库里留下两条半截回答。
 
 ### 5.1 技能
 
@@ -93,22 +96,21 @@ searchDocs(query)
   └─ 本地 0 条
         ├─ app.ai.web-search.auto-fallback=true 且 provider 可用
         │     → 用同一个 query 调一次 DeepSeek 搜索（默认 3 条）
-        │     → 结果标 source=web，payload 带 fallback=web
+        │     → 结果标 source=web，`data.fallback=web`
         │     → 每轮最多一次（AgentTrace#claimWebFallback）
         └─ 否则 → 照常返回「没有匹配的文档片段」
 ```
 
 - 触发条件是**检索结果为空**，不是模型判断“够不够”；
 - 每轮最多一次自动兜底，且与显式 `webSearch` **共用同一份成功预算**：已搜过的 query 不再重复搜，预算耗尽后连兜底也不再联网；
-- `webSearch` 工具保留：只用于近期事件、实时数据、价格、可能变更的信息，或用户明确说“搜索/查一下”；**单轮成功上限 3 次**（默认首查就够，只有存在明确缺口才继续），超限返回 `limit_reached`；
+- `webSearch` 工具保留：只用于近期事件、实时数据、价格、可能变更的信息，或用户明确说“搜索/查一下”；**单轮成功上限 3 次**（默认首查就够，只有存在明确缺口才继续），超限返回 `tool.limit_reached`；
 - 失败处理：provider 对 I/O、超时、5xx、429 自动重试一次，4xx 直接失败；失败不占成功预算，兜底失败会释放占用，下次文档未命中仍可再试；
-- 返回体带 `remaining`（剩余成功次数）与 `hint`（够用即停），模型据此决定是否再搜；
-- 稳定事实、数学、编程基础、创作、用户已提供的资料**不联网**；
-- `POST /api/ai/chat(.stream)`（纯 RAG 路径）没有联网能力，只有 Agent 端点有。
+- 返回体在 `data` 里带 `remaining`（剩余成功次数），`message` 里给出「够用即停」的提示；
+- 稳定事实、数学、编程基础、创作、用户已提供的资料**不联网**。
 
-### 5.4 过程声明与上下文
+### 5.4 过程展示与上下文
 
-- 调用工具前必须先输出一句「动作 + 对象 + 关键参数」的声明（如“正在查阅文档：chat-format 占位符”）；禁止“正在思考/请稍等”，禁止编造条数或结果状态，真实结果由工具轨迹渲染。
+- 正在做什么由界面上的步骤卡片展示（`step` 事件）；答案里**不写过程文字**（不说“正在查阅文档/正在联网搜索”），也不说“正在思考/请稍等”，不编造条数或结果状态。
 - 工具结果只取结论：`searchDocs` 单条截到 1200 字，联网结果正文 1200 字（界面预览 600 字）；只有缺失细节是回答所必需时才再检索，不凭记忆补全。
 - 会话历史取最近 `max-history-turns` 轮（默认 4）；若 `ai_conversation.summary` 非空，会作为「【此前对话摘要】」合成首轮注入（摘要生成属 T12）。
 ## 6. 会话与上下文
@@ -151,7 +153,7 @@ searchDocs(query)
 | 位置 | 触发点 | LOG | ENFORCE |
 |---|---|---|---|
 | 用户输入 | `ConversationService.start()`，落库与调用模型之前 | 记录 | 400 `content_blocked`，不产生 `ai_message` 行 |
-| 模型回答 | `AiController` / `AiAgentController`（同步与流式各 2 处） | 记录 | 落库存**遮蔽后**文本；流式再发 SSE `moderation{text}` 让前端替换气泡 |
+| 模型回答 | `AiAgentController`（同步与流式各 1 处） | 记录 | 落库存**遮蔽后**文本；流式再发 SSE `moderation{text}` 让前端替换气泡 |
 | 长期记忆 | `AiMemoryService.save()` | 记录 | 拒绝写入 |
 | 画像偏好 | `AiProfileService` 写入时逐条校验；`promptBlock()` 读取时再过滤历史脏数据 | 记录 | 400 `content_blocked` |
 
@@ -187,9 +189,10 @@ searchDocs(query)
 
 ## 10. 相关源码
 
-- `ai/DocChunkBuilder.java`、`DocCollection.java`、`DocsIndexService.java`、`DocRetriever.java`
-- `ai/agent/AiAgentService.java`、`AgentTrace.java`、`PreparedAgent.java`
-- `ai/tool/DocTools.java`、`SkillTools.java`、`RunCodeTool.java`、`WebSearchTool.java`
-- `ai/skill/SkillRegistry.java`
-- `web/AiAgentController.java`、`web/AiController.java`、`web/AdminAiController.java`
+- `service/ai/DocChunkBuilder.java`、`DocCollection.java`、`DocsIndexService.java`、`DocRetriever.java`、`PromptBuilder.java`
+- `service/ai/model/agent/AiAgentService.java`、`AgentTrace.java`、`AgentRun.java`、`PreparedAgent.java`、`StepTrackingToolCallback.java`、`ToolCall.java`
+- `service/ai/model/tool/ToolResponse.java`、`ToolCode.java`
+- `service/ai/tool/DocTools.java`、`SkillTools.java`、`RunCodeTool.java`、`WebSearchTool.java`、`MemoryTools.java`
+- `service/ai/SkillRegistry.java`
+- `web/AiAgentController.java`、`web/AiController.java`、`web/admin/AdminAiController.java`
 - `nitrowater-bff/.../web/AiStreamProxyController.java`

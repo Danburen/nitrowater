@@ -41,7 +41,11 @@ spring:
     data:
       redis:
         namespace: nitrowater:bff:session
-        flush-mode: on_save
+        # immediate: the refresh token is rotated on every refresh (reuseRefreshTokens=false), so the
+        # new pair must be durable before the response commits. With on_save the write waits for the
+        # request to finish — a long SSE response (or a concurrent request writing its own copy) can
+        # lose the rotated token, and the next refresh then fails with invalid_grant.
+        flush-mode: immediate
 
   # -------- OIDC Client：confidential，服务端持 RT --------
   # 官方属性 issuer-uri：启动时即拉 OIDC 发现文档 → **AS(account :8090) 必须先启动**，
@@ -86,6 +90,9 @@ app:
     base-url: ${ACCOUNT_BASE_URL:http://localhost:8090}
   # Downstream call budget: must exceed the resource server's sandbox compile+run budget.
   api:
+    # Connection phase only. A down service fails fast; an unreachable host (packets dropped) no
+    # longer pins a request thread forever, because the JDK client has no default connect timeout.
+    connect-timeout-ms: ${API_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${API_READ_TIMEOUT_MS:45000}
   web:
     # Vite 产物 assets/* 文件名带内容 hash → 可长缓存（默认 1 年）；index.html 不缓存。

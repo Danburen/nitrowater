@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.dto;
 
-import cn.nitrowater.server.ai.AiUsageService;
+import cn.nitrowater.server.service.ai.AiUsageService;
 
 import java.time.LocalDate;
 

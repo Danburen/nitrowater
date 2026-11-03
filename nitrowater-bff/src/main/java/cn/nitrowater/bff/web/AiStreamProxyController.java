@@ -1,8 +1,11 @@
 package cn.nitrowater.bff.web;
 
+import cn.nitrowater.bff.security.BffTokenService;
+import cn.nitrowater.bff.security.ReauthRequiredException;
 import cn.nitrowater.bff.security.SessionEpochFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -11,15 +14,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.client.RestClient;
@@ -29,6 +27,7 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Streams the documentation-assistant SSE endpoints through the BFF.
@@ -49,44 +48,53 @@ public class AiStreamProxyController {
     private static final long STREAM_READ_TIMEOUT_MS = 180_000L;
 
     private final RestClient serverRestClient;
-    private final OAuth2AuthorizedClientManager authorizedClientManager;
-    private final String registrationId;
+    private final BffTokenService tokens;
 
     public AiStreamProxyController(
             @Value("${app.rs.base-url}") String rsBaseUrl,
+            @Value("${app.api.connect-timeout-ms:3000}") long connectTimeoutMs,
             @Value("${app.api.read-timeout-ms:45000}") long readTimeoutMs,
-            OAuth2AuthorizedClientManager authorizedClientManager,
-            @Value("${app.oidc.registration-id:nitrowater}") String registrationId) {
-        JdkClientHttpRequestFactory requestFactory =
-                new JdkClientHttpRequestFactory(HttpClient.newHttpClient());
+            BffTokenService tokens) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(Duration.ofMillis(Math.max(readTimeoutMs, STREAM_READ_TIMEOUT_MS)));
         this.serverRestClient = RestClient.builder().baseUrl(rsBaseUrl).requestFactory(requestFactory).build();
-        this.authorizedClientManager = authorizedClientManager;
-        this.registrationId = registrationId;
+        this.tokens = tokens;
     }
 
     /**
-     * Proxies both AI SSE endpoints to the business API, preserving SSE framing.
+     * Proxies the agent SSE endpoint to the business API, preserving SSE framing.
      *
-     * <p>The target path is the same as the incoming path ({@code /api/ai/chat/stream} or
-     * {@code /api/ai/agent/chat/stream}); both must bypass the generic buffered
-     * {@code ApiProxyController}.</p>
+     * <p>The target path is the same as the incoming path ({@code /api/ai/agent/chat/stream}); it
+     * must bypass the generic buffered {@code ApiProxyController}.</p>
      *
      * @param body the chat request JSON
      * @param authentication the BFF session principal
      * @param request the incoming request
+     * @param response the outgoing response (used when a refreshed token must be written back)
      * @return a streaming response with {@code text/event-stream}, or the downstream error
      */
-    @PostMapping(path = {"/api/ai/chat/stream", "/api/ai/agent/chat/stream"},
+    @PostMapping(path = "/api/ai/agent/chat/stream",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<StreamingResponseBody> stream(@RequestBody String body,
-            Authentication authentication, HttpServletRequest request) {
-        String accessToken = accessToken(authentication);
+            Authentication authentication, HttpServletRequest request, HttpServletResponse response) {
+        String accessToken;
+        try {
+            accessToken = this.tokens.accessToken(authentication, request, response);
+        } catch (ReauthRequiredException ex) {
+            // Session gone or refresh rejected: a JSON 401 (not an SSE frame) so the SPA can send
+            // the user back to sign in — mirrors the downstream-error branch below.
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .headers(ReauthResponse.headers(ex.reason()))
+                    .body(output -> output.write(ReauthResponse.body(ex.reason())));
+        }
         String clientAddress = request.getRemoteAddr();
         String targetPath = (String) request.getAttribute(
                 HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
-        if (targetPath == null || targetPath.isBlank()) {
+        if (StringUtil.isBlank(targetPath)) {
             targetPath = request.getRequestURI();
         }
 
@@ -163,24 +171,5 @@ public class AiStreamProxyController {
         } catch (Exception ex) {
             return "";
         }
-    }
-
-    /**
-     * @param authentication the BFF session principal
-     * @return the server-held access token
-     * @throws ResponseStatusException 401 when the session has no usable authorized client
-     */
-    private String accessToken(Authentication authentication) {
-        if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login is required");
-        }
-        OAuth2AuthorizedClient client = authorizedClientManager.authorize(
-                OAuth2AuthorizeRequest.withClientRegistrationId(registrationId)
-                        .principal(authentication)
-                        .build());
-        if (client == null || client.getAccessToken() == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login is required");
-        }
-        return client.getAccessToken().getTokenValue();
     }
 }

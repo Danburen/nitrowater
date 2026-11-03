@@ -17,6 +17,7 @@ import cn.nitrowater.core.exception.notfound.NotFoundException;
 import cn.nitrowater.core.infrastructure.persistence.user.UserDatumRepo;
 import cn.nitrowater.core.infrastructure.persistence.user.UserRepository;
 import cn.nitrowater.core.infrastructure.security.EncryptedKeyService;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * SSO-scope implementation of {@link UserCoreService}.
@@ -66,7 +67,7 @@ public class UserCoreServiceImpl implements UserCoreService {
 
     @Override
     public Long resolveUid(String identifier) {
-        if (identifier == null || identifier.isBlank()) {
+        if (StringUtil.isBlank(identifier)) {
             throw new NotFoundException("Blank login identifier");
         }
         String value = identifier.trim();
@@ -92,7 +93,7 @@ public class UserCoreServiceImpl implements UserCoreService {
 
     @Override
     public Long resolveUidByTarget(String target, VerifyChannel channel) {
-        if (target == null || target.isBlank()) {
+        if (StringUtil.isBlank(target)) {
             throw new NotFoundException("Blank verification target");
         }
         EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();

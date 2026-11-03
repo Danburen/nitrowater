@@ -10,7 +10,7 @@ const styles: Record<string, string> = {
 </script>
 
 <template>
-  <div class="pointer-events-none fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2">
+  <div class="pointer-events-none fixed bottom-4 right-4 z-[1100] flex w-72 flex-col gap-2">
     <div
       v-for="item in toasts"
       :key="item.id"

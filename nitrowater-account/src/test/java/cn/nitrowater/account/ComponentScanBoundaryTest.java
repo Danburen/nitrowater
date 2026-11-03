@@ -16,8 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Guards the component-scan boundary of this application.
  *
  * <p>The app used to scan {@code cn.nitrowater} wholesale, which pulled
- * {@code cn.nitrowater.core.web.GlobalExceptionHandler} (a {@code @RestControllerAdvice} from
- * {@code nitrowater-core-web}) into the context alongside this service's own handler. Both are
+ * {@code cn.nitrowater.core.web.GlobalExceptionHandler} (a {@code @RestControllerAdvice} shipped in
+ * {@code nitrowater-core}) into the context alongside this service's own handler. Both are
  * annotated {@code @RestControllerAdvice}, so both derive the bean name {@code globalExceptionHandler}
  * and the context fails with {@code ConflictingBeanDefinitionException}.</p>
  *

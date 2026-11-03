@@ -56,11 +56,10 @@ const summary = computed(() => {
         v-for="(tool, index) in tools"
         :key="`tool-${index}`"
         class="tag"
-        :class="tool.status && tool.status !== 'ok' ? 'border-warn/40 text-warn' : ''"
+        :class="tool.ok === false ? 'border-warn/40 text-warn' : ''"
         :title="tool.summary || tool.argument"
       >
-        {{ tool.name }}<template v-if="tool.status && tool.status !== 'ok'"> · {{ tool.status }}</template>
-        <template v-else-if="tool.resultCount"> · {{ tool.resultCount }}</template>
+        {{ tool.name }}<template v-if="tool.resultCount"> · {{ tool.resultCount }}</template>
       </span>
     </div>
   </div>

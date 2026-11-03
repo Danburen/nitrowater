@@ -161,7 +161,7 @@ html:root {
   --el-component-size: 34px;
   --el-component-size-small: 28px;
 
-  /* Cards and tags: match .panel / .chip-toggle. */
+  /* Cards and tags: match .panel / .tag. */
   --el-card-border-radius: 14px;
   --el-card-border-color: var(--color-line);
   --el-card-bg-color: var(--color-card);
@@ -184,6 +184,13 @@ html:root {
   --el-box-shadow-dark: 0 16px 48px var(--shadow-color);
 }
 
+/*
+ * Only primitives that genuinely span pages live here. Anything a single component owns —
+ * a card shell, a metric tile, a section head, an inline chip — is written as utilities in
+ * that component's template (or a scoped block when it needs state / a deep Element Plus
+ * selector). Keeping the global layer small is the point: a class here is a promise that
+ * more than one page depends on it.
+ */
 @layer components {
   .btn {
     @apply inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-soft px-3.5 py-[7px] text-[13.5px] text-ink transition;
@@ -221,43 +228,6 @@ html:root {
     @apply cursor-not-allowed opacity-40;
   }
 
-  .chip-toggle {
-    @apply inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-[11.5px] text-dim transition;
-  }
-
-  .chip-toggle:hover {
-    @apply border-line-strong text-ink;
-  }
-
-  .chip-toggle.is-on {
-    @apply border-accent/40 bg-accent/10 text-accent;
-  }
-
-@layer utilities {
-  /* Thin scrollbar that only shows a thumb when the content actually overflows. */
-  .scroll-thin {
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-line-strong) transparent;
-  }
-
-  .scroll-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  .scroll-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .scroll-thin::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-line-strong) 65%, transparent);
-  }
-
-  .scroll-thin::-webkit-scrollbar-thumb:hover {
-    background: var(--color-line-strong);
-  }
-}
   /*
    * Admin console primitives. Every admin page composes these instead of repeating Tailwind
    * strings, so spacing, borders and control sizes stay identical across pages. Keep the values
@@ -302,6 +272,15 @@ html:root {
     margin-left: 0;
   }
 
+  /* Page-level action cluster (below the H1): full-size buttons, unlike the dense card toolbars. */
+  .admin-page-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .admin-page-actions .el-button + .el-button {
+    margin-left: 0;
+  }
+
   /*
    * List-page shell: filter bar on top, table in the middle, pager at the bottom. The card body
    * drops its padding so the table can run edge to edge; the bars keep their own padding.
@@ -310,38 +289,39 @@ html:root {
     @apply p-0;
   }
 
-  .admin-filter {
-    @apply flex flex-wrap items-center gap-2 border-b border-line px-4 py-3;
+  /*
+   * Query form: one inline row, label left / control right, action cluster pinned right. This owns
+   * the layout only — control widths stay on the page as plain utilities (`w-[220px]`).
+   */
+  .admin-filter-form {
+    @apply flex flex-wrap items-center;
   }
 
-  /* `el-form--inline` keeps a 18px bottom margin on every item; the bar owns the spacing instead. */
-  .admin-filter.el-form--inline .el-form-item {
+  .admin-filter-form .el-form-item {
     @apply mb-0 mr-0;
   }
 
-  .admin-filter .el-input {
-    @apply w-[200px];
+  .admin-filter-form .admin-filter-actions {
+    @apply ml-auto flex items-center gap-2;
   }
 
-  .admin-filter .el-select {
-    @apply w-[150px];
-  }
+  /* Narrow screens: one field per row, controls take the full width. `!important` beats the fixed
+     widths the page sets on the controls (Element Plus ships unlayered CSS, so utilities need it). */
+  @media (max-width: 991px) {
+    .admin-filter-form .el-form-item,
+    .admin-filter-form .admin-filter-actions {
+      width: 100%;
+    }
 
-  .admin-pager {
-    @apply flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim;
-  }
+    .admin-filter-form .admin-filter-actions {
+      margin-left: 0;
+      justify-content: flex-end;
+    }
 
-  /* Small metric tile used by the usage cards. */
-  .admin-stat {
-    @apply rounded-[12px] border border-line bg-card p-3;
-  }
-
-  .admin-stat-label {
-    @apply text-[12px] text-faint;
-  }
-
-  .admin-stat-value {
-    @apply mt-1 font-mono text-[17px] leading-tight text-ink;
+    .admin-filter-form .el-form-item .el-input,
+    .admin-filter-form .el-form-item .el-select {
+      width: 100% !important;
+    }
   }
 
   /* Tables inside a card should not paint their own outer frame/bottom rule. */
@@ -357,33 +337,48 @@ html:root {
     @apply border-warn/30 bg-warn/10 text-warn;
   }
 
-  .section-head {
-    @apply mb-[22px] flex items-end justify-between gap-4;
-  }
-
   .input,
-  .textarea,
   .select {
     @apply w-full rounded-[9px] border border-line bg-bg/60 px-3 py-2 text-sm text-ink outline-none transition;
   }
 
-  .input::placeholder,
-  .textarea::placeholder {
+  .input::placeholder {
     color: var(--color-faint);
   }
 
   .input:focus,
-  .textarea:focus,
   .select:focus {
     border-color: var(--color-accent);
   }
 
-  .textarea {
-    @apply font-mono leading-relaxed;
-  }
-
   .panel {
     @apply rounded-[14px] border border-line bg-card p-4;
+  }
+}
+
+@layer utilities {
+  /* Thin scrollbar that only shows a thumb when the content actually overflows. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-line-strong) 65%, transparent);
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--color-line-strong);
   }
 }
 

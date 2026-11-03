@@ -21,6 +21,8 @@ export const ResponseCode = {
   InvalidRequest: 'invalid_request',
   /** Unhandled server error. */
   InternalError: 'internal_error',
+  /** A downstream service is unreachable (BFF answered 502 instead of a generic 500). */
+  UpstreamUnavailable: 'upstream_unavailable',
   /** Non-envelope failure answered with a non-2xx status (client-side synthetic code). */
   HttpError: 'http_error',
   /** The caller's daily AI budget is exhausted. */

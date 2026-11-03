@@ -1,10 +1,21 @@
 import type { AiSource, AiToolCall } from '../../api/ai'
 import type { SlashProfile, SlashQuota, SlashStatus } from '../../api/slash'
 
-/** Transient progress of a streaming agent turn (rendered as the live activity card). */
-export interface ChatActivity {
+/** One rendered live step: the wire marker plus the client-side identity and timing. */
+export interface LiveStep {
+  /** Server call id when available, otherwise a client-generated one. */
+  id: string
   phase: 'thinking' | 'tool_start' | 'tool_end'
   tool: string | null
+  argument: string | null
+  /** Outcome code from the server; only used for debugging text, never for the badge. */
+  status: string | null
+  /** Whether the call was handled; {@code null} while it is still running. */
+  ok: boolean | null
+  resultCount: number | null
+  /** Client-side start, used for the elapsed time when the server reported none. */
+  startedAt: number
+  durationMs: number | null
 }
 
 
@@ -50,8 +61,6 @@ export interface ChatMessage {
   truncated?: boolean
   /** The content gate masked part of this answer before it was stored. */
   moderated?: boolean
-  /** Live tool/thinking state while streaming. */
-  activity?: ChatActivity | null
   /** Slash-command result; present only on {@code system} messages. */
   card?: SystemCard
 }

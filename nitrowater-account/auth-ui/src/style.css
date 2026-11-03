@@ -46,24 +46,11 @@
  * Deliberately plain: one neutral background, one bordered card, one accent colour.
  * Form controls and the captcha dialog come from Element Plus (styled by the token bridge);
  * only the page shell lives here.
+ *
+ * The page shell itself is utilities on {@code AuthLayout}; what stays global is the alert/label
+ * vocabulary shared by the login and register forms (two views would otherwise repeat it).
  */
 @layer components {
-  .auth-page {
-    @apply grid min-h-dvh place-items-center bg-bg p-6;
-  }
-
-  .auth-shell {
-    @apply w-full max-w-[400px];
-  }
-
-  .auth-brand {
-    @apply mb-4 flex items-center gap-2.5;
-  }
-
-  .auth-card {
-    @apply rounded-xl border border-line bg-card p-6 sm:p-7;
-  }
-
   .auth-label {
     @apply mb-1.5 block text-[13px] font-medium text-dim;
   }
@@ -79,19 +66,4 @@
   .auth-alert-success {
     @apply rounded-lg border border-ok/25 bg-ok/10 px-3 py-2.5 text-[13px] leading-5 text-ok;
   }
-
-  .auth-alert-info {
-    @apply rounded-lg border border-line bg-soft px-3 py-2.5 text-[13px] leading-5 text-dim;
-  }
-
-  .auth-footer {
-    @apply mt-5 text-center text-[11px] text-faint;
-  }
-}
-
-/* The captcha image is 120x30 on the server; never stretch it (that clipped the characters). */
-.auth-captcha-image {
-  display: block;
-  width: 120px;
-  height: 30px;
 }

@@ -16,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Restricts {@code /internal/**} to loopback and private networks.
@@ -55,7 +56,7 @@ public class InternalEndpointFilter extends OncePerRequestFilter {
      * @return whether the address is loopback, RFC 1918, link-local or an IPv6 unique-local address
      */
     static boolean isPrivateClient(String remoteAddr) {
-        if (remoteAddr == null || remoteAddr.isBlank()) {
+        if (StringUtil.isBlank(remoteAddr)) {
             return false;
         }
         try {

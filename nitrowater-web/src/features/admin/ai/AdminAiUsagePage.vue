@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import AdminPage from '../AdminPage.vue'
+import AdminPage from '../components/AdminPage.vue'
 import AiAdminUsage from './AiAdminUsage.vue'
 </script>
 
 <template>
   <AdminPage
     title="用户用量"
-    description="按 UTC 日期统计的每人 token 消耗，可选中用户或全部重置。"
+    description="按 UTC 日期统计的每人 token 消耗；行内可重置单个用户，多选后可批量重置。"
   >
     <AiAdminUsage />
   </AdminPage>

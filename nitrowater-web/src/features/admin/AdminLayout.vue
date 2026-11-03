@@ -4,23 +4,29 @@
  *
  * <p>The outer frame is intentionally plain flexbox (not {@code el-container}): Element Plus's
  * layout components carry their own padding/height rules that fight a full-height app shell.
- * Element Plus owns the interactive pieces (menu, drawer, dropdown, result) while the frame keeps
- * the proven Tailwind structure.</p>
+ * Element Plus only owns the menu; the account menu is the same Tailwind {@link UserMenu} the
+ * portal header uses (top-right), and the mobile drawer is the shared {@link AppDrawer}, so every
+ * popup matches the portal and the admin pages.</p>
  *
- * <p>Access requires a session whose {@code roles} claim contains {@code ADMIN}; the resource
- * server enforces the same with {@code ROLE_ADMIN}. This is only the UI gate.</p>
+ * <p>Global actions that are not menu entries live at the bottom-left of the sidebar: back to the
+ * portal and the theme switch. Access requires a session whose {@code roles} claim contains
+ * {@code ADMIN}; the resource server enforces the same with {@code ROLE_ADMIN}. This is only the UI
+ * gate.</p>
  */
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Back, Expand, Fold } from '@element-plus/icons-vue'
+import { Expand, Fold } from '@element-plus/icons-vue'
 import { useAuth } from '../../auth/useAuth'
+import AppDrawer from '../../shared/ui/AppDrawer.vue'
 import ThemeToggle from '../../shared/ui/ThemeToggle.vue'
+import UserMenu from '../../shared/ui/UserMenu.vue'
 import AdminNav from './AdminNav.vue'
+import AdminSidebarFooter from './AdminSidebarFooter.vue'
 import { ADMIN_MENU } from './menu'
 
 const route = useRoute()
 const router = useRouter()
-const { session, loading, login, logout } = useAuth()
+const { session, loading, login } = useAuth()
 
 const collapsed = ref(false)
 const drawerOpen = ref(false)
@@ -29,7 +35,6 @@ const isAdmin = computed(() => {
   const roles = session.value?.roles ?? []
   return roles.includes('ADMIN') || roles.includes('ROLE_ADMIN')
 })
-const displayName = computed(() => session.value?.name || session.value?.username || '已登录')
 
 /** Current page label, resolved from the menu (used as the header title). */
 const pageTitle = computed(() => {
@@ -41,14 +46,6 @@ const pageTitle = computed(() => {
   }
   return '管理后台'
 })
-
-function onCommand(command: string): void {
-  if (command === 'home') {
-    void router.push('/')
-    return
-  }
-  if (command === 'logout') logout()
-}
 </script>
 
 <template>
@@ -105,22 +102,20 @@ function onCommand(command: string): void {
       :class="collapsed ? 'md:w-[64px]' : 'md:w-[220px]'"
     >
       <div class="flex h-[52px] shrink-0 items-center gap-2 border-b border-line px-3">
-        <router-link
-          to="/"
-          class="inline-flex size-8 shrink-0 place-items-center rounded-[9px] border border-line bg-card text-dim transition hover:border-line-strong hover:text-ink"
-          title="返回门户"
-          aria-label="返回门户"
+        <img
+          src="/favicon.svg"
+          alt=""
+          class="size-[22px] shrink-0"
         >
-          <el-icon><Back /></el-icon>
-        </router-link>
         <span
           v-if="!collapsed"
-          class="truncate text-[13px] text-dim"
+          class="truncate text-[13px] font-semibold text-ink"
         >管理后台</span>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto py-2">
         <AdminNav :collapsed="collapsed" />
       </div>
+      <AdminSidebarFooter :collapsed="collapsed" />
     </aside>
 
     <div class="flex min-w-0 flex-1 flex-col">
@@ -145,29 +140,8 @@ function onCommand(command: string): void {
           <el-icon><component :is="collapsed ? Expand : Fold" /></el-icon>
         </button>
         <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-dim">{{ pageTitle }}</span>
-        <ThemeToggle />
-        <el-dropdown @command="onCommand">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-card px-2.5 py-1.5 text-[12.5px] text-dim transition hover:border-line-strong hover:text-ink"
-          >
-            <span class="max-w-[120px] truncate">{{ displayName }}</span>
-            <el-icon><ArrowDown /></el-icon>
-          </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="home">
-                返回门户
-              </el-dropdown-item>
-              <el-dropdown-item
-                command="logout"
-                divided
-              >
-                退出登录
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <ThemeToggle class="md:hidden" />
+        <UserMenu />
       </header>
 
       <main class="min-h-0 flex-1 overflow-y-auto">
@@ -176,12 +150,17 @@ function onCommand(command: string): void {
     </div>
   </div>
 
-  <el-drawer
+  <AppDrawer
     v-model="drawerOpen"
-    direction="ltr"
-    size="240px"
-    :with-header="false"
+    side="left"
+    width="240px"
+    :pad="false"
   >
-    <AdminNav />
-  </el-drawer>
+    <div class="flex h-full flex-col">
+      <div class="min-h-0 flex-1 overflow-y-auto py-2">
+        <AdminNav />
+      </div>
+      <AdminSidebarFooter />
+    </div>
+  </AppDrawer>
 </template>

@@ -38,7 +38,7 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen">
-    <main class="mx-auto max-w-[1120px] px-6">
+    <main class="mx-auto max-w-[1120px] px-4 sm:px-6">
       <div class="pt-8">
         <button
           type="button"

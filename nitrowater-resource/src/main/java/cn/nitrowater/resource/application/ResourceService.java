@@ -43,6 +43,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Core resource orchestration: registration, upload confirmation, reads and deletion.
@@ -619,7 +620,7 @@ public class ResourceService {
     }
 
     private static boolean hasText(String value) {
-        return value != null && !value.isBlank();
+        return StringUtil.isNotBlank(value);
     }
 
     /** Builds the metadata view, embedding a read URL (or the service read path when not presignable). */
@@ -707,7 +708,7 @@ public class ResourceService {
     /** @return the download file name: the original name when known, else the uuid */
     private static String downloadFileName(Resource resource) {
         String name = resource.getOriginalName();
-        return (name != null && !name.isBlank()) ? name : resource.getUuid();
+        return (StringUtil.isNotBlank(name)) ? name : resource.getUuid();
     }
 
     /** Parses a media type, degrading to {@code application/octet-stream} on malformed input. */
@@ -733,7 +734,7 @@ public class ResourceService {
      * back to {@code _} and a system resource (no owner) uses the {@code system} owner segment.
      */
     private static String buildObjectKey(String app, String groupKey, Long ownerUid, String uuid, String extension) {
-        String group = (groupKey == null || groupKey.isBlank()) ? "_" : groupKey;
+        String group = (StringUtil.isBlank(groupKey)) ? "_" : groupKey;
         String owner = ownerUid == null ? "system" : ownerUid.toString();
         String noDash = uuid.replace("-", "");
         String suffix = extension.isEmpty() ? "" : "." + extension;
@@ -742,7 +743,7 @@ public class ResourceService {
 
     /** @return {@code {"version":"..."}} as JSON, or {@code null} when no version is recorded */
     private static String fileMetaJson(String version) {
-        if (version == null || version.isBlank()) {
+        if (StringUtil.isBlank(version)) {
             return null;
         }
         return JSON.writeValueAsString(Map.of(FILE_META_VERSION_KEY, version));
@@ -750,7 +751,7 @@ public class ResourceService {
 
     /** @return the {@code version} field of a {@code file_meta} JSON document, or {@code null} */
     private static String versionOf(String fileMeta) {
-        if (fileMeta == null || fileMeta.isBlank()) {
+        if (StringUtil.isBlank(fileMeta)) {
             return null;
         }
         try {
@@ -766,7 +767,7 @@ public class ResourceService {
     }
 
     private static String blankToNull(String value) {
-        return (value == null || value.isBlank()) ? null : value;
+        return (StringUtil.isBlank(value)) ? null : value;
     }
 
     private static byte[] readHead(FileStorage storage, String objectKey) {

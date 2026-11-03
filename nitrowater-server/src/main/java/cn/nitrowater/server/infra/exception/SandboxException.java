@@ -1,12 +1,14 @@
 package cn.nitrowater.server.infra.exception;
 
+import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
 /**
  * Signals a sandbox request that cannot be served, carrying the HTTP status to return.
  *
- * @see SandboxService
+ * @see cn.nitrowater.server.service.sandbox.SandboxService
  */
+@Getter
 public class SandboxException extends RuntimeException {
 
     private final HttpStatus status;
@@ -21,13 +23,5 @@ public class SandboxException extends RuntimeException {
         super(message);
         this.status = status;
         this.code = code;
-    }
-
-    public HttpStatus status() {
-        return status;
-    }
-
-    public String code() {
-        return code;
     }
 }

@@ -1,8 +1,12 @@
 package cn.nitrowater.server.ai.conversation;
 
-import cn.nitrowater.server.ai.properties.AiProperties;
-import cn.nitrowater.server.ai.ChatTurn;
-import cn.nitrowater.server.ai.moderation.AiModerationService;
+import cn.nitrowater.lib.utils.JsonUtil;
+import cn.nitrowater.server.service.ai.ConversationService;
+import cn.nitrowater.server.service.ai.properties.AiProperties;
+import cn.nitrowater.server.service.ai.model.AiTokenUsage;
+import cn.nitrowater.server.service.ai.model.ChatTurn;
+import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.AiModerationService;
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.entity.AiMessage;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
@@ -10,6 +14,7 @@ import cn.nitrowater.server.infra.enums.MessageRole;
 import cn.nitrowater.server.infra.repository.AiConversationRepository;
 import cn.nitrowater.server.infra.repository.AiMessageRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Limit;
 
 import java.util.List;
@@ -19,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,5 +82,57 @@ class ConversationServiceTest {
         verify(conversation).setSummaryUptoSeq(9);
         verify(conversation).setTokensEstimate(0);
         verify(conversations).save(conversation);
+    }
+
+    @Test
+    void continuationExtendsTheStoredAnswerInsteadOfAddingARow() {
+        AiConversation conversation = mock(AiConversation.class);
+        when(conversation.getId()).thenReturn(1L);
+        when(conversation.getTokensEstimate()).thenReturn(100);
+
+        AiMessage previous = mock(AiMessage.class);
+        when(previous.getContent()).thenReturn("part one ");
+        when(previous.getTokens()).thenReturn(10);
+        when(previous.getSourcesJson()).thenReturn(JsonUtil.toJson(List.of(
+                new DocSource(1, "doc", "Title", "Section", "path.md", "/docs/one", 0.9, "one"))));
+        when(previous.getSkillsJson()).thenReturn(JsonUtil.toJson(List.of("search")));
+        when(previous.getModerated()).thenReturn(false);
+        when(messages.findFirstByConversationIdAndRoleOrderBySeqDesc(1L, MessageRole.ASSISTANT))
+                .thenReturn(Optional.of(previous));
+
+        service.finish(conversation, "part two", List.of(
+                        new DocSource(1, "doc", "Other", "Other", "other.md", "/docs/two", 0.8, "two")),
+                List.of(), List.of("search", "docs"), "model-2",
+                new AiTokenUsage(5, 7, false), false, true);
+
+        verify(previous).setContent("part one part two");
+        verify(previous).setTokens(17);
+        ArgumentCaptor<String> sources = ArgumentCaptor.forClass(String.class);
+        verify(previous).setSourcesJson(sources.capture());
+        // The reused number 1 belongs to the first half, so the continuation's citation is moved up.
+        assertThat(sources.getValue()).contains("/docs/one").contains("/docs/two").contains("\"index\":2");
+        ArgumentCaptor<String> skills = ArgumentCaptor.forClass(String.class);
+        verify(previous).setSkillsJson(skills.capture());
+        assertThat(skills.getValue()).contains("search").contains("docs");
+        verify(conversation).setTokensEstimate(107);
+        // No second assistant row: the append path (which allocates a seq) must not run.
+        verify(messages, never()).findFirstByConversationIdOrderBySeqDesc(1L);
+    }
+
+    @Test
+    void finishStoresSkillsWithANewAnswer() {
+        AiConversation conversation = mock(AiConversation.class);
+        when(conversation.getId()).thenReturn(1L);
+        when(conversation.getMessageCount()).thenReturn(2);
+        when(conversation.getTokensEstimate()).thenReturn(40);
+        when(messages.findFirstByConversationIdOrderBySeqDesc(1L)).thenReturn(Optional.empty());
+
+        service.finish(conversation, "answer", List.of(), List.of(), List.of("searchDocs"),
+                "model", new AiTokenUsage(3, 4, false), false, false);
+
+        ArgumentCaptor<AiMessage> saved = ArgumentCaptor.forClass(AiMessage.class);
+        verify(messages).save(saved.capture());
+        assertThat(saved.getValue().getSkillsJson()).contains("searchDocs");
+        assertThat(saved.getValue().getModerated()).isFalse();
     }
 }

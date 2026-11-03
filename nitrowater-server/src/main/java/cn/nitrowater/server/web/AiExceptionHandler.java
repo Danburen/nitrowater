@@ -1,9 +1,9 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.lib.api.ApiResponse;
-import cn.nitrowater.server.ai.AiQuotaExceededException;
-import cn.nitrowater.server.ai.moderation.ContentBlockedException;
-import cn.nitrowater.server.ai.moderation.ContentCooldownException;
+import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
+import cn.nitrowater.server.infra.exception.ContentBlockedException;
+import cn.nitrowater.server.infra.exception.ContentCooldownException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;

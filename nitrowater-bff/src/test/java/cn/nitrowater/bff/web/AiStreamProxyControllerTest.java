@@ -1,12 +1,14 @@
 package cn.nitrowater.bff.web;
 
+import cn.nitrowater.bff.security.BffTokenService;
+import cn.nitrowater.bff.security.MultiAccountAuthorizedClientRepository;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
@@ -36,7 +38,6 @@ class AiStreamProxyControllerTest {
     @Test
     void specificStreamPatternOutranksTheApiWildcard() {
         PathPatternParser parser = PathPatternParser.defaultInstance;
-        assertThat(parser.parse("/api/ai/chat/stream").compareTo(parser.parse("/api/**"))).isNegative();
         assertThat(parser.parse("/api/ai/agent/chat/stream").compareTo(parser.parse("/api/**")))
                 .isNegative();
     }
@@ -47,7 +48,7 @@ class AiStreamProxyControllerTest {
         AtomicReference<String> requestBody = new AtomicReference<>();
 
         HttpServer upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        upstream.createContext("/api/ai/chat/stream", exchange -> {
+        upstream.createContext("/api/ai/agent/chat/stream", exchange -> {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             exchange.getResponseHeaders().add("Content-Type", MediaType.TEXT_EVENT_STREAM_VALUE);
@@ -72,15 +73,15 @@ class AiStreamProxyControllerTest {
             OAuth2AccessToken token = mock(OAuth2AccessToken.class);
             when(token.getTokenValue()).thenReturn("server-token");
             when(client.getAccessToken()).thenReturn(token);
-            when(manager.authorize(any(OAuth2AuthorizeRequest.class))).thenReturn(client);
+            when(manager.authorize(any())).thenReturn(client);
 
             AiStreamProxyController controller =
-                    new AiStreamProxyController(baseUrl, 5_000, manager, "nitrowater");
-            MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/ai/chat/stream");
+                    new AiStreamProxyController(baseUrl, 3_000, 5_000, tokens(manager));
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/ai/agent/chat/stream");
             request.setRemoteAddr("127.0.0.1");
 
-            ResponseEntity<StreamingResponseBody> response =
-                    controller.stream("{\"question\":\"hi\"}", mock(Authentication.class), request);
+            ResponseEntity<StreamingResponseBody> response = controller.stream("{\"question\":\"hi\"}",
+                    principal("9000000001"), request, new MockHttpServletResponse());
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             response.getBody().writeTo(output);
@@ -120,16 +121,16 @@ class AiStreamProxyControllerTest {
             OAuth2AccessToken token = mock(OAuth2AccessToken.class);
             when(token.getTokenValue()).thenReturn("server-token");
             when(client.getAccessToken()).thenReturn(token);
-            when(manager.authorize(any(OAuth2AuthorizeRequest.class))).thenReturn(client);
+            when(manager.authorize(any())).thenReturn(client);
 
             AiStreamProxyController controller =
-                    new AiStreamProxyController(baseUrl, 5_000, manager, "nitrowater");
+                    new AiStreamProxyController(baseUrl, 3_000, 5_000, tokens(manager));
             MockHttpServletRequest request =
                     new MockHttpServletRequest("POST", "/api/ai/agent/chat/stream");
             request.setRemoteAddr("127.0.0.1");
 
             ResponseEntity<StreamingResponseBody> response =
-                    controller.stream("{}", mock(Authentication.class), request);
+                    controller.stream("{}", principal("9000000001"), request, new MockHttpServletResponse());
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             response.getBody().writeTo(output);
@@ -140,5 +141,41 @@ class AiStreamProxyControllerTest {
         } finally {
             upstream.stop(0);
         }
+    }
+
+    /**
+     * A session that can no longer produce a token must answer the JSON 401 envelope (not an SSE
+     * frame, and never a 500): the SPA only re-authenticates on a 401.
+     */
+    @Test
+    void missingAuthorizationAnswersJson401() throws Exception {
+        OAuth2AuthorizedClientManager manager = mock(OAuth2AuthorizedClientManager.class);
+        when(manager.authorize(any())).thenReturn(null);
+
+        AiStreamProxyController controller =
+                new AiStreamProxyController("http://127.0.0.1:1", 3_000, 5_000, tokens(manager));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/ai/agent/chat/stream");
+
+        ResponseEntity<StreamingResponseBody> response = controller.stream("{}",
+                principal("9000000001"), request, new MockHttpServletResponse());
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        response.getBody().writeTo(output);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(response.getHeaders().getFirst("X-Auth-Reason")).isEqualTo("no_authorized_client");
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
+        assertThat(output.toString(StandardCharsets.UTF_8))
+                .contains("session_expired")
+                .contains("no_authorized_client");
+    }
+
+    private static BffTokenService tokens(OAuth2AuthorizedClientManager manager) {
+        return new BffTokenService(manager, new MultiAccountAuthorizedClientRepository(), "nitrowater");
+    }
+
+    private static Authentication principal(String name) {
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getName()).thenReturn(name);
+        return authentication;
     }
 }

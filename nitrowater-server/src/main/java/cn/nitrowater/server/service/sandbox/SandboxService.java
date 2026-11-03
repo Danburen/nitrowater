@@ -16,6 +16,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.charset.StandardCharsets;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Turns a user run request into a sandbox execution and a normalised response.
@@ -45,7 +46,7 @@ public class SandboxService {
                         HttpStatus.BAD_REQUEST, "unsupported_language",
                         "Unsupported language: " + request.language()));
 
-        if (request.code() == null || request.code().isBlank()) {
+        if (StringUtil.isBlank(request.code())) {
             throw new SandboxException(HttpStatus.BAD_REQUEST, "empty_code", "Code must not be empty");
         }
         if (request.code().getBytes(StandardCharsets.UTF_8).length > properties.maxCodeBytes()) {

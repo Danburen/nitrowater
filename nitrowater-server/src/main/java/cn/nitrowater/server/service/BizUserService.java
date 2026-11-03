@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Collectors;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Resolves (and lazily creates) the business-side user mirror for an authenticated caller.
@@ -62,7 +63,7 @@ public class BizUserService {
         if (uid == null) {
             uid = jwt.getSubject();
         }
-        if (uid == null || uid.isBlank()) {
+        if (StringUtil.isBlank(uid)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token carries no uid");
         }
         try {
@@ -84,7 +85,7 @@ public class BizUserService {
 
     /** @return the resource uuid embedded in an OIDC {@code picture} URL, or {@code null} */
     static String avatarUuidOf(String picture) {
-        if (picture == null || picture.isBlank()) {
+        if (StringUtil.isBlank(picture)) {
             return null;
         }
         int slash = picture.lastIndexOf('/');

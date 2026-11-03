@@ -14,8 +14,7 @@ NitroWater 是一个面向 **Minecraft 服务器主与插件生态**的多模块
 - **BFF Token Handler**：浏览器不保存 access/refresh token，只持有 HttpOnly 会话；BFF 负责续期和代理。
 - **业务平台**：门户、服务器工具箱、插件中心、资源服务、代码运行器。
 - **文档站**：VeloChatX 的 VitePress 双语文档站，经 nginx 与 BFF 同源挂载。
-- **AI 文档助手**：基于 Qdrant 的 RAG 问答，回答带引用，支持 SSE 流式。
-- **AI Agent**：在 RAG 之上增加工具调用（检索、技能、联网、代码沙箱），带工具预算、轨迹和配额。
+- **AI Agent**：唯一的问答路线——模型按需调用工具（检索、技能、联网、代码沙箱），带工具预算、轨迹、配额和 SSE 步骤卡片。
 - **工程化**：Gradle 多模块、Flyway 三库隔离、Docker compose、一键启停/播种/同步脚本、单元测试与前端构建验证。
 
 一句话：**它已经是一个可运行、可演示、端到端闭环的 Minecraft 服务器生态平台，而不是只有页面的原型。**
@@ -48,8 +47,7 @@ NitroWater 的解决方式是把这些能力收敛到一个同源平台：**一�
 | 代码运行器 | 浏览器 + 服务端双模式 | 匿名走浏览器 WASM；登录用户走 Piston；Redis 分钟/日配额；进程内排队；输出截断 |
 | 资源服务 | 可插拔文件存储 | SeaweedFS/S3、腾讯 COS、LOCAL；预签名读写；可见性/owner；管理端文件管理；孤儿回收；插件 JAR 托管 |
 | 文档站 | VeloChatX VitePress | 9 篇中文 + 9 篇英文 + README；构建产物发布到 `deploy/plugin-docs`；nginx :8085；BFF `/plugin/**` 同源代理 |
-| AI 文档助手 | RAG 问答 | 多语料索引、向量检索、上下文拼装、引用 `[n]`、SSE 流式、会话落库 |
-| AI Agent | 工具调用 | `searchDocs`、`loadSkill`、`webSearch`、`runCode`；工具预算、AgentTrace、技能覆盖、管理端目录 |
+| AI Agent | 工具调用问答 | 多语料索引、`searchDocs`/`loadSkill`/`webSearch`/`runCode`；工具预算、AgentTrace、技能覆盖、引用 `[n]`、SSE 步骤卡片、会话落库 |
 | AI 运营 | 配额与管理 | 登录校验、每分钟限流、每日 token 计量；运行时开关；`/admin/ai/{settings,usage,catalog}` |
 | 工程化 | 构建与运维 | Gradle 多模块、Flyway 三库隔离、Docker compose、一键启停/播种/同步脚本、日志与测试 |
 
@@ -98,7 +96,7 @@ docs nginx 8085   VeloChatX 文档站
 | `nitrowater-core` | — | 共享实体/仓储/认证服务/安全工具；纯库，不独立启动 |
 | `nitrowater-account` | 8090 | SSO/OIDC Provider、登录/注册/验证码、托管登录页、管理控制台、RBAC |
 | `nitrowater-bff` | 8080 | BFF Token Handler、会话、自动续期、API/文档/SSE 代理、登出 |
-| `nitrowater-server` | 8081 | 业务 API、插件中心、代码运行器、AI RAG/Agent、管理接口 |
+| `nitrowater-server` | 8081 | 业务 API、插件中心、代码运行器、AI Agent、管理接口 |
 | `nitrowater-resource` | 8093 | 文件/插件 JAR 存储、预签名、可见性/owner、管理端文件管理 |
 | `nitrowater-web` | 5173(dev) | Vue 门户、工具箱、插件中心、文档入口、NitroBot、管理端 |
 | `deploy/` + `bin/` | — | Docker compose、nginx、密钥、启停/播种/同步脚本 |
@@ -132,14 +130,14 @@ Browser -> BFF /oauth2/authorization
 - **统一身份**：account 是唯一 issuer；server/resource 通过 JWKS 验签。
 - **会话失效**：`APP_SESSION_EPOCH` 变更可让旧会话立即失效，适合发布/应急。
 
-### 4.2 AI 文档问答（RAG）
+### 4.2 AI 文档问答（检索）
 
 ```text
 question
-  -> BFF /api/ai/chat[/stream]
-  -> server: 配额 -> 会话历史 -> 向量检索
-  -> PromptBuilder(system + history + chunks)
-  -> chat model
+  -> BFF /api/ai/agent/chat[/stream]
+  -> server: 配额 -> 会话历史 -> Agent system prompt
+  -> chat model（需要站内事实时自行调用 searchDocs / webSearch）
+  -> tools: DocRetriever -> Qdrant（引用编号来自工具结果）
   -> answer + sources([n])
   -> 持久化 ai_message
 ```
@@ -148,8 +146,8 @@ question
 
 - 两套语料：`velochatx`（5 篇精选）与 `nitrowater`（11 篇）。
 - 文档清洗、按标题/token 切块、确定性 id，写入 Qdrant。
-- 默认 `top-k=6`、相似度阈值 `0.35`；回答必须带引用。
-- 对话支持一次性 JSON 与 SSE 流式；SSE 核心事件为 `sources → delta* → done`，其间穿插 `step` / `traces`。
+- 默认 `top-k=6`、相似度阈值 `0.35`；站内问题要求带引用。
+- 只有 Agent 一条问答路线：模型不调工具时就是单轮回答，调工具时多轮；SSE 核心事件为 `step → delta* → sources/tools/skills → done`。
 - 会话/消息落库；支持历史、停止、截断续写、内联引用、额度提示。
 
 ### 4.3 AI Agent
@@ -187,8 +185,8 @@ VeloChatX 源仓（9 zh + 9 en）
   -> 浏览器
 ```
 
-- 文档站与 RAG 语料是两条链路：站点面向人，classpath 语料面向检索。
-- RAG 当前精选 5 篇，源站有 18 篇；这是有意的“先保证质量，再扩覆盖”。
+- 文档站与检索语料是两条链路：站点面向人，classpath 语料面向 `searchDocs` 工具。
+- 语料当前精选 5 篇，源站有 18 篇；这是有意的“先保证质量，再扩覆盖”。
 - `bin/dev/sync-docs.ps1` 负责构建/同步；BFF 负责同源代理。
 
 ### 4.5 代码运行与资源
@@ -205,8 +203,8 @@ VeloChatX 源仓（9 zh + 9 en）
 1. **BFF 而不是 SPA 直连 OIDC**：浏览器不持 token，续期、登出、失效都在服务端完成。
 2. **三库隔离**：account / biz / resource 各自 Flyway 管理，跨库只用 `uuid`，不建物理 FK。
 3. **Servlet/WebMVC**：项目明确冻结响应式栈，降低团队与部署复杂度。
-4. **文档双链路**：VitePress 面向人，classpath markdown 面向 RAG；两者都从同一源仓产出。
-5. **RAG 先 grounded 再智能**：回答必须基于检索块并带引用；无证据时提示/拒答，而不是自由发挥。
+4. **文档双链路**：VitePress 面向人，classpath markdown 面向 Agent 检索；两者都从同一源仓产出。
+5. **检索先 grounded 再智能**：站内问题必须先 `searchDocs` 并带引用；无证据时说明局限，而不是自由发挥。
 6. **Agent 工具有预算**：检索、联网、代码执行都受限，避免无限循环和成本失控。
 7. **配额分层**：请求分钟限流 + 每日 token 计量 + 沙箱独立配额，分别保护不同资源。
 8. **可运维**：一键启停、播种、重置、文档同步；日志落在 `bin/.run/logs/`。
@@ -244,8 +242,7 @@ VeloChatX 源仓（9 zh + 9 en）
 | `GET /bff/me` | 当前会话状态 |
 | `/api/**` | 业务 API（登录后） |
 | `/api/public/**` | 匿名可读接口 |
-| `/api/ai/chat`, `/api/ai/chat/stream` | RAG 问答（JSON / SSE） |
-| `/api/ai/agent/chat`, `/api/ai/agent/chat/stream` | Agent 问答（JSON / SSE） |
+| `/api/ai/agent/chat`, `/api/ai/agent/chat/stream` | Agent 问答（JSON / SSE，唯一问答路线） |
 | `/api/ai/conversations` | 会话与消息 |
 | `/api/sandbox/run` | 服务端代码运行 |
 | `/api/admin/**` | 管理端接口（ADMIN） |
@@ -276,7 +273,7 @@ VeloChatX 源仓（9 zh + 9 en）
 
 1. 先读 `README.md`、`AGENTS.md`、`.ai/PROJECT.md`、`.ai/context/current.md`。
 2. 改认证/BFF：从 `nitrowater-account` 的 `AuthorizationServerConfig` 与 `nitrowater-bff` 的 `SecurityConfig` / 代理控制器进入。
-3. 改 AI/RAG/Agent：从 `nitrowater-server/src/main/java/cn/nitrowater/server/ai` 进入；前端从 `nitrowater-web/src/features/ai` 进入。
+3. 改 AI/Agent：从 `nitrowater-server/src/main/java/cn/nitrowater/server/service/ai` 进入（工具在 `service/ai/tool`、提示词在 `PromptBuilder`、SSE 在 `web/AiAgentController`）；前端从 `nitrowater-web/src/features/ai` 进入。
 4. 改文档/站点：源仓 `velochatx-docs`，产物 `deploy/plugin-docs`，代理 `/plugin/**`。
 5. 遵守项目约定：Servlet/WebMVC、`/api/**` 数据命名空间、Flyway 迁移冻结、枚举整数编码、时间列 `TIMESTAMP(3)`、Redis `nitrowater:*`、无 subagent。
 

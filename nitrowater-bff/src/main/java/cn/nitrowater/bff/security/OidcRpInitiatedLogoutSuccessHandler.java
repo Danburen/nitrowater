@@ -15,6 +15,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Implements RP-Initiated Logout: after the BFF destroys its own session it redirects the
@@ -91,7 +92,7 @@ public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler
      * @return an absolute http(s) URI registered as a post-logout redirect
      */
     private String postLogoutRedirect(HttpServletRequest request) {
-        if (postLogoutRedirectUri != null && !postLogoutRedirectUri.isBlank()) {
+        if (StringUtil.isNotBlank(postLogoutRedirectUri)) {
             return postLogoutRedirectUri.trim();
         }
         return ServletUriComponentsBuilder.fromRequestUri(request)
@@ -126,7 +127,7 @@ public class OidcRpInitiatedLogoutSuccessHandler implements LogoutSuccessHandler
             return endpoint.toString();
         }
         String issuer = registration.getProviderDetails().getIssuerUri();
-        if (issuer == null || issuer.isBlank()) {
+        if (StringUtil.isBlank(issuer)) {
             return null;
         }
         return (issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer)

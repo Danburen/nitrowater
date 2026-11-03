@@ -1,11 +1,15 @@
 package cn.nitrowater.server.ai.tool;
 
-import cn.nitrowater.server.ai.AiAdminSettingsService;
-import cn.nitrowater.server.ai.properties.AiProperties;
-import cn.nitrowater.server.ai.DocRetriever;
-import cn.nitrowater.server.ai.agent.AgentTrace;
-import cn.nitrowater.server.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.properties.AiProperties;
+import cn.nitrowater.server.service.ai.DocRetriever;
+import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
+import cn.nitrowater.server.service.ai.model.agent.ToolCall;
+import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
 import cn.nitrowater.server.infra.enums.ModerationMode;
+import cn.nitrowater.server.service.ai.tool.DocTools;
+import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
+import cn.nitrowater.server.service.ai.model.WebSearchResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
@@ -46,8 +50,8 @@ class DocToolsTest {
         String second = tools.searchDocs("今天上海的天气", 5, context);
 
         assertThat(searches.get()).isEqualTo(1);
-        assertThat(first).contains("\"fallback\":\"web\"").contains("\"source\":\"web\"")
-                .contains("https://example.com/weather");
+        assertThat(first).contains("\"code\":\"tool.ok\"").contains("\"fallback\":\"web\"")
+                .contains("\"source\":\"web\"").contains("https://example.com/weather");
         assertThat(second).contains("\"results\":[]");
         assertThat(trace.sources()).anySatisfy(source -> assertThat(source.kind()).isEqualTo("web"));
     }
@@ -106,10 +110,12 @@ class DocToolsTest {
         String failed = tools.searchDocs("今天上海的天气", 5, context);
         String recovered = tools.searchDocs("今天上海的天气", 5, context);
 
-        assertThat(failed).contains("\"fallback\":\"web_failed\"");
-        assertThat(recovered).contains("\"fallback\":\"web\"");
+        assertThat(failed).contains("\"success\":false").contains("\"code\":\"tool.unavailable\"");
+        assertThat(recovered).contains("\"code\":\"tool.ok\"").contains("\"fallback\":\"web\"");
         assertThat(searches.get()).isEqualTo(2);
         assertThat(trace.webSearchSuccesses()).isEqualTo(1);
+        assertThat(trace.calls()).extracting(ToolCall::status)
+                .containsExactly("tool.unavailable", "tool.ok");
     }
 
     @Test

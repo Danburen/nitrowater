@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Context for the hosted login page.
@@ -65,7 +66,7 @@ public class LoginContextController {
             return ApiResponse.success(new LoginContextResp(null, null));
         }
         RegisteredClient client = registeredClientRepository.findByClientId(clientId);
-        String clientName = client != null && client.getClientName() != null && !client.getClientName().isBlank()
+        String clientName = client != null && StringUtil.isNotBlank(client.getClientName())
                 ? client.getClientName()
                 : clientId;
         return ApiResponse.success(new LoginContextResp(clientId, clientName));

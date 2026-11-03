@@ -27,7 +27,12 @@ const open = defineModel<boolean>({ required: true })
 
 const code = ref('')
 const error = ref('')
-const captchaUrl = ref(newCaptchaUrl())
+/**
+ * Empty until the dialog opens: `el-dialog` renders its body (taking `@open` a tick later) before
+ * emitting `open`, so a pre-filled URL here would fire a request with a stale challenge and then a
+ * second one from {@link onOpen} — two captchas per open, one of them orphaned in Redis.
+ */
+const captchaUrl = ref('')
 const inputRef = ref<InstanceType<typeof ElInput> | null>(null)
 
 /** Fresh state each time the dialog is opened (a stale code/image must never be reused). */
@@ -35,6 +40,11 @@ function onOpen() {
   code.value = ''
   error.value = ''
   captchaUrl.value = newCaptchaUrl()
+}
+
+/** Drop the URL once closed, so reopening cannot request the previous challenge before onOpen runs. */
+function onClosed() {
+  captchaUrl.value = ''
 }
 
 function onOpened() {
@@ -64,6 +74,7 @@ function confirm() {
     append-to-body
     @open="onOpen"
     @opened="onOpened"
+    @closed="onClosed"
   >
     <p class="text-[13px] leading-5 text-dim">
       {{ props.description }}
@@ -88,12 +99,18 @@ function confirm() {
         @click="refreshCaptcha"
       >
         <img
+          v-if="captchaUrl"
           :src="captchaUrl"
           alt="图形验证码"
-          width="120"
-          height="30"
-          class="auth-captcha-image"
+          width="140"
+          height="44"
+          class="block h-[44px] w-[140px]"
         >
+        <span
+          v-else
+          class="block h-[44px] w-[140px] animate-pulse rounded bg-soft"
+          aria-hidden="true"
+        />
       </button>
     </div>
 

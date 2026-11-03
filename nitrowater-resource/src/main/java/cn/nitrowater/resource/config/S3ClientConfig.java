@@ -11,6 +11,7 @@ import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Builds the vendor-neutral S3 client + presigner used by {@code S3FileStorage}.
@@ -40,7 +41,7 @@ public class S3ClientConfig {
         ResourceProperties.S3 cfg = properties.s3();
         // Presigned URLs are handed to the browser, so they must use the browser-reachable endpoint
         // (e.g. the published host port / reverse-proxy domain), not the internal service hostname.
-        String presignEndpoint = cfg.publicEndpoint() == null || cfg.publicEndpoint().isBlank()
+        String presignEndpoint = StringUtil.isBlank(cfg.publicEndpoint())
                 ? cfg.endpoint()
                 : cfg.publicEndpoint();
         return S3Presigner.builder()
@@ -66,7 +67,7 @@ public class S3ClientConfig {
 
     private static Region region(ResourceProperties properties) {
         String configured = properties.s3().region();
-        return Region.of(configured == null || configured.isBlank() ? "us-east-1" : configured);
+        return Region.of(StringUtil.isBlank(configured) ? "us-east-1" : configured);
     }
 
     private static StaticCredentialsProvider credentials(ResourceProperties properties) {

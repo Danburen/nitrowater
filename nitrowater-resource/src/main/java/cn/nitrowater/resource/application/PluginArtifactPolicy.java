@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Strict allow-list policy for plugin artifacts uploaded from the admin UI.
@@ -63,7 +64,7 @@ public class PluginArtifactPolicy {
      * @throws ResourceException when the name is missing, unsafe or not a jar
      */
     public String sanitizeName(String rawName) {
-        if (rawName == null || rawName.isBlank()) {
+        if (StringUtil.isBlank(rawName)) {
             throw new ResourceException(HttpStatus.BAD_REQUEST, "invalid_name", "File name is required");
         }
         String name = rawName.replace('\\', '/');

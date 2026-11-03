@@ -78,9 +78,7 @@ account 提供标准 OIDC 端点：`/oauth2/authorize`、`/oauth2/token`、`/oau
 |---|---|---|---|
 | GET | `/api/ai/status` | 登录 | 索引与模型状态 |
 | GET | `/api/ai/skills` | 登录 | 可用技能 |
-| POST | `/api/ai/chat` | 登录 | RAG 一次性回答 |
-| POST | `/api/ai/chat/stream` | 登录 | RAG SSE |
-| POST | `/api/ai/agent/chat` | 登录 | Agent 一次性回答 |
+| POST | `/api/ai/agent/chat` | 登录 | Agent 一次性回答（唯一问答路线） |
 | POST | `/api/ai/agent/chat/stream` | 登录 | Agent SSE |
 | GET | `/api/admin/ai/skills` | 管理员 | 技能清单（管理台） |
 | GET | `/api/admin/ai/tools` | 管理员 | 工具清单（管理台） |
@@ -116,20 +114,10 @@ account 提供标准 OIDC 端点：`/oauth2/authorize`、`/oauth2/token`、`/oau
 
 ### 7.3 SSE 事件
 
-RAG：
-
-```text
-event: conversation data: {"uuid":"..."}
-event: sources data: {"sources":[...],"grounded":true}
-event: delta   data: {"text":"..."}
-event: done    data: {}
-```
-
-Agent：
-
 ```text
 event: conversation data: {"uuid":"..."}
 event: start   data: {"mode":"agent"}
+event: step    data: {"phase":"thinking"} | {"phase":"tool_start",...} | {"phase":"tool_end",...}
 event: delta   data: {"text":"..."}
 event: sources data: {"sources":[...],"grounded":true}
 event: tools   data: {"tools":[...]}
@@ -139,7 +127,9 @@ event: done    data: {}
 
 `conversation` 事件在首个 token 之前发出，新建会话的客户端应记住这个 uuid。
 
-工具在首个 `delta` 之前执行完毕，因此 `tools` / `sources` 在流结束时一定是完整的。客户端应容忍未知事件名。
+`conversation` / `start` / 第一个 `step{"phase":"thinking"}` 在处理器返回时即被写出，早于上下文组装与额度预占；因此客户端可以在请求发出后立刻渲染过程时间线，不必等首个 `delta`。
+
+`step` 与 `delta` 交替到达：工具运行期间不发 `delta`。`sources` / `tools` / `skills` 在结束时一次性发出，因此它们在流结束时一定是完整的。客户端应容忍未知事件名。
 
 ## 8. 管理台
 

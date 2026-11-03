@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Phase 2.4: SSO login principal.
@@ -98,7 +99,7 @@ public class SsoUserPrincipal implements UserDetails {
     /** Display name: nickname first, fallback to login name. */
     @JsonIgnore
     public String getDisplayName() {
-        return (nickname != null && !nickname.isBlank()) ? nickname : loginName;
+        return (StringUtil.isNotBlank(nickname)) ? nickname : loginName;
     }
 
     /**

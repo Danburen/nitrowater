@@ -11,6 +11,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Upstream token operations against the Authorization Server.
@@ -88,8 +89,8 @@ public class UpstreamTokenService {
             JsonNode refreshed = refresh(refreshToken);
             String idToken = refreshed.path("id_token").asString();
             String rotated = refreshed.path("refresh_token").asString();
-            revoke(rotated != null && !rotated.isBlank() ? rotated : refreshToken);
-            return idToken != null && !idToken.isBlank() ? idToken : null;
+            revoke(StringUtil.isNotBlank(rotated) ? rotated : refreshToken);
+            return StringUtil.isNotBlank(idToken) ? idToken : null;
         } catch (Exception ex) {
             log.warn("Upstream token refresh failed; revoking the original refresh token: {}", ex.toString());
             revoke(refreshToken);
@@ -103,7 +104,7 @@ public class UpstreamTokenService {
      * @param refreshToken token to revoke
      */
     public void revoke(String refreshToken) {
-        if (refreshToken == null || refreshToken.isBlank()) {
+        if (StringUtil.isBlank(refreshToken)) {
             return;
         }
         ClientRegistration registration = registration();
@@ -140,7 +141,7 @@ public class UpstreamTokenService {
             return endpoint.toString();
         }
         String issuer = registration.getProviderDetails().getIssuerUri();
-        if (issuer == null || issuer.isBlank()) {
+        if (StringUtil.isBlank(issuer)) {
             return null;
         }
         return (issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer)

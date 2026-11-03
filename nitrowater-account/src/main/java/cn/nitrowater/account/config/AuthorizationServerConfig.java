@@ -417,7 +417,7 @@ public class AuthorizationServerConfig {
 
     /** Parses a comma separated list, ignoring blanks. */
     private static List<String> splitCsv(String csv) {
-        if (csv == null || csv.isBlank()) {
+        if (StringUtil.isBlank(csv)) {
             return List.of();
         }
         return Arrays.stream(csv.split(","))
@@ -500,7 +500,7 @@ public class AuthorizationServerConfig {
                 }
                 // OIDC standard `picture`: a STABLE URL (the resource service read path), derived from
                 // the avatar's resource uuid — never a stored/presigned URL, so it cannot expire.
-                if (principal.getAvatarUuid() != null && !principal.getAvatarUuid().isBlank()
+                if (StringUtil.isNotBlank(principal.getAvatarUuid())
                         && !StringUtil.isBlank(pictureBaseUrl)) {
                     claims.claim("picture", trimTrailingSlash(pictureBaseUrl)
                             + "/api/public/resource/" + principal.getAvatarUuid());
@@ -530,7 +530,7 @@ public class AuthorizationServerConfig {
      * a comma separated scalar behave the same way.
      */
     private static List<String> resourceAudiencesOf(String csv) {
-        if (csv == null || csv.isBlank()) {
+        if (StringUtil.isBlank(csv)) {
             return List.of();
         }
         return Arrays.stream(csv.split(","))

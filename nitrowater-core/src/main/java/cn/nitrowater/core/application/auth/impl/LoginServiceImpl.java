@@ -25,6 +25,7 @@ import cn.nitrowater.core.exception.threshold.DailyLimitExceededException;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
 import cn.nitrowater.core.application.auth.LoginService;
 import cn.nitrowater.core.application.user.UserCoreService;
+import jakarta.servlet.http.HttpSession;
 
 import java.time.Duration;
 import java.util.Locale;
@@ -77,7 +78,7 @@ public class LoginServiceImpl implements LoginService {
     }
 
     @Override
-    public LoginResult login(PwdLoginReq body, String verifyUuidKey) {
+    public LoginResult login(PwdLoginReq body, HttpSession session) {
         String identifier = loginIdentifierKey(body.getIdentifier());
         String shortFailKey = loginTempFailKey(identifier);
         String dailyFailKey = loginDailyFailKey(identifier);
@@ -86,7 +87,7 @@ public class LoginServiceImpl implements LoginService {
 
         User u;
         try {
-            u = verifyCredentials(body, verifyUuidKey);
+            u = verifyCredentials(body, session);
         } catch (AuthException e) {
             if (AuthCode.USERNAME_OR_PASSWORD_INCORRECT.getCode().equals(e.getErrorCode())) {
                 incrementFailCounters(shortFailKey, dailyFailKey);
@@ -153,10 +154,10 @@ public class LoginServiceImpl implements LoginService {
         redisHelper.increment(dailyFailKey, Duration.ofSeconds(DateUtil.getSecondsUntilMidnight()));
     }
 
-    private User verifyCredentials(PwdLoginReq body, String verifyUuidKey) {
+    private User verifyCredentials(PwdLoginReq body, HttpSession session) {
         // Captcha first: checked last, the two failure codes became an existence oracle ("unknown
         // identifier" never reached the captcha, "known identifier" did).
-        if (!captchaService.verifyCode(verifyUuidKey, body.getCaptcha()))
+        if (!captchaService.verifyCode(session, body.getCaptcha()))
             throw new AuthException(AuthCode.CAPTCHA_INVALID);
 
         Long userUid;

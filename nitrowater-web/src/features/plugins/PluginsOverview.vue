@@ -50,7 +50,7 @@ async function onSaved(key: string): Promise<void> {
 <template>
   <!-- Definite height + own scroll container: the parent <main> is overflow-hidden. -->
   <div class="h-full overflow-y-auto">
-    <div class="mx-auto max-w-[900px] px-6 py-8">
+    <div class="mx-auto max-w-[900px] px-4 py-6 sm:px-6 sm:py-8">
       <header class="flex flex-wrap items-start justify-between gap-3 pb-6">
         <div>
           <h1 class="text-[26px] font-bold tracking-tight">

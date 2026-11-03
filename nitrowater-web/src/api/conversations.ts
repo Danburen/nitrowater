@@ -26,6 +26,8 @@ export interface ServerMessage {
   content: string
   sources: AiSource[]
   tools: AiToolCall[]
+  /** Skills loaded by the turn; persisted so the process trace survives a reload. */
+  skills: string[]
   model: string | null
   /** True when the stored answer was masked by the content gate. */
   moderated?: boolean

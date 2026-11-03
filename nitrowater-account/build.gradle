@@ -21,7 +21,6 @@ repositories {
 dependencies {
     implementation project(":nitrowater-lib")
     implementation project(':nitrowater-core')
-    implementation project(':nitrowater-core-web')
     // --- web ---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -38,9 +37,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
-    implementation('com.aliyun:dysmsapi20170525:4.1.1') {
-        exclude group: 'com.squareup.okhttp3', module: 'okhttp'
-    }
+    // The generated Aliyun SDK (tea -> com.aliyun.tea.okhttp.*) performs its HTTP calls through
+    // okhttp, so the transitive okhttp MUST stay on the runtime classpath: excluding it makes
+    // sendSms fail with NoClassDefFoundError(okhttp3/Authenticator) even when credentials are valid.
+    implementation 'com.aliyun:dysmsapi20170525:4.1.1'
     implementation 'org.springframework:spring-aop'
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'

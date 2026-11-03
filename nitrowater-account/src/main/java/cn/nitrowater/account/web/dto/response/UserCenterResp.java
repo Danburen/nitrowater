@@ -4,6 +4,7 @@ import cn.nitrowater.core.api.resp.AccountResp;
 import cn.nitrowater.core.domain.user.User;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /** User-center snapshot: identity, profile and masked contact bindings. */
 @Data
@@ -28,6 +29,6 @@ public class UserCenterResp {
                 account.getEmailMasked(),
                 account.getPhoneVerified(),
                 account.getEmailVerified(),
-                user.getPasswordHash() != null && !user.getPasswordHash().isBlank());
+                StringUtil.isNotBlank(user.getPasswordHash()));
     }
 }

@@ -1,21 +1,24 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.lib.utils.JsonUtil;
-import cn.nitrowater.server.ai.AiAdminSettingsService;
-import cn.nitrowater.server.ai.properties.AiProperties;
-import cn.nitrowater.server.ai.AiQuotaExceededException;
-import cn.nitrowater.server.ai.ChatTurn;
-import cn.nitrowater.server.ai.agent.AgentAnswer;
-import cn.nitrowater.server.ai.agent.AgentTrace;
-import cn.nitrowater.server.ai.agent.AiAgentService;
-import cn.nitrowater.server.ai.agent.PreparedAgent;
-import cn.nitrowater.server.ai.conversation.ConversationService;
-import cn.nitrowater.server.ai.moderation.AiModerationService;
-import cn.nitrowater.server.ai.skill.SkillRegistry;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.properties.AiProperties;
+import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
+import cn.nitrowater.server.service.ai.model.AiStreamChunk;
+import cn.nitrowater.server.service.ai.model.ChatTurn;
+import cn.nitrowater.server.service.ai.model.agent.AgentAnswer;
+import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
+import cn.nitrowater.server.service.ai.model.agent.AiAgentService;
+import cn.nitrowater.server.service.ai.model.agent.PreparedAgent;
+import cn.nitrowater.server.service.ai.ConversationService;
+import cn.nitrowater.server.service.ai.AiModerationService;
+import cn.nitrowater.server.service.ai.SkillRegistry;
 import cn.nitrowater.server.web.dto.AiAgentReq;
 import cn.nitrowater.server.web.dto.AiAgentResp;
 import cn.nitrowater.server.web.dto.AiSkillResp;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +37,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Agent endpoints.
@@ -42,14 +46,22 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>{@code GET  /api/ai/skills} — available skills for the picker;</li>
  *   <li>{@code POST /api/ai/agent/chat} — one agent turn with tools;</li>
  *   <li>{@code POST /api/ai/agent/chat/stream} — SSE: {@code conversation} → {@code start} →
- *       {@code delta}* → {@code sources} → {@code tools} → {@code skills} → {@code done}.</li>
+ *       {@code step}* / {@code delta}* (interleaved) → {@code sources} → {@code tools} →
+ *       {@code skills} → {@code done}.</li>
  * </ul>
+ *
+ * <p>Each {@code step} is one progress marker of the turn ({@code thinking}, {@code tool_start} with
+ * the argument, or {@code tool_end} with status/results/duration). Process and answer travel on the
+ * same ordered stream but in different events, so the browser can render a live step timeline and
+ * start the answer bubble only when real tokens arrive.</p>
  *
  * <p>The tool loop is Spring AI's auto-registered {@code ToolCallingAdvisor}; this controller only
  * handles transport, conversation persistence and the {@link AgentTrace} at completion.</p>
  */
 @RestController
 public class AiAgentController {
+
+    private static final Logger log = LoggerFactory.getLogger(AiAgentController.class);
 
     private static final long STREAM_TIMEOUT_MS = 180_000L;
 
@@ -106,8 +118,8 @@ public class AiAgentController {
             AiModerationService.Screened screened = moderation.screenAnswer(uid,
                     turn.conversation().getUuid(), answer.answer());
             String text = screened.text();
-            conversations.finish(turn.conversation(), text, answer.sources(), answer.tools(), chatModel,
-                    answer.usage(), screened.masked());
+            conversations.finish(turn.conversation(), text, answer.sources(), answer.tools(),
+                    answer.skills(), chatModel, answer.usage(), screened.masked(), false);
             return new AiAgentResp(turn.conversation().getUuid(), text, answer.sources(),
                     answer.tools(), answer.skills(), answer.grounded());
         } catch (RuntimeException ex) {
@@ -137,9 +149,56 @@ public class AiAgentController {
         String question = continuing ? CONTINUE_INSTRUCTION : request.question();
 
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
+        AtomicBoolean clientGone = new AtomicBoolean(false);
+        AtomicReference<String> finishReason = new AtomicReference<>();
+        AtomicReference<Disposable> running = new AtomicReference<>();
+
+        // Written while the handler still owns the request, so Spring MVC flushes them the moment
+        // the async response is initialized. `prepare()` below runs context assembly and the quota
+        // reservation, which must not delay the progress timeline: otherwise the browser sees
+        // nothing until the first model token arrives.
         send(emitter, "conversation", Map.of("uuid", turn.conversation().getUuid()));
         send(emitter, "start", Map.of("mode", "agent"));
+        send(emitter, "step", AiStreamChunk.Step.thinking());
 
+        emitter.onCompletion(() -> stop(running, interruptOnDisconnect));
+        emitter.onError(error -> stop(running, interruptOnDisconnect));
+        emitter.onTimeout(() -> {
+            // The client will never see the rest: continue persisting without writing, then
+            // release the async request. Without this flag doOnComplete would still try to send.
+            clientGone.set(true);
+            stop(running, interruptOnDisconnect);
+            emitter.complete();
+        });
+
+        // Preparing and driving the turn run on a worker thread; doing it inline would hold the
+        // response (and the frames above) until the first round had been assembled.
+        Mono.fromRunnable(() -> runTurn(emitter, turn, question, history, request, uid, continuing,
+                clientGone, finishReason, running))
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(null, error -> log.error("Agent turn setup failed for conversation {}",
+                        turn.conversation().getUuid(), error));
+        return emitter;
+    }
+
+    /**
+     * Prepares one turn and pipes its chunks to the emitter on a worker thread.
+     *
+     * @param emitter transport of the turn
+     * @param turn conversation plus the history captured before the question
+     * @param question sanitized question, or the continuation instruction
+     * @param history previous turns fed to the model
+     * @param request validated request body
+     * @param uid authenticated user id
+     * @param continuing whether this turn continues a truncated answer in place
+     * @param clientGone set once the browser disconnected or the request timed out
+     * @param finishReason provider stop reason, captured for the {@code done} frame
+     * @param running model subscription, so a disconnect can stop it when configured
+     */
+    private void runTurn(SseEmitter emitter, ConversationService.StartedTurn turn, String question,
+            List<ChatTurn> history, AiAgentReq request, long uid, boolean continuing,
+            AtomicBoolean clientGone, AtomicReference<String> finishReason,
+            AtomicReference<Disposable> running) {
         PreparedAgent prepared;
         try {
             prepared = agentService.prepare(
@@ -152,14 +211,13 @@ public class AiAgentController {
             );
         } catch (RuntimeException ex) {
             conversations.fail(turn.conversation(), message(ex));
-            send(emitter, "error", errorPayload(ex));
-            emitter.complete();
-            return emitter;
+            if (!clientGone.get()) {
+                send(emitter, "error", errorPayload(ex));
+                emitter.complete();
+            }
+            return;
         }
 
-        AtomicBoolean clientGone = new AtomicBoolean(false);
-        AtomicBoolean tracesSent = new AtomicBoolean();
-        AtomicReference<String> finishReason = new AtomicReference<>();
         StringBuilder answer = new StringBuilder();
 
         // The subscription is deliberately decoupled from the emitter lifecycle: when the client
@@ -186,13 +244,6 @@ public class AiAgentController {
                     if (clientGone.get()) {
                         return;
                     }
-                    // The prompt makes the model announce its action before calling a tool, so the
-                    // first visible token can arrive before any tool ran. Wait until there is a
-                    // trace to report, otherwise the once-only guard would ship an empty tool list
-                    // and drop the real one.
-                    if (!prepared.trace().calls().isEmpty() && tracesSent.compareAndSet(false, true)) {
-                        sendTraces(emitter, prepared.trace());
-                    }
                     if (!send(emitter, "delta", Map.of("text", token))) {
                         clientGone.set(true);
                     }
@@ -204,15 +255,17 @@ public class AiAgentController {
                             turn.conversation().getUuid(), raw);
                     String text = screened.text();
                     conversations.finish(turn.conversation(), text,
-                            trace.sources(), trace.calls(), chatModel,
-                            prepared.usageSession().finish(), screened.masked());
+                            trace.sources(), trace.calls(), trace.skills(), chatModel,
+                            prepared.usageSession().finish(), screened.masked(), continuing);
                     if (clientGone.get()) return;
                     // Already-streamed tokens cannot be recalled, so the client replaces the bubble
                     // with the screened text that was just stored.
                     if (!text.equals(raw)) {
                         send(emitter, "moderation", Map.of("text", text));
                     }
-                    if (tracesSent.compareAndSet(false, true)) sendTraces(emitter, trace);
+                    // The live step cards already showed the process; the aggregated trace is sent
+                    // once at the end, where it becomes the persisted "process" row of the bubble.
+                    sendTraces(emitter, trace);
                     send(emitter, "done", donePayload(finishReason.get()));
                     emitter.complete();
                 }).subscribeOn(Schedulers.boundedElastic()))
@@ -225,31 +278,26 @@ public class AiAgentController {
                 .doFinally(signal -> prepared.usageSession().finish())
                 .then();
 
-        Disposable disposable = pipeline.subscribe(
+        running.set(pipeline.subscribe(
                 null,
-                _ -> {
-                });
+                ignored -> {
+                }));
+    }
 
-        emitter.onCompletion(() -> {
-            if (interruptOnDisconnect) {
-                disposable.dispose();
-            }
-        });
-        emitter.onError(error -> {
-            if (interruptOnDisconnect) {
-                disposable.dispose();
-            }
-        });
-        emitter.onTimeout(() -> {
-            // The client will never see the rest: continue persisting without writing, then
-            // release the async request. Without this flag doOnComplete would still try to send.
-            clientGone.set(true);
-            if (interruptOnDisconnect) {
-                disposable.dispose();
-            }
-            emitter.complete();
-        });
-        return emitter;
+    /**
+     * Stops the model subscription of a disconnected client when interrupting is enabled.
+     *
+     * @param running subscription holder, possibly still empty
+     * @param interrupt whether the deployment asks for interruption on disconnect
+     */
+    private static void stop(AtomicReference<Disposable> running, boolean interrupt) {
+        if (!interrupt) {
+            return;
+        }
+        Disposable disposable = running.get();
+        if (disposable != null) {
+            disposable.dispose();
+        }
     }
 
     /** Emits the per-turn citations, tool trace and skills (idempotent once per stream). */
@@ -277,7 +325,7 @@ public class AiAgentController {
      * client-supplied list is only used for legacy callers that start without a uuid.
      */
     private List<ChatTurn> historyOf(AiAgentReq request, ConversationService.StartedTurn turn) {
-        if (request.conversationUuid() != null && !request.conversationUuid().isBlank()) {
+        if (StringUtil.isNotBlank(request.conversationUuid())) {
             return turn.history();
         }
         return AiHistory.toTurns(request.history(), properties.maxHistoryTurns());

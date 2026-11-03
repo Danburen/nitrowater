@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.dto;
 
-import cn.nitrowater.server.ai.AiAdminSettingsService.Settings;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService.Settings;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;

@@ -20,7 +20,9 @@ repositories {
 
 dependencies {
     implementation project(":nitrowater-lib")
-    implementation project(':nitrowater-core-web')
+    // core-web plumbing lives in core now; its data stack is compileOnly, so no JPA/DataSource
+    // reaches this service (BFF has no datasource configuration).
+    implementation project(':nitrowater-core')
     // --- Servlet / WebMVC（响应式迁移冻结：不要 WebFlux）---
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     // --- Security：BFF 是 Cookie 会话认证 → 必须开 CSRF ---

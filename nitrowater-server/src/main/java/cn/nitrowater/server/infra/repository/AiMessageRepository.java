@@ -1,6 +1,7 @@
 package cn.nitrowater.server.infra.repository;
 
 import cn.nitrowater.server.infra.entity.AiMessage;
+import cn.nitrowater.server.infra.enums.MessageRole;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -23,6 +24,13 @@ public interface AiMessageRepository extends JpaRepository<AiMessage, Long> {
      * @return the message with the highest seq, if any
      */
     Optional<AiMessage> findFirstByConversationIdOrderBySeqDesc(Long conversationId);
+
+    /**
+     * @param conversationId internal conversation id
+     * @param role message role to match
+     * @return the newest message with that role, if any (used to extend a continued answer)
+     */
+    Optional<AiMessage> findFirstByConversationIdAndRoleOrderBySeqDesc(Long conversationId, MessageRole role);
 
     /**
      * @param conversationId internal conversation id

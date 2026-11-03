@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Admin console service for registering and managing OIDC applications (clients).
@@ -285,7 +286,7 @@ public class RegisteredClientAdminService {
         Set<String> result = new LinkedHashSet<>();
         if (raw != null) {
             for (String value : raw) {
-                if (value != null && !value.isBlank()) {
+                if (StringUtil.isNotBlank(value)) {
                     result.add(value.trim());
                 }
             }

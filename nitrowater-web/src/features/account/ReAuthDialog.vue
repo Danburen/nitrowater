@@ -5,8 +5,7 @@
  * <p>The server decides which masked targets are available; the browser only picks a channel and
  * sends the one-time code. No raw phone/email is ever rendered here.</p>
  */
-import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   fetchReAuthInfo,
   sendReAuthCode,
@@ -15,6 +14,8 @@ import {
   type ReAuthScene,
   type VerifyChannel,
 } from '../../api/account'
+import AppDialog from '../../shared/ui/AppDialog.vue'
+import { toast } from '../../shared/ui/toast'
 
 const props = defineProps<{
   visible: boolean
@@ -35,6 +36,8 @@ const sending = ref(false)
 const verifying = ref(false)
 const code = ref('')
 const error = ref('')
+/** The code field only exists from step 2 on; focus it as soon as it renders. */
+const codeInput = ref<HTMLInputElement | null>(null)
 
 const channels = computed<VerifyChannel[]>(() =>
   (info.value?.availableChannels ?? []).filter(
@@ -50,6 +53,9 @@ watch(() => props.visible, (value) => {
   if (value) void init()
 })
 watch(open, (value) => emit('update:visible', value))
+watch(step, (value) => {
+  if (value === 2) void nextTick(() => codeInput.value?.focus())
+})
 
 async function init(): Promise<void> {
   reset()
@@ -81,7 +87,7 @@ async function sendCode(): Promise<void> {
   try {
     await sendReAuthCode(props.scene, channel.value)
     step.value = 2
-    ElMessage.success('验证码已发送')
+    toast.success('验证码已发送')
   } catch (cause) {
     error.value = message(cause)
   } finally {
@@ -110,11 +116,12 @@ function message(cause: unknown): string {
 </script>
 
 <template>
-  <el-dialog
+  <AppDialog
     v-model="open"
     title="安全验证"
     width="400px"
-    :close-on-click-modal="false"
+    :close-on-overlay="false"
+    :show-footer="false"
     @closed="reset"
   >
     <div class="space-y-4">
@@ -125,19 +132,24 @@ function message(cause: unknown): string {
         正在获取验证方式…
       </p>
       <template v-else>
-        <el-select
+        <label
           v-if="channels.length > 1"
-          v-model="channel"
-          size="small"
-          class="w-full"
+          class="block text-sm text-dim"
         >
-          <el-option
-            v-for="item in channels"
-            :key="item"
-            :label="item === 'SMS' ? '短信验证' : '邮箱验证'"
-            :value="item"
-          />
-        </el-select>
+          验证方式
+          <select
+            v-model="channel"
+            class="select mt-1.5 w-full"
+          >
+            <option
+              v-for="item in channels"
+              :key="item"
+              :value="item"
+            >
+              {{ item === 'SMS' ? '短信验证' : '邮箱验证' }}
+            </option>
+          </select>
+        </label>
 
         <div
           v-if="step === 1"
@@ -149,15 +161,19 @@ function message(cause: unknown): string {
           <p class="text-center text-lg font-semibold tracking-wide text-ink">
             {{ target || '未绑定' }}
           </p>
-          <el-button
-            type="primary"
-            class="w-full"
-            :loading="sending"
-            :disabled="!target || loading"
+          <button
+            type="button"
+            class="btn btn-primary w-full justify-center"
+            :disabled="sending || !target || loading"
             @click="sendCode"
           >
+            <span
+              v-if="sending"
+              class="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              aria-hidden="true"
+            />
             发送验证码
-          </el-button>
+          </button>
         </div>
 
         <div
@@ -167,30 +183,39 @@ function message(cause: unknown): string {
           <p class="text-sm text-dim">
             请输入发送到 {{ target }} 的 6 位验证码。
           </p>
-          <el-input
-            v-model="code"
-            maxlength="6"
-            placeholder="6 位验证码"
-            class="text-center"
-            @keyup.enter="verifyCode"
-          />
-          <el-button
-            type="primary"
-            class="w-full"
-            :loading="verifying"
-            :disabled="code.trim().length < 6"
+          <label class="block text-sm text-dim">
+            6 位验证码
+            <input
+              ref="codeInput"
+              v-model="code"
+              class="input mt-1.5 w-full text-center tracking-[0.3em]"
+              maxlength="6"
+              inputmode="numeric"
+              placeholder="000000"
+              @keyup.enter="verifyCode"
+            >
+          </label>
+          <button
+            type="button"
+            class="btn btn-primary w-full justify-center"
+            :disabled="verifying || code.trim().length < 6"
             @click="verifyCode"
           >
+            <span
+              v-if="verifying"
+              class="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              aria-hidden="true"
+            />
             验证
-          </el-button>
-          <el-button
-            link
-            size="small"
-            :loading="sending"
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :disabled="sending"
             @click="sendCode"
           >
             重新发送
-          </el-button>
+          </button>
         </div>
 
         <p
@@ -201,5 +226,5 @@ function message(cause: unknown): string {
         </p>
       </template>
     </div>
-  </el-dialog>
+  </AppDialog>
 </template>

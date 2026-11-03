@@ -1,7 +1,9 @@
 package cn.nitrowater.server.ai;
 
-import cn.nitrowater.server.ai.AiAdminSettingsService.Settings;
+import cn.nitrowater.server.service.ai.AiAdminSettingsService.Settings;
 import cn.nitrowater.server.infra.enums.ModerationMode;
+import cn.nitrowater.server.service.ai.model.AiTokenUsage;
+import cn.nitrowater.server.service.ai.model.AiTokenUsageMeter;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.metadata.Usage;
 

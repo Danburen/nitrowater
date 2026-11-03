@@ -3,14 +3,14 @@
  * Admin — plugins: metadata list plus a create/edit drawer.
  *
  * <p>Uses the same chrome as every other admin page ({@link AdminPage} + {@code el-card.admin-card-flush}):
- * action strip on top, table in the middle, Element Plus dialogs only — no hand-rolled controls.</p>
+ * action strip on top, table in the middle, then the shared {@link AppDrawer} for the editor — the
+ * popup chrome is Tailwind so it matches the portal, while the form controls stay Element Plus.</p>
  */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-// Explicit style imports: an explicit API import bypasses the on-demand resolver's CSS injection.
-import 'element-plus/es/components/message/style/css'
-import 'element-plus/es/components/message-box/style/css'
-import AdminPage from './AdminPage.vue'
+import AppDrawer from '../../shared/ui/AppDrawer.vue'
+import { confirm } from '../../shared/ui/confirm'
+import { toast } from '../../shared/ui/toast'
+import AdminPage from './components/AdminPage.vue'
 import {
   createPlugin,
   deletePlugin,
@@ -19,6 +19,7 @@ import {
   type PluginAdmin,
   type PluginUpsert,
 } from '../../api/plugins'
+import {dayjs} from "element-plus";
 
 /** Server-side key rule (`@Pattern` on PluginUpsertReq). */
 const KEY_RE = /^[a-z0-9][a-z0-9-]*$/
@@ -113,18 +114,18 @@ function splitTags(text: string): string[] {
 async function save(): Promise<void> {
   if (saving.value) return
   if (!form.name.trim()) {
-    ElMessage.warning('请填写名称')
+    toast.warning('请填写名称')
     return
   }
   const id = editingId.value
   if (id == null) {
     const key = form.key.trim()
     if (!key) {
-      ElMessage.warning('请填写 key（小写字母 / 数字 / 连字符）')
+      toast.warning('请填写 key（小写字母 / 数字 / 连字符）')
       return
     }
     if (!KEY_RE.test(key)) {
-      ElMessage.warning('key 只能由小写字母、数字、连字符组成，且不能以连字符或数字开头')
+      toast.warning('key 只能由小写字母、数字、连字符组成，且不能以连字符或数字开头')
       return
     }
   }
@@ -147,37 +148,39 @@ async function save(): Promise<void> {
     }
     if (id == null) {
       await createPlugin(payload)
-      ElMessage.success('插件已创建')
+      toast.success('插件已创建')
     } else {
       await updatePlugin(id, payload)
-      ElMessage.success('插件已更新')
+      toast.success('插件已更新')
     }
     drawerOpen.value = false
     resetForm()
     await load()
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : String(e))
+    toast.error(e instanceof Error ? e.message : String(e))
   } finally {
     saving.value = false
   }
 }
 
+/** Table slots hand back an untyped row; narrow it once. */
+function asPlugin(row: unknown): PluginAdmin {
+  return row as PluginAdmin
+}
+
 async function remove(row: PluginAdmin): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      `删除插件「${row.name}」？该操作不可撤销。`,
-      '确认删除',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
+  if (!(await confirm({
+    title: '确认删除',
+    message: `删除插件「${row.name}」？该操作不可撤销。`,
+    confirmText: '删除',
+    danger: true,
+  }))) return
   try {
     await deletePlugin(row.id)
-    ElMessage.success('插件已删除')
+    toast.success('插件已删除')
     await load()
   } catch (e) {
-    ElMessage.error(e instanceof Error ? e.message : String(e))
+    toast.error(e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -188,7 +191,7 @@ onMounted(() => {
 
 <template>
   <AdminPage
-    title="插件"
+    title="插件管理"
     description="插件中心的元数据：卡片信息、标签与单页说明（key 创建后不可改）。"
   >
     <template #actions>
@@ -247,7 +250,7 @@ onMounted(() => {
         />
         <el-table-column
           label="名称"
-          min-width="180"
+          min-width="160"
         >
           <template #default="{ row }">
             <div class="text-ink">
@@ -263,7 +266,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column
           label="Key"
-          width="150"
+          width="100"
         >
           <template #default="{ row }">
             <span class="font-mono text-[12px] text-dim">{{ row.key }}</span>
@@ -297,7 +300,7 @@ onMounted(() => {
         <el-table-column
           prop="sortOrder"
           label="排序"
-          width="80"
+          width="50"
           align="center"
         />
         <el-table-column
@@ -320,7 +323,7 @@ onMounted(() => {
           width="180"
         >
           <template #default="{ row }">
-            {{ row.updatedAt || '—' }}
+            {{ row.updatedAt ? dayjs(row.updatedAt).format('YYYY-MM-DD HH:mm:ss') : '—' }}
           </template>
         </el-table-column>
         <el-table-column
@@ -335,7 +338,7 @@ onMounted(() => {
                 link
                 type="primary"
                 size="small"
-                @click="openEdit(row)"
+                @click="openEdit(asPlugin(row))"
               >
                 编辑
               </el-button>
@@ -343,7 +346,7 @@ onMounted(() => {
                 link
                 type="danger"
                 size="small"
-                @click="remove(row)"
+                @click="remove(asPlugin(row))"
               >
                 删除
               </el-button>
@@ -353,10 +356,10 @@ onMounted(() => {
       </el-table>
     </el-card>
 
-    <el-drawer
+    <AppDrawer
       v-model="drawerOpen"
       :title="drawerTitle"
-      size="560px"
+      width="560px"
       @closed="resetForm"
     >
       <el-form
@@ -364,7 +367,7 @@ onMounted(() => {
         :disabled="saving"
         @submit.prevent
       >
-        <div class="grid gap-3 sm:grid-cols-2">
+        <div class="grid gap-4 sm:grid-cols-2">
           <el-form-item
             label="名称"
             required
@@ -478,7 +481,7 @@ onMounted(() => {
       </el-form>
 
       <template #footer>
-        <div class="admin-actions justify-end">
+        <div class="admin-page-actions justify-end">
           <el-button
             :disabled="saving"
             @click="drawerOpen = false"
@@ -494,6 +497,14 @@ onMounted(() => {
           </el-button>
         </div>
       </template>
-    </el-drawer>
+    </AppDrawer>
   </AdminPage>
 </template>
+
+<style scoped>
+/* Element Plus paints an unlayered `margin-bottom: 18px` on every form item, so the reset has to
+   stay outside Tailwind's utilities layer instead of becoming a plain `mb-0` utility. */
+.el-form-item {
+  margin-bottom: 0;
+}
+</style>

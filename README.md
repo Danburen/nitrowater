@@ -18,7 +18,7 @@ A **multi-module platform** for Minecraft server owners and the plugin / server 
 - **Business API / Resource Server** — validates the SSO-issued JWT against JWKS; backs the plugin center and the server-oriented toolbox.
 - **Code runner** — logged-in users run snippets through a backend compile → sandbox → run pipeline driven by self-hosted **Piston**, with per-user / global concurrency, a bounded queue and per-minute / per-day quotas; anonymous visitors keep the browser-WASM runner.
 - **Resource service** — a standalone `nitrowater-resource` providing pluggable storage (SeaweedFS/S3 · COS · local), presigned access, visibility/ownership rules and an admin file manager; it also hosts plugin JARs.
-- **Documentation assistant (RAG + agent)** — a Spring AI assistant over the VeloChatX docs: markdown sources are chunked, embedded and stored in a **Qdrant** vector index; answers are grounded in retrieved chunks with clickable citations and stream through the BFF. An optional **agent mode** adds Spring AI tool calling (`searchDocs`, `loadSkill`, optional `webSearch`), user-selectable markdown **skills**, and an admin catalog at `/admin/ai` (index status, skills, tools).
+- **AI agent assistant (NitroBot)** — a Spring AI agent over the VeloChatX / NitroWater docs: markdown sources are chunked, embedded and stored in a **Qdrant** vector index, and the model decides when to call tools (`searchDocs`, `loadSkill`, optional `webSearch`, `runCode`, `saveMemory`). Answers stream through the BFF with per-tool step cards, clickable citations, user-selectable markdown **skills**, and an admin catalog at `/admin/ai` (index status, skills, tools, usage).
 - **Toolbox** — 11 utilities split into two sections: **Minecraft server tools** first (MOTD, server.properties, server-icon, start scripts), then **general tools** (code runner, plugin ZIP, plugin tree, list-tree, Java→TS, MP4→GIF, Markdown→Word).
 - **Composite showcase site** — portal, toolbox, plugin center and docs under one same-origin front-end.
 
@@ -27,8 +27,7 @@ A **multi-module platform** for Minecraft server owners and the plugin / server 
 | Module | Role |
 |---|---|
 | `nitrowater-lib` | Generic utilities and value types. |
-| `nitrowater-core` | Shared library: entities, repositories, auth services, security utils. |
-| `nitrowater-core-web` | Spring MVC/Security JSON plumbing shared by every service (`ApiResponse` advice, global exception handler, 401/403 JSON writers). |
+| `nitrowater-core` | Shared library: entities, repositories, auth/security services, plus the Spring MVC/Security JSON plumbing (`cn.nitrowater.core.web`: `ApiResponse` advice, global exception handler, 401/403 writers). Its data stack is `compileOnly` so the BFF can reuse it without a DataSource. |
 | `nitrowater-account` | SSO / OIDC identity center (auth API + OIDC provider + hosted login + admin console). |
 | `nitrowater-bff` | BFF / token handler (confidential OIDC client + session + `/api/**` proxy). |
 | `nitrowater-server` | Business API + OAuth2 resource server (plugins, server-oriented toolbox, sandbox runner). |

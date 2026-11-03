@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import AdminPage from '../AdminPage.vue'
+import AdminPage from '../components/AdminPage.vue'
 import AiAdminModeration from './AiAdminModeration.vue'
 </script>
 

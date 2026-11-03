@@ -19,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Session introspection for the SPA. The browser never sees a token; it asks the BFF who it is.
@@ -95,7 +96,7 @@ public class SessionController {
         }
         for (Cookie cookie : cookies) {
             if (SessionCookies.NAME.equals(cookie.getName())
-                    && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+                    && StringUtil.isNotBlank(cookie.getValue())) {
                 return true;
             }
         }

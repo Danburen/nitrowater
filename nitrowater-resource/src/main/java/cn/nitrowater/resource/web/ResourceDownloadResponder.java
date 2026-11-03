@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Renders a {@link ResourceReadResult} into an HTTP response: a presigned redirect when the backend
@@ -50,7 +51,7 @@ final class ResourceDownloadResponder {
 
     /** @return an {@code attachment} disposition, with a UTF-8 file name when one is known */
     private static String attachmentDisposition(String fileName) {
-        if (fileName == null || fileName.isBlank()) {
+        if (StringUtil.isBlank(fileName)) {
             return ContentDisposition.attachment().build().toString();
         }
         return ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build().toString();

@@ -1,20 +1,28 @@
 package cn.nitrowater.bff.web;
 
+import cn.nitrowater.bff.security.BffTokenService;
+import cn.nitrowater.bff.security.MultiAccountAuthorizedClientRepository;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.web.servlet.HandlerMapping;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Verifies that the BFF proxy streams both directions instead of buffering a large jar in heap.
@@ -46,8 +54,8 @@ class ApiProxyControllerTest {
         try {
             String baseUrl = "http://127.0.0.1:" + downstream.getAddress().getPort();
             ApiProxyController controller = new ApiProxyController(
-                    baseUrl, baseUrl, baseUrl, 5_000L,
-                    mock(OAuth2AuthorizedClientManager.class), "nitrowater");
+                    baseUrl, baseUrl, baseUrl, 3_000L, 5_000L,
+                    tokens(mock(OAuth2AuthorizedClientManager.class)));
 
             MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/echo");
             request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, "/api/echo");
@@ -55,7 +63,7 @@ class ApiProxyControllerTest {
             request.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
             request.setRemoteAddr("127.0.0.1");
 
-            ResponseEntity<Resource> response = controller.proxy(request, null);
+            ResponseEntity<Resource> response = controller.proxy(request, null, new MockHttpServletResponse());
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getHeaders().getFirst("X-Downstream")).isEqualTo("yes");
@@ -79,18 +87,50 @@ class ApiProxyControllerTest {
         try {
             String baseUrl = "http://127.0.0.1:" + account.getAddress().getPort();
             ApiProxyController controller = new ApiProxyController(
-                    baseUrl, baseUrl, baseUrl, 5_000L,
-                    mock(OAuth2AuthorizedClientManager.class), "nitrowater");
+                    baseUrl, baseUrl, baseUrl, 3_000L, 5_000L,
+                    tokens(mock(OAuth2AuthorizedClientManager.class)));
 
             MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/account/me");
             request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, "/api/auth/account/me");
             request.setRemoteAddr("127.0.0.1");
 
-            ResponseEntity<Resource> response = controller.proxy(request, null);
+            ResponseEntity<Resource> response = controller.proxy(request, null, new MockHttpServletResponse());
 
             assertThat(response.getStatusCode().value()).isEqualTo(204);
         } finally {
             account.stop(0);
         }
+    }
+
+    private static BffTokenService tokens(OAuth2AuthorizedClientManager manager) {
+        return new BffTokenService(manager, new MultiAccountAuthorizedClientRepository(), "nitrowater");
+    }
+
+    /**
+     * A session that cannot produce a token must answer 401 immediately instead of calling upstream
+     * without a Bearer header (which returned a downstream 401/500 the SPA could not act on).
+     */
+    @Test
+    void missingTokenAnswersReauthWithoutCallingUpstream() throws Exception {
+        OAuth2AuthorizedClientManager manager = mock(OAuth2AuthorizedClientManager.class);
+        when(manager.authorize(any())).thenReturn(null);
+        ApiProxyController controller = new ApiProxyController(
+                "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1", 1_000L, 1_000L,
+                tokens(manager));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/echo");
+        request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, "/api/echo");
+        request.setRemoteAddr("127.0.0.1");
+
+        ResponseEntity<Resource> response = controller.proxy(request,
+                UsernamePasswordAuthenticationToken.authenticated("9000000001", null, List.of()),
+                new MockHttpServletResponse());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(response.getHeaders().getFirst("X-Auth-Reason")).isEqualTo("no_authorized_client");
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
+        assertThat(response.getBody().getContentAsString(StandardCharsets.UTF_8))
+                .contains("session_expired")
+                .contains("no_authorized_client");
     }
 }
