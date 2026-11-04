@@ -4,7 +4,14 @@ import cn.nitrowater.server.infra.entity.AiMemory;
 import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.infra.enums.MemoryStatus;
 import cn.nitrowater.server.infra.repository.AiMemoryRepository;
+import cn.nitrowater.server.infra.specification.MemorySpec;
+import cn.nitrowater.lib.utils.StringUtil;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -184,11 +191,22 @@ public class AiMemoryService {
      * @param limit maximum entries
      * @return active memories, most recently changed first
      */
+    /**
+     * Paged listing of one user's active memories.
+     *
+     * @param uid owner uid
+     * @param keyword optional case-insensitive content substring
+     * @param kind optional memory category
+     * @param page zero-based page index
+     * @param size page size, clamped to the per-user cap
+     * @return active memories, most recently changed first
+     */
     @Transactional(readOnly = true)
-    public List<MemoryView> list(long uid, int limit) {
-        int max = Math.min(MAX_ACTIVE, Math.max(1, limit <= 0 ? 50 : limit));
-        return memories.findByUidAndStatusOrderByUpdatedAtDesc(uid, MemoryStatus.ACTIVE, Limit.of(max))
-                .stream().map(AiMemoryService::toView).toList();
+    public Page<MemoryView> list(long uid, String keyword, MemoryKind kind, int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(MAX_ACTIVE, Math.max(1, size)),
+                Sort.by(Sort.Direction.DESC, "updatedAt"));
+        Specification<AiMemory> spec = MemorySpec.of(uid, kind, keyword);
+        return memories.findAll(spec, pageable).map(AiMemoryService::toView);
     }
 
     /**

@@ -13,9 +13,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.web.config.EnableSpringDataWebSupport;
+import org.springframework.data.web.config.SpringDataJackson3Configuration;
+import org.springframework.data.web.config.SpringDataWebSettings;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -58,9 +64,16 @@ class AdminPluginResourceControllerTest {
     void setUp() {
         ResourceProperties properties = new ResourceProperties(
                 "local", 600, 10L * 1024 * 1024, 64L * 1024 * 1024, null, null, null, null, null);
+        // Standalone MockMvc does not pick up @EnableSpringDataWebSupport; register the same
+        // VIA_DTO page module the application uses so Page bodies serialize as {content, page}.
+        JsonMapper mapper = JsonMapper.builder()
+                .addModule(new SpringDataJackson3Configuration.PageModule(
+                        new SpringDataWebSettings(EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO)))
+                .build();
         mvc = MockMvcBuilders.standaloneSetup(
                         new AdminPluginResourceController(resourceService, new PluginArtifactPolicy(properties)))
                 .setControllerAdvice(new ApiResponseAdvice(), new ResourceExceptionHandler())
+                .setMessageConverters(new JacksonJsonHttpMessageConverter(mapper))
                 .build();
     }
 
@@ -121,13 +134,14 @@ class AdminPluginResourceControllerTest {
 
     @Test
     void listMapsThePublicDownloadLink() throws Exception {
-        when(resourceService.listPluginArtifacts(KEY)).thenReturn(List.of(META));
+        when(resourceService.listPluginArtifacts(eq(KEY), any(), eq(0), eq(20)))
+                .thenReturn(new PageImpl<>(List.of(META)));
 
         mvc.perform(get("/api/admin/plugin-resources/{key}", KEY))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].uuid").value(META.uuid()))
-                .andExpect(jsonPath("$.data[0].app").value(PluginArtifactPolicy.PLUGIN_APP))
-                .andExpect(jsonPath("$.data[0].url").value(META.url()));
+                .andExpect(jsonPath("$.data.content[0].uuid").value(META.uuid()))
+                .andExpect(jsonPath("$.data.content[0].app").value(PluginArtifactPolicy.PLUGIN_APP))
+                .andExpect(jsonPath("$.data.content[0].url").value(META.url()));
     }
 
     @Test

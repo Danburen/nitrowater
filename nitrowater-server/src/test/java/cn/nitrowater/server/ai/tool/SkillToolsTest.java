@@ -1,9 +1,9 @@
 package cn.nitrowater.server.ai.tool;
 
+import cn.nitrowater.server.infra.repository.AiSkillRepository;
 import cn.nitrowater.server.service.ai.SkillRegistry;
 import cn.nitrowater.server.service.ai.model.Skill;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
-import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.service.ai.tool.SkillTools;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
@@ -12,12 +12,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /** Verifies the skill tool answers in the shared envelope and records a real outcome. */
 class SkillToolsTest {
 
-    private final SkillRegistry registry = new SkillRegistry(new AiProperties(
-            true, 500, 100, 40, 6, 0.35, 2000, 4, false, 20, "deploy/ai-skills", List.of()));
+    private final SkillRegistry registry = new SkillRegistry(mock(AiSkillRepository.class));
 
     @Test
     void unknownSkillListsTheCatalogInsteadOfAnsweringBlank() {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElButton, ElIcon, ElInput } from 'element-plus'
 import { ArrowDown, Iphone, Lock, Message, User } from '@element-plus/icons-vue'
 
@@ -7,6 +7,7 @@ import AuthLayout from '@/components/AuthLayout.vue'
 import CaptchaDialog from '@/components/CaptchaDialog.vue'
 import { ApiError, postJson } from '@/api/auth'
 import { getDeviceFp } from '@/composables/useDeviceFp'
+import { useCodeCooldown, type CooldownScope } from '@/composables/useCodeCooldown'
 
 const username = ref('')
 const phone = ref('')
@@ -23,15 +24,61 @@ const showCaptcha = ref(false)
 const captchaCode = ref('')
 const sending = ref(false)
 const submitting = ref(false)
-const countdown = ref(0)
-
 const emailSending = ref(false)
-const emailCountdown = ref(0)
 const showEmailCaptcha = ref(false)
 
-let countdownTimer: ReturnType<typeof setInterval> | null = null
-let emailTimer: ReturnType<typeof setInterval> | null = null
+/** Targets the last SMS/email code was sent to; editing the target invalidates the stale input. */
+const smsSentTo = ref('')
+const emailSentTo = ref('')
+
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
+
+const {
+  remaining: smsCooldown,
+  start: startSmsCooldown,
+  restore: restoreSmsCooldown,
+  clear: clearSmsCooldown,
+  sync: syncSmsCooldown,
+} = useCodeCooldown()
+const {
+  remaining: emailCooldown,
+  start: startEmailCooldown,
+  restore: restoreEmailCooldown,
+  clear: clearEmailCooldown,
+  sync: syncEmailCooldown,
+} = useCodeCooldown()
+
+function smsScope(): CooldownScope {
+  return { scene: 'register', channel: 'sms', target: phone.value.trim() }
+}
+
+function emailScope(): CooldownScope {
+  return { scene: 'register', channel: 'email', target: email.value.trim() }
+}
+
+watch(phone, () => {
+  const target = phone.value.trim()
+  if (smsSentTo.value && smsSentTo.value !== target) {
+    smsSentTo.value = ''
+    smsCode.value = ''
+  }
+  if (target) restoreSmsCooldown(smsScope())
+  else clearSmsCooldown()
+})
+watch(email, () => {
+  const target = email.value.trim()
+  if (emailSentTo.value && emailSentTo.value !== target) {
+    emailSentTo.value = ''
+    emailCode.value = ''
+  }
+  if (target) restoreEmailCooldown(emailScope())
+  else clearEmailCooldown()
+})
+
+onMounted(() => {
+  if (phone.value.trim()) restoreSmsCooldown(smsScope())
+  if (email.value.trim()) restoreEmailCooldown(emailScope())
+})
 
 function messageOf(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -52,18 +99,6 @@ function openCaptcha() {
   showCaptcha.value = true
 }
 
-function startCountdown() {
-  countdown.value = 60
-  if (countdownTimer) clearInterval(countdownTimer)
-  countdownTimer = setInterval(() => {
-    countdown.value -= 1
-    if (countdown.value <= 0 && countdownTimer) {
-      clearInterval(countdownTimer)
-      countdownTimer = null
-    }
-  }, 1000)
-}
-
 async function sendCode() {
   const target = phone.value.trim()
   if (!target) {
@@ -81,9 +116,11 @@ async function sendCode() {
       captcha: captchaCode.value.trim(),
     })
     notice.value = '验证码已发送，请留意手机短信'
-    startCountdown()
+    smsSentTo.value = target
+    startSmsCooldown(60, smsScope())
   } catch (error) {
     errorMessage.value = messageOf(error)
+    syncSmsCooldown(error, smsScope())
   } finally {
     sending.value = false
   }
@@ -94,18 +131,6 @@ function sendCodeWithCaptcha(code: string) {
   captchaCode.value = code
   showCaptcha.value = false
   void sendCode()
-}
-
-function startEmailCountdown() {
-  emailCountdown.value = 60
-  if (emailTimer) clearInterval(emailTimer)
-  emailTimer = setInterval(() => {
-    emailCountdown.value -= 1
-    if (emailCountdown.value <= 0 && emailTimer) {
-      clearInterval(emailTimer)
-      emailTimer = null
-    }
-  }, 1000)
 }
 
 function openEmailCaptcha() {
@@ -139,9 +164,11 @@ async function sendEmailCode(captcha: string) {
       captcha,
     })
     notice.value = '邮箱验证码已发送，请查收'
-    startEmailCountdown()
+    emailSentTo.value = mail
+    startEmailCooldown(60, emailScope())
   } catch (error) {
     errorMessage.value = messageOf(error)
+    syncEmailCooldown(error, emailScope())
   } finally {
     emailSending.value = false
   }
@@ -219,8 +246,6 @@ async function register() {
 }
 
 onUnmounted(() => {
-  if (countdownTimer) clearInterval(countdownTimer)
-  if (emailTimer) clearInterval(emailTimer)
   if (redirectTimer) clearTimeout(redirectTimer)
 })
 </script>
@@ -305,10 +330,10 @@ onUnmounted(() => {
           <ElButton
             class="shrink-0"
             size="large"
-            :disabled="sending || countdown > 0"
+            :disabled="sending || smsCooldown > 0"
             @click="openCaptcha"
           >
-            {{ countdown > 0 ? `${countdown}s 后重发` : '获取验证码' }}
+            {{ smsCooldown > 0 ? `${smsCooldown}s 后重发` : '获取验证码' }}
           </ElButton>
         </div>
       </div>
@@ -389,10 +414,10 @@ onUnmounted(() => {
               <ElButton
                 class="shrink-0"
                 size="large"
-                :disabled="emailSending || emailCountdown > 0"
+                :disabled="emailSending || emailCooldown > 0"
                 @click="openEmailCaptcha"
               >
-                {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '获取验证码' }}
+                {{ emailCooldown > 0 ? `${emailCooldown}s 后重发` : '获取验证码' }}
               </ElButton>
             </div>
             <p class="mt-1.5 text-[11px] text-faint">

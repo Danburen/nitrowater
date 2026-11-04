@@ -5,13 +5,18 @@
 import { apiFetch } from '../../auth/bff'
 import { readJson } from '../envelope'
 import { getJson, readErrorMessage } from '../http'
+import type { Page } from '../types'
 import type {
   AiAdminSettings,
   AiModerationQuery,
   AiModerationReport,
   AiReindexResult,
   AiSkill,
+  AiSkillDetail,
+  AiSkillQuery,
+  AiSkillReq,
   AiTool,
+  AiUsageQuery,
   AiUsageSummary,
   AiUserUsage,
 } from './types'
@@ -20,8 +25,23 @@ function moderationQuery(query: AiModerationQuery): string {
   const params = new URLSearchParams()
   if (query.direction) params.set('direction', query.direction)
   if (query.action) params.set('action', query.action)
-  if (query.beforeId !== undefined) params.set('beforeId', String(query.beforeId))
-  params.set('limit', String(query.limit ?? 50))
+  const keyword = query.keyword?.trim()
+  if (keyword) params.set('keyword', keyword)
+  if (query.from) params.set('from', query.from)
+  if (query.to) params.set('to', query.to)
+  params.set('page', String(query.page ?? 0))
+  params.set('size', String(query.size ?? 50))
+  return params.toString()
+}
+
+function usageQuery(query: AiUsageQuery): string {
+  const params = new URLSearchParams()
+  const keyword = query.keyword?.trim()
+  if (keyword) params.set('keyword', keyword)
+  if (query.onlyExceeded) params.set('onlyExceeded', 'true')
+  if (query.sort) params.set('sort', query.sort)
+  params.set('page', String(query.page ?? 0))
+  params.set('size', String(query.size ?? 20))
   return params.toString()
 }
 
@@ -53,9 +73,9 @@ export async function resetAdminGlobalUsage(): Promise<number> {
   return readJson<number>(response)
 }
 
-/** Admin: all users with recorded usage today, ordered by consumption. */
-export async function fetchAdminAiUsage(): Promise<AiUserUsage[]> {
-  return getJson<AiUserUsage[]>('/api/admin/ai/usage')
+/** Admin: one page of users with recorded usage today, ordered by consumption. */
+export async function fetchAdminAiUsage(query: AiUsageQuery = {}): Promise<Page<AiUserUsage>> {
+  return getJson<Page<AiUserUsage>>(`/api/admin/ai/usage?${usageQuery(query)}`)
 }
 
 /** Admin: moderation posture, dictionary size and a page of hits. */
@@ -86,14 +106,76 @@ export async function resetAdminAiUsage(uids: readonly number[]): Promise<number
   return readJson<number>(response)
 }
 
-/** Admin: skills with their source. */
-export async function fetchAdminSkills(): Promise<AiSkill[]> {
-  return getJson<AiSkill[]>('/api/admin/ai/skills')
+/** Admin: one page of the skill catalog (built-ins overlaid with managed rows). */
+export async function fetchAdminSkills(query: AiSkillQuery = {}): Promise<Page<AiSkill>> {
+  const params = new URLSearchParams()
+  const keyword = query.keyword?.trim()
+  if (keyword) params.set('keyword', keyword)
+  params.set('page', String(query.page ?? 0))
+  params.set('size', String(query.size ?? 20))
+  return getJson<Page<AiSkill>>(`/api/admin/ai/skills?${params.toString()}`)
+}
+
+/** Admin: one skill with its body and provenance. */
+export async function fetchAdminSkill(name: string): Promise<AiSkillDetail> {
+  return getJson<AiSkillDetail>(`/api/admin/ai/skills/${encodeURIComponent(name)}`)
+}
+
+/** Admin: create a managed skill (its name may shadow a built-in). */
+export async function createAdminSkill(req: AiSkillReq): Promise<AiSkillDetail> {
+  const response = await apiFetch('/api/admin/ai/skills', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!response.ok) throw new Error(await readErrorMessage(response))
+  return readJson<AiSkillDetail>(response)
+}
+
+/** Admin: update a managed skill (the name is immutable). */
+export async function updateAdminSkill(name: string, req: AiSkillReq): Promise<AiSkillDetail> {
+  const response = await apiFetch(`/api/admin/ai/skills/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!response.ok) throw new Error(await readErrorMessage(response))
+  return readJson<AiSkillDetail>(response)
+}
+
+/** Admin: delete a managed skill, restoring a same-named built-in. */
+export async function deleteAdminSkill(name: string): Promise<void> {
+  const response = await apiFetch(`/api/admin/ai/skills/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw new Error(await readErrorMessage(response))
+}
+
+/** Admin: import a SKILL.md; a same-name managed row is replaced. */
+export async function importAdminSkill(file: File): Promise<AiSkillDetail> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await apiFetch('/api/admin/ai/skills/import', {
+    method: 'POST',
+    body: form,
+  })
+  if (!response.ok) throw new Error(await readErrorMessage(response))
+  return readJson<AiSkillDetail>(response)
 }
 
 /** Admin: the tool catalog advertised to the agent. */
 export async function fetchAdminTools(): Promise<AiTool[]> {
   return getJson<AiTool[]>('/api/admin/ai/tools')
+}
+
+/** Admin: show/hide one registered tool; the callback stays registered (hot toggle). */
+export async function setAdminToolEnabled(name: string, enabled: boolean): Promise<AiTool[]> {
+  const response = await apiFetch(
+    `/api/admin/ai/tools/${encodeURIComponent(name)}?enabled=${enabled}`,
+    { method: 'PUT' },
+  )
+  if (!response.ok) throw new Error(await readErrorMessage(response))
+  return readJson<AiTool[]>(response)
 }
 
 /**

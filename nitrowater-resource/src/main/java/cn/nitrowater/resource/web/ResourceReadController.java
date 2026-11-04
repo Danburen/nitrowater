@@ -1,7 +1,9 @@
 package cn.nitrowater.resource.web;
 
+import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.resource.application.ResourceService;
 import cn.nitrowater.resource.web.dto.ResourceMetaResp;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -11,8 +13,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 /**
  * Read + lifecycle endpoints.
@@ -62,11 +62,15 @@ public class ResourceReadController {
         return ResourceWebMapper.toResp(resourceService.meta(uuid, null));
     }
 
-    /** Anonymous listing of a group's PUBLIC resources. */
+    /** Anonymous paged listing of a group's PUBLIC resources. */
     @GetMapping("/public/resources")
-    public List<ResourceMetaResp> publicList(@RequestParam String app,
-            @RequestParam(name = "group", required = false) String group) {
-        return resourceService.list(app, group, null).stream().map(ResourceWebMapper::toResp).toList();
+    public ApiResponse<Page<ResourceMetaResp>> publicList(@RequestParam String app,
+            @RequestParam(name = "group", required = false) String group,
+            @RequestParam(name = "q", required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(resourceService.list(app, group, null, keyword, page, size)
+                .map(ResourceWebMapper::toResp));
     }
 
     /** Authenticated read of a resource the caller owns, or of any PUBLIC resource. */
@@ -87,12 +91,16 @@ public class ResourceReadController {
         return ResourceWebMapper.toResp(resourceService.meta(uuid, ResourceWebMapper.uidOf(jwt)));
     }
 
-    /** Authenticated listing: PUBLIC resources of the group, plus any the caller owns. */
+    /** Authenticated paged listing: PUBLIC resources of the group, plus any the caller owns. */
     @GetMapping("/resources")
-    public List<ResourceMetaResp> privateList(@RequestParam String app,
-            @RequestParam(name = "group", required = false) String group, @AuthenticationPrincipal Jwt jwt) {
-        return resourceService.list(app, group, ResourceWebMapper.uidOf(jwt)).stream()
-                .map(ResourceWebMapper::toResp).toList();
+    public ApiResponse<Page<ResourceMetaResp>> privateList(@RequestParam String app,
+            @RequestParam(name = "group", required = false) String group,
+            @RequestParam(name = "q", required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ApiResponse.success(resourceService.list(app, group, ResourceWebMapper.uidOf(jwt), keyword, page, size)
+                .map(ResourceWebMapper::toResp));
     }
 
     /** Owner deletes a resource (bytes + metadata); idempotent. */

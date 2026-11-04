@@ -8,7 +8,8 @@
  */
 import { apiFetch, csrfHeaders } from '../../auth/bff'
 import { readJson, readVoid, unwrap } from '../envelope'
-import type { AdminPluginJar, PluginAdmin, PluginUpsert } from './types'
+import type { Page } from '../types'
+import type { AdminPluginJar, PluginAdmin, PluginAdminQuery, PluginUpsert } from './types'
 
 function jsonBody(payload: unknown): RequestInit {
   return {
@@ -24,8 +25,41 @@ function jsonBody(payload: unknown): RequestInit {
  * gates the whole controller behind ROLE_ADMIN. `key` is immutable after creation — it doubles as
  * the docs path and the resource group — so the update payload's key is ignored server-side.
  */
-export async function listPlugins(): Promise<PluginAdmin[]> {
-  return readJson<PluginAdmin[]>(await apiFetch('/api/plugins'))
+/** Serializes the admin list filters; page/size are always explicit. */
+function pluginQuery(query: PluginAdminQuery): string {
+  const params = new URLSearchParams()
+  const q = query.q?.trim()
+  if (q) params.set('q', q)
+  if (query.enabled !== undefined) params.set('enabled', String(query.enabled))
+  if (query.sort) params.set('sort', query.sort)
+  params.set('page', String(query.page ?? 0))
+  params.set('size', String(query.size ?? 20))
+  return params.toString()
+}
+
+/**
+ * Paged plugin metadata for the admin console.
+ *
+ * @param query optional keyword / enabled / sort / page filters
+ * @returns one page of rows, newest sort order first by default
+ */
+export async function listPlugins(query: PluginAdminQuery = {}): Promise<Page<PluginAdmin>> {
+  return readJson<Page<PluginAdmin>>(await apiFetch(`/api/plugins?${pluginQuery(query)}`))
+}
+
+/**
+ * Finds one plugin's admin metadata by key.
+ *
+ * <p>There is no admin "get by key" endpoint; the list is filtered by key and paged until the exact
+ * row shows up, so the editor still works when the catalog grows past one page.</p>
+ */
+export async function findPluginAdmin(key: string): Promise<PluginAdmin | null> {
+  for (let page = 0; ; page++) {
+    const result = await listPlugins({ q: key, page, size: 100 })
+    const found = result.content.find((plugin) => plugin.key === key)
+    if (found) return found
+    if (page + 1 >= result.page.totalPages) return null
+  }
 }
 
 export async function createPlugin(payload: PluginUpsert): Promise<PluginAdmin> {
@@ -42,11 +76,16 @@ export async function deletePlugin(id: number): Promise<void> {
   return readVoid(await apiFetch(`/api/plugins/${id}`, { method: 'DELETE' }))
 }
 
-/** Lists a plugin's published jars (admin view; the public list hides non-active rows). */
-export async function listPluginJars(key: string): Promise<AdminPluginJar[]> {
-  const res = await apiFetch(`/api/admin/plugin-resources/${encodeURIComponent(key)}`)
-  const data = await readJson<AdminPluginJar[]>(res)
-  return Array.isArray(data) ? data : []
+/** Lists one page of a plugin's published jars (admin view; the public list hides non-active rows). */
+export async function listPluginJars(
+  key: string,
+  page = 0,
+  size = 20,
+): Promise<Page<AdminPluginJar>> {
+  const res = await apiFetch(
+    `/api/admin/plugin-resources/${encodeURIComponent(key)}?page=${page}&size=${size}`,
+  )
+  return readJson<Page<AdminPluginJar>>(res)
 }
 
 /**

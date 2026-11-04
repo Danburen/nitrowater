@@ -8,11 +8,15 @@ import cn.nitrowater.account.admin.dto.UserSummaryVO;
 import cn.nitrowater.core.domain.role.Role;
 import cn.nitrowater.core.domain.role.UserRole;
 import cn.nitrowater.core.api.event.UserSessionsInvalidatedEvent;
+import cn.nitrowater.core.domain.user.AccountStatus;
 import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.domain.user.UserType;
 import cn.nitrowater.core.exception.BizException;
 import cn.nitrowater.core.infrastructure.persistence.role.RoleRepository;
 import cn.nitrowater.core.infrastructure.persistence.role.UserRoleRepository;
 import cn.nitrowater.core.infrastructure.persistence.user.UserRepository;
+import cn.nitrowater.core.infrastructure.persistence.specification.RoleSpec;
+import cn.nitrowater.core.infrastructure.persistence.specification.UserSpec;
 import cn.nitrowater.lib.api.BaseResponseCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -20,6 +24,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,13 +74,21 @@ public class RoleAdminService {
 
     // ------------------------------------------------------------------ roles
 
-    /** All roles with their bound-account counts, ordered built-in first then by code. */
+    /**
+     * Paged role listing with bound-account counts, built-in first then by code.
+     *
+     * @param keyword optional code / name / description substring
+     * @param builtin optional built-in filter
+     * @param page zero-based page index
+     * @param size page size, clamped to the maximum
+     * @return one page of roles
+     */
     @Transactional(readOnly = true)
-    public List<RoleVO> listRoles() {
-        return roleRepository.findAll(Sort.by(Sort.Direction.DESC, "builtin").and(Sort.by("code")))
-                .stream()
-                .map(this::toRoleVO)
-                .toList();
+    public Page<RoleVO> listRoles(String keyword, Boolean builtin, int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(0, page), clampSize(size),
+                Sort.by(Sort.Direction.DESC, "builtin").and(Sort.by("code")));
+        Specification<Role> spec = RoleSpec.of(keyword, builtin);
+        return roleRepository.findAll(spec, pageable).map(this::toRoleVO);
     }
 
     /** Creates a non-built-in role; the code is normalized to upper-case and must be unique. */
@@ -121,21 +134,27 @@ public class RoleAdminService {
     // ------------------------------------------------------------------ users
 
     /**
-     * Paged account search (username / nickname substring) with each account's bound role codes.
+     * Paged account search with each account's bound role codes.
      *
-     * @param keyword optional username/nickname substring
-     * @param page one-based page number (the admin console pagination is one-based)
+     * @param keyword optional username / nickname / uid substring
+     * @param status optional account-status filter
+     * @param userType optional account-type filter
+     * @param roleCode optional role-code filter (a user must hold that role)
+     * @param page zero-based page number
      * @param size page size, clamped to the maximum
      * @return one page of summaries, newest first
      */
     @Transactional(readOnly = true)
-    public Page<UserSummaryVO> listUsers(String keyword, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        Pageable pageable = PageRequest.of(safePage - 1, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
-        String kw = (StringUtil.isBlank(keyword)) ? null : keyword.trim();
+    public Page<UserSummaryVO> listUsers(String keyword, AccountStatus status, UserType userType,
+            String roleCode, int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(0, page), clampSize(size),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        Page<User> result = userRepository.searchByKeyword(kw, pageable);
+        // The role code is normalized by the same rule as the write side, then handed to the spec.
+        String role = StringUtil.isBlank(roleCode) ? null : normalizeCode(roleCode);
+        Specification<User> spec = UserSpec.of(keyword, status, userType, role);
+
+        Page<User> result = userRepository.findAll(spec, pageable);
         List<Long> uids = result.getContent().stream().map(User::getUid).toList();
         Map<Long, List<String>> rolesByUid = rolesByUid(uids);
 
@@ -222,9 +241,12 @@ public class RoleAdminService {
                 roles, user.getCreatedAt());
     }
 
+    private static int clampSize(int size) {
+        return Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+    }
+
     /** Upper-cases and trims a role code ({@code ROLE_} prefix stripped if present). */
-    private static String normalizeCode(String raw) {
-        String code = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
+    private static String normalizeCode(String raw) {        String code = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
         if (code.startsWith("ROLE_")) {
             code = code.substring("ROLE_".length());
         }

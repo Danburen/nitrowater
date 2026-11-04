@@ -100,7 +100,8 @@ public class AiAgentController {
             return List.of();
         }
         return skills.list().stream()
-                .map(skill -> new AiSkillResp(skill.name(), skill.description(), skill.whenToUse(), skill.source()))
+                .map(skill -> new AiSkillResp(null, skill.name(), skill.description(), skill.whenToUse(),
+                        skill.source(), SkillRegistry.SOURCE_BUILTIN.equals(skill.source()), false, null))
                 .toList();
     }
 

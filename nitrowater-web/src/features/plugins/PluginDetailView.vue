@@ -77,7 +77,7 @@ async function load(): Promise<void> {
   }
   const [pluginResult, filesResult] = await Promise.allSettled([
     fetchPlugin(k),
-    fetchPluginResources(k),
+    fetchPluginResources(k, { size: 100 }),
   ])
   if (pluginResult.status === 'fulfilled') {
     plugin.value = pluginResult.value
@@ -85,7 +85,7 @@ async function load(): Promise<void> {
     pluginError.value = true
   }
   if (filesResult.status === 'fulfilled') {
-    files.value = filesResult.value
+    files.value = filesResult.value.content
   } else {
     resError.value = true
   }
@@ -99,13 +99,13 @@ async function refresh(): Promise<void> {
   if (!k) return
   const [pluginResult, filesResult] = await Promise.allSettled([
     fetchPlugin(k),
-    fetchPluginResources(k),
+    fetchPluginResources(k, { size: 100 }),
   ])
   if (pluginResult.status === 'fulfilled') {
     plugin.value = pluginResult.value
   }
   if (filesResult.status === 'fulfilled') {
-    files.value = filesResult.value
+    files.value = filesResult.value.content
     resError.value = false
   }
 }

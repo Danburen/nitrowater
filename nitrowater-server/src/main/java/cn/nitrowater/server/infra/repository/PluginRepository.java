@@ -2,12 +2,13 @@ package cn.nitrowater.server.infra.repository;
 
 import cn.nitrowater.server.infra.entity.Plugin;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.List;
 import java.util.Optional;
 
 /** Persistence for {@link Plugin}. */
-public interface PluginRepository extends JpaRepository<Plugin, Long> {
+public interface PluginRepository extends JpaRepository<Plugin, Long>, JpaSpecificationExecutor<Plugin> {
 
     /**
      * @param pluginKey stable plugin key

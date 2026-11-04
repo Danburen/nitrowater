@@ -5,6 +5,7 @@ import cn.nitrowater.resource.application.dto.ResourceMeta;
 import cn.nitrowater.resource.application.dto.ResourceReadResult;
 import cn.nitrowater.resource.application.dto.UploadPolicyCommand;
 import cn.nitrowater.resource.application.dto.UploadPolicyResult;
+import cn.nitrowater.resource.application.specification.ResourceSpec;
 import cn.nitrowater.resource.config.ResourceProperties;
 import cn.nitrowater.resource.domain.Resource;
 import cn.nitrowater.resource.domain.ResourceRepository;
@@ -29,17 +30,13 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
-import jakarta.persistence.criteria.Predicate;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -62,6 +59,9 @@ public class ResourceService {
 
     /** Upper bound on an admin listing page size, so a caller cannot force an unbounded scan. */
     private static final int MAX_ADMIN_PAGE_SIZE = 100;
+
+    /** Upper bound for the public/private and plugin-artifact listings. */
+    private static final int MAX_LIST_PAGE_SIZE = 100;
 
     /** Key under which the logical version is stored inside the {@code file_meta} JSON document. */
     private static final String FILE_META_VERSION_KEY = "version";
@@ -312,13 +312,13 @@ public class ResourceService {
      * @return the active artifacts, newest first
      */
     @Transactional(readOnly = true)
-    public List<ResourceMeta> listPluginArtifacts(String pluginKey) {
+    public Page<ResourceMeta> listPluginArtifacts(String pluginKey, String keyword, int page, int size) {
         String key = pluginArtifactPolicy.sanitizeKey(pluginKey);
-        return repository.findByAppAndGroupKeyAndStatusOrderByCreatedAtDesc(
-                        PluginArtifactPolicy.PLUGIN_APP, key, ResourceStatus.ACTIVE)
-                .stream()
-                .map(ResourceService::toListItem)
-                .toList();
+        Pageable pageable = PageRequest.of(Math.max(0, page),
+                Math.min(MAX_LIST_PAGE_SIZE, Math.max(1, size)), Sort.by(Sort.Direction.DESC, "createdAt"));
+        Specification<Resource> spec = ResourceSpec.pluginArtifactsOf(PluginArtifactPolicy.PLUGIN_APP,
+                key, keyword);
+        return repository.findAll(spec, pageable).map(ResourceService::toListItem);
     }
 
     /**
@@ -353,12 +353,12 @@ public class ResourceService {
      * @return the visible, activated resources, newest first
      */
     @Transactional(readOnly = true)
-    public List<ResourceMeta> list(String app, String groupKey, Long callerUid) {
-        return repository.findByAppAndGroupKeyAndStatusOrderByCreatedAtDesc(app, groupKey, ResourceStatus.ACTIVE)
-                .stream()
-                .filter(resource -> isVisibleTo(resource, callerUid))
-                .map(ResourceService::toListItem)
-                .toList();
+    public Page<ResourceMeta> list(String app, String groupKey, Long callerUid, String keyword,
+            int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(0, page),
+                Math.min(MAX_LIST_PAGE_SIZE, Math.max(1, size)), Sort.by(Sort.Direction.DESC, "createdAt"));
+        return repository.findAll(ResourceSpec.of(app, groupKey, callerUid, keyword), pageable)
+                .map(ResourceService::toListItem);
     }
 
     /**
@@ -507,7 +507,7 @@ public class ResourceService {
         int safeSize = Math.min(MAX_ADMIN_PAGE_SIZE, Math.max(1, size));
         Pageable pageable = PageRequest.of(Math.max(0, page), safeSize,
                 Sort.by(Sort.Direction.DESC, "createdAt"));
-        return repository.findAll(adminSpecification(query, callerUid, superAdmin), pageable)
+        return repository.findAll(ResourceSpec.adminOf(query, callerUid, superAdmin), pageable)
                 .map(ResourceService::toAdminListItem);
     }
 
@@ -583,44 +583,6 @@ public class ResourceService {
     /** @return the same-origin admin download path for a resource */
     private static String adminDownloadPath(Resource resource) {
         return "/api/admin/resources/" + resource.getUuid() + "/download";
-    }
-
-    /** Builds the JPA filter for the admin listing, always constraining by the caller's visibility. */
-    private static Specification<Resource> adminSpecification(AdminResourceQuery query, Long callerUid,
-            boolean superAdmin) {
-        return (root, criteriaQuery, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            if (!superAdmin) {
-                predicates.add(cb.equal(root.get("ownerUid"), callerUid));
-            }
-            if (hasText(query.app())) {
-                predicates.add(cb.equal(root.get("app"), query.app()));
-            }
-            if (hasText(query.groupKey())) {
-                predicates.add(cb.equal(root.get("groupKey"), query.groupKey()));
-            }
-            if (query.ownerUid() != null) {
-                predicates.add(cb.equal(root.get("ownerUid"), query.ownerUid()));
-            }
-            if (query.status() != null) {
-                predicates.add(cb.equal(root.get("status"), query.status()));
-            } else {
-                // Soft-deleted rows are never part of a listing: their bytes are gone, the row only
-                // exists so a later purge/audit can still resolve the uuid.
-                predicates.add(cb.notEqual(root.get("status"), ResourceStatus.DELETED));
-            }
-            if (query.sourceType() != null) {
-                predicates.add(cb.equal(root.get("sourceType"), query.sourceType()));
-            }
-            if (hasText(query.keyword())) {
-                String like = "%" + query.keyword().toLowerCase(Locale.ROOT) + "%";
-                predicates.add(cb.like(cb.lower(root.get("originalName")), like));
-            }            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-    }
-
-    private static boolean hasText(String value) {
-        return StringUtil.isNotBlank(value);
     }
 
     /** Builds the metadata view, embedding a read URL (or the service read path when not presignable). */

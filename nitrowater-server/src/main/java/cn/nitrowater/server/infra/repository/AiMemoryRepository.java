@@ -5,6 +5,7 @@ import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.infra.enums.MemoryStatus;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,7 +16,7 @@ import java.util.List;
 import java.util.Optional;
 
 /** Persistence for {@link AiMemory}. */
-public interface AiMemoryRepository extends JpaRepository<AiMemory, Long> {
+public interface AiMemoryRepository extends JpaRepository<AiMemory, Long>, JpaSpecificationExecutor<AiMemory> {
 
     /**
      * @param uuid memory uuid

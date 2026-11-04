@@ -1,7 +1,10 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.lib.api.ApiResponse;
+import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.service.ai.AiMemoryService;
 import cn.nitrowater.server.web.dto.AiMemoryResp;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,7 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
 import java.time.Instant;
-import java.util.List;
 
 /**
  * Long-term memory endpoints.
@@ -32,12 +34,16 @@ public class AiMemoryController {
         this.memories = memories;
     }
 
-    /** Login: list active memories. */
+    /** Login: paged list of active memories. */
     @GetMapping("/api/ai/memories")
-    public List<AiMemoryResp> list(@RequestParam(required = false) Integer limit, Principal principal) {
+    public ApiResponse<Page<AiMemoryResp>> list(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) MemoryKind kind,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Principal principal) {
         long uid = CurrentUser.requireUid(principal);
-        int size = limit == null ? 50 : limit;
-        return memories.list(uid, size).stream().map(AiMemoryResp::from).toList();
+        return ApiResponse.success(memories.list(uid, keyword, kind, page, size).map(AiMemoryResp::from));
     }
 
     /** Login: soft-delete every active memory and return the affected count. */

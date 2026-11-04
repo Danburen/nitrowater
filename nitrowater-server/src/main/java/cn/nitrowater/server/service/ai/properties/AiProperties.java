@@ -23,8 +23,6 @@ import java.util.List;
  * @param maxHistoryTurns number of previous turns forwarded to the model
  * @param ingestOnStartup whether to index automatically when the collection is still empty
  * @param perUserPerMinute sliding-window chat request cap per user, per minute
- * @param skillsDir external skill directory (markdown {@code <name>/SKILL.md}); built-in skills
- *        from the classpath are merged in and external files override a same-named built-in
  * @param collections documentation corpora to index; each entry carries its own corpus name and
  *        markdown location ({@code classpath:} or filesystem)
  */
@@ -40,7 +38,6 @@ public record AiProperties(
         int maxHistoryTurns,
         boolean ingestOnStartup,
         int perUserPerMinute,
-        String skillsDir,
         List<DocCollection> collections
 ) {
     public AiProperties {

@@ -33,6 +33,11 @@ export const ResponseCode = {
   GlobalQuotaExceeded: 'global_quota_exceeded',
   /** Per-minute rate limit hit. */
   RateLimited: 'rate_limited',
+  /**
+   * Generic rate-limit rejection. Every limiter bucket (resend cooldown, IP window, per-target
+   * hourly cap) answers this one code; the UI only has to restart its local countdown.
+   */
+  TooManyRequests: 'TOO_MANY_REQUEST',
   /** The AI feature is switched off. */
   AiDisabled: 'ai_disabled',
   /** The requested AI mode is switched off. */
@@ -51,3 +56,26 @@ export const ResponseCode = {
 
 /** Union of every known response code. */
 export type ResponseCode = (typeof ResponseCode)[keyof typeof ResponseCode]
+
+/**
+ * Codes whose wire `message` is just the code itself (or empty), mapped to human wording.
+ *
+ * Only add entries where the backend deliberately sends a generic message — a real server message
+ * always wins.
+ */
+const CODE_MESSAGES: Record<string, string> = {
+  [ResponseCode.TooManyRequests]: '操作太频繁，请稍后再试',
+}
+
+/**
+ * Picks the message to show for a rejected envelope.
+ *
+ * @param code machine code from the envelope
+ * @param message server message, which may equal the code
+ * @returns the server message, the mapped wording, or `null` when neither applies
+ */
+export function resolveMessage(code?: string | null, message?: string | null): string | null {
+  if (message && message !== code) return message
+  if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code]
+  return null
+}

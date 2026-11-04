@@ -60,19 +60,33 @@ public class VerificationServiceImpl implements VerificationService {
             default -> throw new BizException(BaseResponseCode.CHANNEL_NOT_SUPPORT, channel.getValue());
         };
         String target = EncryptionHelper.decryptField(encryptedTarget, aesKey);
-        checkTargetNotRateLimited(target, channel);
-        CodeResult result = sender.sendCode(target, scene);
-        recordTargetRateLimit(target, channel);
+        String normalized = channel == VerifyChannel.EMAIL
+                ? AuthIdentifierUtil.normalizeEmail(target)
+                : AuthIdentifierUtil.normalizePhone(target);
+        checkTargetNotRateLimited(normalized, channel);
+        CodeResult result = sender.sendCode(normalized, scene);
+        recordTargetRateLimit(normalized, channel);
         return result;
     }
 
     @Override
     public CodeResult sendCodeForAuthenticated(String target, VerifyChannel channel, VerifyScene scene) {
-        checkTargetNotRateLimited(target, channel);
+        String normalized = channel == VerifyChannel.EMAIL
+                ? AuthIdentifierUtil.normalizeEmail(target)
+                : AuthIdentifierUtil.normalizePhone(target);
+        checkTargetNotRateLimited(normalized, channel);
         CodeSender sender = codeSenderFactory.of(channel);
-        CodeResult result = sender.sendCode(target, scene);
-        recordTargetRateLimit(target, channel);
+        CodeResult result = sender.sendCode(normalized, scene);
+        recordTargetRateLimit(normalized, channel);
         return result;
+    }
+
+    @Override
+    public void assertSendable(String target, VerifyChannel channel) {
+        String normalized = channel == VerifyChannel.EMAIL
+                ? AuthIdentifierUtil.normalizeEmail(target)
+                : AuthIdentifierUtil.normalizePhone(target);
+        checkTargetNotRateLimited(normalized, channel);
     }
 
     @Override
@@ -99,7 +113,9 @@ public class VerificationServiceImpl implements VerificationService {
         };
         if (!shouldSend) {
             // Return 200 with a throwaway key. The caller cannot distinguish "unregistered" from
-            // "suspended" or "password-only account", which is deliberate.
+            // "suspended" or "password-only account", which is deliberate. Record the same cooldown
+            // so a browser cannot hammer the lookup path either.
+            recordTargetRateLimit(target, channel);
             return CodeResult.builder()
                     .sendSuccess(true)
                     .target(target)
@@ -189,7 +205,6 @@ public class VerificationServiceImpl implements VerificationService {
         if (Boolean.TRUE.equals(redisHelper.hasKey(targetMinKey(ch, target)))) {
             throw new RateLimitException();
         }
-
         // 1-hour window
         String hourVal = redisHelper.getValue(targetHourKey(ch, target));
         if (hourVal != null && Integer.parseInt(hourVal) >= TARGET_HOURLY_LIMIT) {
@@ -212,16 +227,20 @@ public class VerificationServiceImpl implements VerificationService {
 
     @Override
     public void verifyCode(String target, VerifyScene scene, VerifyChannel channel, String key, String code) {
-        // Check brute-force lockout: too many failed attempts?
+        // Normalize once: the send path keys the 1m/1h limiters by the normalized target, so the
+        // failed-attempt counter must use the same value or formatting variants would bypass it.
+        String normalized = channel == VerifyChannel.EMAIL
+                ? AuthIdentifierUtil.normalizeEmail(target)
+                : AuthIdentifierUtil.normalizePhone(target);
         String ch = channel.name();
-        String failKey = verifyFailKey(ch, target, scene.name());
+        String failKey = verifyFailKey(ch, normalized, scene.name());
         String val = redisHelper.getValue(failKey);
         if (val != null && Integer.parseInt(val) >= VERIFY_MAX_ATTEMPTS) {
             throw new RateLimitException();
         }
 
         CodeVerifier verifier = codeVerifierFactory.of(channel);
-        if(! verifier.verifyCode(target, scene, key, code)){
+        if (!verifier.verifyCode(normalized, scene, key, code)) {
             redisHelper.increment(failKey, Duration.ofMinutes(VERIFY_LOCK_MINUTES));
             throw new BizException(BaseResponseCode.VERIFY_CODE_INVALID);
         }

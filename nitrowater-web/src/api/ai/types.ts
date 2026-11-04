@@ -5,6 +5,8 @@
  * from every other module of the domain without creating a cycle.
  */
 
+import type { Page } from '../types'
+
 /** A citation returned with an answer (local doc chunk or web result). */
 export interface AiSource {
   index: number
@@ -119,26 +121,47 @@ export interface AiModerationHit {
   createdAt: string
 }
 
-/** Moderation posture, loaded dictionary size and the newest hits. */
+/** Moderation posture, loaded dictionary size and the paged hits. */
 export interface AiModerationReport {
   mode: AiModerationMode
   dictionarySize: number
   /** Hits recorded in the last 24 hours, all directions. */
   hitsLast24Hours: number
-  /** Hits matching the active filters, ignoring the paging cursor. */
-  total: number
-  /** Whether older hits exist beyond this page. */
-  hasMore: boolean
-  hits: AiModerationHit[]
+  /** One page of hits matching the active filters, newest first. */
+  hits: Page<AiModerationHit>
 }
 
 /** Filters for the moderation review panel; every field is optional. */
 export interface AiModerationQuery {
   direction?: string
   action?: string
-  /** Keyset cursor: return hits with an id lower than this. */
-  beforeId?: number
-  limit?: number
+  /** Case-insensitive username / nickname / uid substring. */
+  keyword?: string
+  /** Inclusive ISO-8601 lower bound on the hit time. */
+  from?: string
+  /** Exclusive ISO-8601 upper bound on the hit time. */
+  to?: string
+  /** Zero-based page index. */
+  page?: number
+  /** Page size. */
+  size?: number
+}
+
+/** Ordering accepted by the per-user usage list. */
+export type AiUsageSort = 'tokens' | 'tokens_asc' | 'requests' | 'uid'
+
+/** Filters for the per-user usage list. */
+export interface AiUsageQuery {
+  /** Case-insensitive username / nickname match, or a uid substring. */
+  keyword?: string
+  /** Keep only users at or above their daily token limit. */
+  onlyExceeded?: boolean
+  /** Defaults to server-side `tokens` (largest first). */
+  sort?: AiUsageSort
+  /** Zero-based page index. */
+  page?: number
+  /** Page size. */
+  size?: number
 }
 
 /** Administrator view of one user's usage for the current UTC day. */
@@ -151,10 +174,37 @@ export interface AiUserUsage {
 
 /** A skill shown in the picker / admin console. */
 export interface AiSkill {
+  id: number | null
   name: string
   description: string
   whenToUse: string
-  source: 'builtin' | 'external'
+  source: 'builtin' | 'managed'
+  /** The name also exists on the classpath. */
+  builtin: boolean
+  /** A managed row shadows a built-in of the same name. */
+  overridesBuiltin: boolean
+  updatedAt: string | null
+}
+
+/** Full skill payload for the console's detail/editor. */
+export interface AiSkillDetail extends AiSkill {
+  body: string
+  origin: 'FORM' | 'IMPORT' | null
+}
+
+/** Create/update payload for a managed skill. */
+export interface AiSkillReq {
+  name: string
+  description: string
+  whenToUse: string
+  body: string
+}
+
+/** Filters for the admin skill catalog. */
+export interface AiSkillQuery {
+  keyword?: string
+  page?: number
+  size?: number
 }
 
 /** One tool invocation recorded by the agent. */

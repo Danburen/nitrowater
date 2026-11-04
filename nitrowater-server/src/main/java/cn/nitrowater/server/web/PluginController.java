@@ -1,14 +1,15 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.service.plugin.PluginService;
 import cn.nitrowater.server.web.admin.AdminPluginController;
 import cn.nitrowater.server.web.dto.PluginDetailResp;
 import cn.nitrowater.server.web.dto.PluginSummaryResp;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 /**
  * Public plugin-center endpoints (anonymous read).
@@ -29,10 +30,13 @@ public class PluginController {
         this.pluginService = pluginService;
     }
 
-    /** Anonymous: list enabled plugins. */
+    /** Anonymous: paged list of enabled plugins. */
     @GetMapping("/api/public/plugins")
-    public List<PluginSummaryResp> listPublic() {
-        return pluginService.listPublic();
+    public ApiResponse<Page<PluginSummaryResp>> listPublic(
+            @RequestParam(name = "q", required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(pluginService.listPublic(keyword, page, size));
     }
 
     /** Anonymous: one enabled plugin with its intro markdown. */

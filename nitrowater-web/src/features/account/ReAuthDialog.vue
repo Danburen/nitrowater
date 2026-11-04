@@ -16,6 +16,7 @@ import {
 } from '../../api/account'
 import AppDialog from '../../shared/ui/AppDialog.vue'
 import { toast } from '../../shared/ui/toast'
+import { useCodeCooldown, type CooldownScope } from '../../shared/useCodeCooldown'
 
 const props = defineProps<{
   visible: boolean
@@ -36,8 +37,21 @@ const sending = ref(false)
 const verifying = ref(false)
 const code = ref('')
 const error = ref('')
+/** Key returned by the send call; the verify call must present it (cookies do not survive the BFF). */
+const verifyKey = ref('')
 /** The code field only exists from step 2 on; focus it as soon as it renders. */
 const codeInput = ref<HTMLInputElement | null>(null)
+const {
+  remaining: cooldown,
+  start: startCooldown,
+  restore: restoreCooldown,
+  sync: syncCooldown,
+} = useCodeCooldown()
+
+/** The server masks the target, so the channel is the stable cooldown identity here. */
+function cooldownScope(): CooldownScope {
+  return { scene: props.scene, channel: channel.value, target: 'account' }
+}
 
 const channels = computed<VerifyChannel[]>(() =>
   (info.value?.availableChannels ?? []).filter(
@@ -56,6 +70,16 @@ watch(open, (value) => emit('update:visible', value))
 watch(step, (value) => {
   if (value === 2) void nextTick(() => codeInput.value?.focus())
 })
+watch(channel, () => {
+  // A code sent to the old channel cannot verify against the new one; send the user back to step 1.
+  if (step.value === 2) {
+    step.value = 1
+    code.value = ''
+  }
+  verifyKey.value = ''
+  error.value = ''
+  restoreCooldown(cooldownScope())
+})
 
 async function init(): Promise<void> {
   reset()
@@ -65,6 +89,8 @@ async function init(): Promise<void> {
     channel.value = channels.value[0] ?? 'SMS'
     if (!channels.value.length) {
       error.value = '当前账号没有可用于安全验证的手机号或邮箱'
+    } else {
+      restoreCooldown(cooldownScope())
     }
   } catch (cause) {
     error.value = message(cause)
@@ -76,6 +102,7 @@ async function init(): Promise<void> {
 function reset(): void {
   step.value = 1
   code.value = ''
+  verifyKey.value = ''
   error.value = ''
   info.value = null
 }
@@ -85,22 +112,24 @@ async function sendCode(): Promise<void> {
   sending.value = true
   error.value = ''
   try {
-    await sendReAuthCode(props.scene, channel.value)
+    verifyKey.value = await sendReAuthCode(props.scene, channel.value)
     step.value = 2
+    startCooldown(60, cooldownScope())
     toast.success('验证码已发送')
   } catch (cause) {
     error.value = message(cause)
+    syncCooldown(cause, cooldownScope())
   } finally {
     sending.value = false
   }
 }
 
 async function verifyCode(): Promise<void> {
-  if (code.value.trim().length < 6) return
+  if (code.value.trim().length < 6 || !verifyKey.value) return
   verifying.value = true
   error.value = ''
   try {
-    const token = await verifyReAuthCode(props.scene, channel.value, code.value.trim())
+    const token = await verifyReAuthCode(props.scene, channel.value, verifyKey.value, code.value.trim())
     emit('success', token)
     open.value = false
   } catch (cause) {
@@ -164,7 +193,7 @@ function message(cause: unknown): string {
           <button
             type="button"
             class="btn btn-primary w-full justify-center"
-            :disabled="sending || !target || loading"
+            :disabled="sending || !target || loading || cooldown > 0"
             @click="sendCode"
           >
             <span
@@ -172,7 +201,7 @@ function message(cause: unknown): string {
               class="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
               aria-hidden="true"
             />
-            发送验证码
+            {{ cooldown > 0 ? `${cooldown}s 后重发` : '发送验证码' }}
           </button>
         </div>
 
@@ -198,7 +227,7 @@ function message(cause: unknown): string {
           <button
             type="button"
             class="btn btn-primary w-full justify-center"
-            :disabled="verifying || code.trim().length < 6"
+            :disabled="verifying || code.trim().length < 6 || !verifyKey"
             @click="verifyCode"
           >
             <span
@@ -211,10 +240,10 @@ function message(cause: unknown): string {
           <button
             type="button"
             class="btn btn-sm"
-            :disabled="sending"
+            :disabled="sending || cooldown > 0"
             @click="sendCode"
           >
-            重新发送
+            {{ cooldown > 0 ? `${cooldown}s 后重发` : '重新发送' }}
           </button>
         </div>
 

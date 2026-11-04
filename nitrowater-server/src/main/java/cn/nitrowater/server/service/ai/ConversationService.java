@@ -12,7 +12,13 @@ import cn.nitrowater.server.infra.enums.ConversationStatus;
 import cn.nitrowater.server.infra.enums.MessageRole;
 import cn.nitrowater.server.infra.repository.AiConversationRepository;
 import cn.nitrowater.server.infra.repository.AiMessageRepository;
+import cn.nitrowater.server.infra.specification.ConversationSpec;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,14 +94,23 @@ public class ConversationService {
      * @param limit requested page size
      * @return conversations ordered by most recent message first
      */
+    /**
+     * Paged listing scoped to one user.
+     *
+     * @param uid owner uid
+     * @param keyword optional case-insensitive title substring
+     * @param status lifecycle filter; {@code null} defaults to {@code ACTIVE}
+     * @param page zero-based page index
+     * @param size requested page size
+     * @return conversations ordered by most recent message first
+     */
     @Transactional(readOnly = true)
-    public List<AiConversation> list(long uid, Instant cursor, Integer limit) {
-        Limit page = Limit.of(pageSize(limit));
-        if (cursor == null) {
-            return conversations.findByUidAndStatusOrderByLastMessageAtDesc(uid, ConversationStatus.ACTIVE, page);
-        }
-        return conversations.findByUidAndStatusAndLastMessageAtLessThanOrderByLastMessageAtDesc(
-                uid, ConversationStatus.ACTIVE, cursor, page);
+    public Page<AiConversation> list(long uid, String keyword, ConversationStatus status, int page, int size) {
+        ConversationStatus effective = status == null ? ConversationStatus.ACTIVE : status;
+        Pageable pageable = PageRequest.of(Math.max(0, page), pageSize(size),
+                Sort.by(Sort.Direction.DESC, "lastMessageAt").and(Sort.by(Sort.Direction.DESC, "id")));
+        Specification<AiConversation> spec = ConversationSpec.of(uid, effective, keyword);
+        return conversations.findAll(spec, pageable);
     }
 
     /**
@@ -297,7 +312,12 @@ public class ConversationService {
         }
         for (int index = descending.size() - 1; index >= 0; index--) {
             AiMessage message = descending.get(index);
-            String role = toPromptRole(message.getRole());
+            String role =  switch (message.getRole()) {
+                case USER -> "user";
+                case ASSISTANT -> "assistant";
+                case ERROR -> null;
+            };
+
             if (role != null && StringUtil.isNotBlank(message.getContent())) {
                 history.add(new ChatTurn(role, message.getContent()));
             }
@@ -394,7 +414,7 @@ public class ConversationService {
         message.setContent(Objects.requireNonNullElse(message.getContent(), "") + text);
         message.setTokens(Objects.requireNonNullElse(message.getTokens(), 0) + tokens);
         message.setSourcesJson(mergeSources(message.getSourcesJson(), sources));
-        message.setToolsJson(mergeJson(message.getToolsJson(), tools, TOOLS_TYPE,
+        message.setToolsJson(JsonUtil.mergeJson(message.getToolsJson(), tools, TOOLS_TYPE,
                 tool -> tool.name() + '|' + tool.argument() + '|' + tool.status() + '|'
                         + tool.resultCount()));
         message.setSkillsJson(mergeSkills(message.getSkillsJson(), skills));
@@ -448,23 +468,6 @@ public class ConversationService {
         return merged.isEmpty() ? null : JsonUtil.toJson(merged);
     }
 
-    private static <T> String mergeJson(String stored, List<T> extra,
-            TypeReference<List<T>> type, java.util.function.Function<T, String> key) {
-        List<T> merged = new ArrayList<>(JsonUtil.parseList(stored, type));
-        Set<String> seen = new LinkedHashSet<>();
-        for (T entry : merged) {
-            seen.add(key.apply(entry));
-        }
-        if (extra != null) {
-            for (T entry : extra) {
-                if (seen.add(key.apply(entry))) {
-                    merged.add(entry);
-                }
-            }
-        }
-        return merged.isEmpty() ? null : JsonUtil.toJson(merged);
-    }
-
     private static String mergeSkills(String stored, List<String> extra) {
         Set<String> merged = new LinkedHashSet<>(JsonUtil.parseList(stored, SKILLS_TYPE));
         if (extra != null) {
@@ -476,17 +479,6 @@ public class ConversationService {
     private static String sourceKey(DocSource source) {
         return source.index() + '|' + source.kind() + '|' + source.url() + '|' + source.title()
                 + '|' + source.section();
-    }
-
-    private static String toPromptRole(MessageRole role) {
-        if (role == null) {
-            return null;
-        }
-        return switch (role) {
-            case USER -> "user";
-            case ASSISTANT -> "assistant";
-            case ERROR -> null;
-        };
     }
 
     private static String deriveTitle(String text) {

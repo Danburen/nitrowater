@@ -1,11 +1,12 @@
 package cn.nitrowater.core.infrastructure.persistence.role;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import cn.nitrowater.core.domain.role.Role;
 
 import java.util.Optional;
 
-public interface RoleRepository extends JpaRepository<Role, Long> {
+public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificationExecutor<Role> {
 
     Optional<Role> findByCode(String code);
 

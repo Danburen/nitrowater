@@ -10,6 +10,7 @@ import cn.nitrowater.lib.api.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,9 +18,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 /**
  * OIDC application (client) management for the admin console. Access is restricted to
@@ -34,10 +34,13 @@ public class AdminClientController {
 
     private final RegisteredClientAdminService clientAdminService;
 
-    @Operation(summary = "List all registered applications")
+    @Operation(summary = "Paged list of registered applications")
     @GetMapping
-    public ApiResponse<List<ClientVO>> list() {
-        return ApiResponse.success(clientAdminService.listClients());
+    public ApiResponse<Page<ClientVO>> list(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(clientAdminService.listClients(keyword, page, size));
     }
 
     @Operation(summary = "Get one application by id")

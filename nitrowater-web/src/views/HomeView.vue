@@ -8,7 +8,7 @@ const pluginList = ref<PluginSummary[]>([])
 
 onMounted(async () => {
   try {
-    pluginList.value = await fetchPlugins()
+    pluginList.value = (await fetchPlugins({ size: 100 })).content
   } catch {
     pluginList.value = []
   }

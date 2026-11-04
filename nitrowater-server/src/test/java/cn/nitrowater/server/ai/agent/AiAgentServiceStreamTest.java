@@ -67,6 +67,7 @@ class AiAgentServiceStreamTest {
     void setUp() {
         when(settings.get()).thenReturn(new AiAdminSettingsService.Settings(
                 50_000, true, true, true, true, true, true, true, ModerationMode.LOG));
+        when(settings.toolEnabled(any(String.class))).thenReturn(true);
         when(usage.start(anyLong(), anyInt())).thenReturn(new NoopTracker());
     }
 
@@ -265,7 +266,7 @@ class AiAgentServiceStreamTest {
 
     private static AiProperties properties() {
         return new AiProperties(true, 500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                "deploy/ai-skills", List.of());
+                List.of());
     }
 
     /** Emits one canned script per model round, so a tool round can be followed by an answer. */

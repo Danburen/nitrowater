@@ -1,8 +1,6 @@
 package cn.nitrowater.account.web.controller.auth;
 
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +9,7 @@ import cn.nitrowater.account.web.dto.request.*;
 import cn.nitrowater.account.web.dto.response.EmailChangeVo;
 import cn.nitrowater.account.web.dto.response.PhoneChangeVo;
 import cn.nitrowater.account.web.dto.response.ReAuthInfoResp;
+import cn.nitrowater.account.web.dto.response.ReAuthKeyVo;
 import cn.nitrowater.account.web.dto.response.ReAuthTokenVo;
 import cn.nitrowater.account.web.dto.response.UserCenterResp;
 import cn.nitrowater.lib.api.ApiResponse;
@@ -21,8 +20,6 @@ import cn.nitrowater.core.api.auth.VerifyScene;
 import cn.nitrowater.core.api.resp.AccountResp;
 import cn.nitrowater.core.api.resp.auth.CodeResult;
 import cn.nitrowater.core.infrastructure.aspect.RateLimit;
-import cn.nitrowater.core.infrastructure.utils.CookieUtil;
-import cn.nitrowater.core.infrastructure.utils.ResponseUtil;
 import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;
 import cn.nitrowater.core.application.account.AccountCoreService;
 import cn.nitrowater.core.application.auth.SingleUseTokenService;
@@ -91,38 +88,27 @@ public class AuthAccountController {
                 channels));
     }
 
-    @Operation(summary = "发起 re-auth（直接发验证码到绑定手机）")
+    @Operation(summary = "发起 re-auth（直接发验证码到绑定手机/邮箱）")
     @PostMapping("/re-auth")
     @RateLimit(key = "ip", permits = 3, window = 60)
-    public ApiResponse<Void> reAuth(@Valid @RequestBody ReAuthReq body,
-                                    HttpServletResponse response) {
+    public ApiResponse<ReAuthKeyVo> reAuth(@Valid @RequestBody ReAuthReq body) {
         long uid = UserCtxHolder.getUserUid();
         VerifyChannel channel = resolveChannel(uid, body.getChannel());
         String target = targetFor(uid, channel);
         CodeResult result = verificationService.sendCodeForAuthenticated(target, channel, body.getScene());
-        ResponseUtil.setCookieAndNoCache(response, reAuthCookieName(body.getScene(), channel),
-                result.getKey(), 300);
-        return ApiResponse.success();
+        // The key travels in the body, not a cookie: the BFF drops downstream Set-Cookie by design,
+        // so a cookie-based key never reaches the browser and the verify step would always fail.
+        return ApiResponse.success(new ReAuthKeyVo(result.getKey()));
     }
 
     @Operation(summary = "验证 re-auth 验证码，获取 reAuthToken")
     @PostMapping("/re-auth/verify")
     @RateLimit(key = "ip", permits = 5, window = 300)
-    public ApiResponse<ReAuthTokenVo> verifyReAuth(@Valid @RequestBody ReAuthVerifyReq body,
-                                                   HttpServletRequest request) {
+    public ApiResponse<ReAuthTokenVo> verifyReAuth(@Valid @RequestBody ReAuthVerifyReq body) {
         long uid = UserCtxHolder.getUserUid();
         VerifyChannel channel = resolveChannel(uid, body.getChannel());
         String target = targetFor(uid, channel);
-        String verifyKey = CookieUtil.getCookieValue(request.getCookies(),
-                reAuthCookieName(body.getScene(), channel));
-        if (verifyKey == null) {
-            verifyKey = CookieUtil.getCookieValue(request.getCookies(),
-                    body.getScene().name() + "_REAUTH_KEY");
-        }
-        if (verifyKey == null) {
-            return ApiResponse.success(new ReAuthTokenVo(null));
-        }
-        verificationService.verifyCode(target, body.getScene(), channel, verifyKey, body.getCode());
+        verificationService.verifyCode(target, body.getScene(), channel, body.getVerifyKey(), body.getCode());
         TokenResult token = singleUseTokenService.generateVerifyToken(body.getScene().name(), uid);
         return ApiResponse.success(new ReAuthTokenVo(token.value()));
     }
@@ -148,10 +134,6 @@ public class AuthAccountController {
             throw new BizException(BaseResponseCode.NOT_FOUND);
         }
         return target;
-    }
-
-    private static String reAuthCookieName(VerifyScene scene, VerifyChannel channel) {
-        return scene.name() + "_" + channel.name() + "_REAUTH_KEY";
     }
 
     @Operation(summary = "重置密码")

@@ -92,3 +92,30 @@ export interface PluginUpsert {
   sortOrder?: number | null
   enabled?: boolean | null
 }
+
+/** Ordering accepted by the admin plugin list. */
+export type PluginAdminSort = 'default' | 'updated' | 'name'
+
+/** Filters for the admin plugin list (`GET /api/plugins`). */
+export interface PluginAdminQuery {
+  /** Case-insensitive key / name / tagline / summary substring. */
+  q?: string
+  /** Enabled-state filter; omitted means both. */
+  enabled?: boolean
+  /** Defaults to server-side `default` (sort order). */
+  sort?: PluginAdminSort
+  /** Zero-based page index. */
+  page?: number
+  /** Page size. */
+  size?: number
+}
+
+/** Filters for the public plugin list (`GET /api/public/plugins`). */
+export interface PluginListQuery {
+  /** Case-insensitive key / name / tagline / summary substring. */
+  q?: string
+  /** Zero-based page index. */
+  page?: number
+  /** Page size. */
+  size?: number
+}

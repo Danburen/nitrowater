@@ -122,7 +122,6 @@ class DocChunkBuilderTest {
 
         AiProperties properties = new AiProperties(true,
                 500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                "deploy/ai-skills",
                 List.of(new DocCollection("nitrowater", "file:" + docs, "")));
 
         DocChunkBuilder.Result result = new DocChunkBuilder(properties).build();
@@ -141,7 +140,7 @@ class DocChunkBuilderTest {
 
         AiProperties properties = new AiProperties(true,
                 500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                "deploy/ai-skills", List.of(
+                List.of(
                         new DocCollection("velochatx", docs.toString(), "/docs/velochatx/"),
                         new DocCollection("nitrowater", "classpath:ai/docs/nitrowater", "/docs/nitrowater/")));
 
@@ -202,6 +201,6 @@ class DocChunkBuilderTest {
     private static AiProperties properties(Path docsDir) {
         return new AiProperties(true,
                 500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                "deploy/ai-skills", List.of(new DocCollection("velochatx", docsDir.toString(), "/plugin/velochatx/docs/")));
+                List.of(new DocCollection("velochatx", docsDir.toString(), "/plugin/velochatx/docs/")));
     }
 }

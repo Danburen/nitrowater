@@ -161,7 +161,7 @@ app:
   # Aliyun SMS credentials are NOT config: they come from the standard environment variables
   # ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET (same names the Aliyun SDK uses).
   communication:
-    mode: ${COMMUNICATION_MODE:real}
+    mode: ${COMMUNICATION_MODE:mock}  # mock / real
     email:
       from: ${MAIL_FROM:}
     sms:

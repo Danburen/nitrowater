@@ -4,6 +4,7 @@ import cn.nitrowater.server.infra.entity.AiDailyUsageEntity;
 import cn.nitrowater.server.infra.entity.AiDailyUsageId;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -14,7 +15,8 @@ import java.util.List;
 import java.util.Optional;
 
 /** Persistence for per-user (and the global sentinel) per-UTC-day AI usage. */
-public interface AiDailyUsageRepository extends JpaRepository<AiDailyUsageEntity, AiDailyUsageId> {
+public interface AiDailyUsageRepository extends JpaRepository<AiDailyUsageEntity, AiDailyUsageId>,
+        JpaSpecificationExecutor<AiDailyUsageEntity> {
 
     /**
      * Loads an existing counter while holding its database row lock for quota settlement.

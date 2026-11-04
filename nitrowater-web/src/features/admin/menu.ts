@@ -7,6 +7,7 @@ import {
   Refresh,
   Setting,
   Cpu,
+  Tools,
 } from '@element-plus/icons-vue'
 import type { Component } from 'vue'
 
@@ -36,7 +37,8 @@ export const ADMIN_MENU: readonly AdminMenuItem[] = [
       { path: '/admin/ai/moderation', label: '内容安全', icon: Lock },
       { path: '/admin/ai/usage', label: '用户用量', icon: DataLine },
       { path: '/admin/ai/index', label: '索引状态', icon: Refresh },
-      { path: '/admin/ai/catalog', label: '能力', icon: Cpu },
+      { path: '/admin/ai/skills', label: '技能', icon: Cpu },
+      { path: '/admin/ai/tools', label: '工具', icon: Tools },
     ],
   },
 ]

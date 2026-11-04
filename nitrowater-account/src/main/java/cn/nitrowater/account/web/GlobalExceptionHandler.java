@@ -4,6 +4,7 @@ import cn.nitrowater.lib.api.BaseResponseCode;
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.lib.common.exceptions.AuthException;
 import cn.nitrowater.core.exception.BizException;
+import cn.nitrowater.core.exception.threshold.RateLimitException;
 import tools.jackson.databind.exc.InvalidFormatException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -109,6 +110,16 @@ public class GlobalExceptionHandler {
         String message = msgSrc.getMessage(ex.getMessage(), ex.getParams(), "Auth failed", locale());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ApiResponse.reject(ex.getErrorCode(), message, null));
+    }
+
+    /**
+     * Rate limiting, including the verification-code cooldown. Every bucket answers the same
+     * generic 429 code; clients restart their local resend countdown on it.
+     */
+    @ExceptionHandler(RateLimitException.class)
+    public ResponseEntity<ApiResponse<Object>> handleRateLimit(RateLimitException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiResponse.reject("TOO_MANY_REQUEST", "TOO_MANY_REQUEST", null));
     }
 
     /**

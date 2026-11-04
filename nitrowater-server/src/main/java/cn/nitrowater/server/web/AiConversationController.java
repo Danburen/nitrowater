@@ -1,18 +1,20 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.service.ai.model.DocSource;
 import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 import cn.nitrowater.server.service.ai.ConversationService;
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.entity.AiMessage;
+import cn.nitrowater.server.infra.enums.ConversationStatus;
 import cn.nitrowater.server.web.dto.ConversationCreateReq;
 import cn.nitrowater.server.web.dto.ConversationMessageResp;
 import cn.nitrowater.server.web.dto.ConversationMessagesResp;
 import cn.nitrowater.server.web.dto.ConversationPatchReq;
 import cn.nitrowater.server.web.dto.ConversationResp;
 import jakarta.validation.Valid;
-import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -24,7 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.core.type.TypeReference;
 
 import java.security.Principal;
-import java.time.Instant;
 import java.util.List;
 
 /**
@@ -65,14 +66,17 @@ public class AiConversationController {
         return toResp(conversations.create(uid, title));
     }
 
-    /** Login: list the user's active conversations, newest first. */
+    /** Login: paged list of the user's conversations, newest first. */
     @GetMapping("/api/ai/conversations")
-    public List<ConversationResp> list(
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant cursor,
-            @RequestParam(required = false) Integer limit,
+    public ApiResponse<Page<ConversationResp>> list(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) ConversationStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
             Principal principal) {
         long uid = CurrentUser.requireUid(principal);
-        return conversations.list(uid, cursor, limit).stream().map(AiConversationController::toResp).toList();
+        return ApiResponse.success(conversations.list(uid, keyword, status, page, size)
+                .map(AiConversationController::toResp));
     }
 
     /** Login: read one conversation's messages (newest page first, returned oldest-first). */

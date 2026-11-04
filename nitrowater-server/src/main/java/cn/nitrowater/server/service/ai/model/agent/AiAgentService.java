@@ -278,13 +278,13 @@ public class AiAgentService {
             AgentRun run) {
         List<ToolCallback> callbacks = new ArrayList<>();
         for (ToolCallback callback : tools.core().getToolCallbacks()) {
-            if (runtime.toolEnabled(callback.getToolDefinition().name())) {
+            if (settings.toolEnabled(callback.getToolDefinition().name())) {
                 callbacks.add(track(callback, run, trace));
             }
         }
         if (allowWeb && webSearchProvider.enabled()) {
             for (ToolCallback callback : tools.web().getToolCallbacks()) {
-                if (runtime.toolEnabled(callback.getToolDefinition().name())) {
+                if (settings.toolEnabled(callback.getToolDefinition().name())) {
                     callbacks.add(track(callback, run, trace));
                 }
             }

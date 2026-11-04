@@ -10,7 +10,7 @@
  * list header. Only the platform-wide breaker lives in the danger zone — a page-level block is for
  * standalone destructive actions (resets that do not target a row), not for per-row maintenance.</p>
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { confirm } from '../../../shared/ui/confirm'
 import { toast } from '../../../shared/ui/toast'
 import {
@@ -18,6 +18,7 @@ import {
   fetchAdminAiUsageSummary,
   resetAdminAiUsage,
   resetAdminGlobalUsage,
+  type AiUsageSort,
   type AiUsageSummary,
   type AiUserUsage,
 } from '../../../api/ai'
@@ -37,6 +38,25 @@ const error = ref('')
 const ready = ref(false)
 const hasSelection = computed(() => selected.value.length > 0)
 const usageDate = computed(() => rows.value[0]?.usage.date ?? summary.value?.today ?? '—')
+const total = ref(0)
+const totalPages = ref(1)
+
+/** Server-side filters for the per-user list. */
+const query = reactive({
+  keyword: '',
+  onlyExceeded: false,
+  sort: 'tokens' as AiUsageSort,
+  page: 0,
+  size: 20,
+})
+const filtering = computed(() => query.keyword.trim() !== '' || query.onlyExceeded)
+
+const SORT_OPTIONS: Array<{ value: AiUsageSort; label: string }> = [
+  { value: 'tokens', label: '用量从高到低' },
+  { value: 'tokens_asc', label: '用量从低到高' },
+  { value: 'requests', label: '请求数从多到少' },
+  { value: 'uid', label: 'UID 升序' },
+]
 
 /** Today's platform-wide share of the configured ceiling, clamped to 0–100. */
 const globalPercent = computed(() => {
@@ -52,19 +72,61 @@ async function load(): Promise<void> {
   error.value = ''
   try {
     const [users, global] = await Promise.all([
-      fetchAdminAiUsage(),
+      fetchAdminAiUsage({
+        keyword: query.keyword || undefined,
+        onlyExceeded: query.onlyExceeded,
+        sort: query.sort,
+        page: query.page,
+        size: query.size,
+      }),
       fetchAdminAiUsageSummary(31),
     ])
-    rows.value = users
+    rows.value = users.content
     summary.value = global
+    total.value = users.page.totalElements
+    totalPages.value = Math.max(1, users.page.totalPages)
     const visible = new Set(rows.value.map((row) => row.uid))
     selected.value = selected.value.filter((uid) => visible.has(uid))
+    // A filter change or a reset can shrink the set below the current page.
+    if (users.content.length === 0 && users.page.number > 0
+      && users.page.number >= users.page.totalPages) {
+      query.page = Math.max(users.page.totalPages - 1, 0)
+      return load()
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
     loading.value = false
     ready.value = true
   }
+}
+
+/** Re-queries with the current filters; selections are pruned to the visible rows. */
+function search(): void {
+  query.page = 0
+  void load()
+}
+
+/** Restores the default filters (all users, usage descending) and reloads. */
+function resetFilters(): void {
+  query.keyword = ''
+  query.onlyExceeded = false
+  query.sort = 'tokens'
+  query.page = 0
+  query.size = 20
+  void load()
+}
+
+/** `el-pagination` reports a 1-based page; the wire contract is 0-based. */
+function pageTo(oneBased: number): void {
+  query.page = Math.max(0, oneBased - 1)
+  void load()
+}
+
+function onSizeChange(size: number): void {
+  query.size = size
+  query.page = 0
+  void load()
 }
 
 /** Clears today's platform-wide counter, which also lifts the breaker for the rest of the day. */
@@ -265,7 +327,7 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
         <div class="admin-toolbar">
           <div class="flex items-baseline gap-2">
             <span class="admin-card-title">用户今日用量</span>
-            <span class="admin-card-meta">UTC · {{ usageDate }}</span>
+            <span class="admin-card-meta">UTC · {{ usageDate }} · 共 {{ total }} 位用户</span>
           </div>
           <div class="admin-actions">
             <el-button
@@ -286,6 +348,64 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
         </div>
       </template>
 
+      <el-form
+        :inline="true"
+        class="admin-filter-form border-b border-line px-2 py-2"
+        @submit.prevent="search"
+      >
+        <el-form-item label="用户">
+          <el-input
+            v-model.trim="query.keyword"
+            placeholder="用户名 / 昵称 / UID"
+            clearable
+            class="w-[220px]!"
+          />
+        </el-form-item>
+        <el-form-item label="范围">
+          <el-select
+            v-model="query.onlyExceeded"
+            class="w-[130px]!"
+          >
+            <el-option
+              :value="false"
+              label="全部用户"
+            />
+            <el-option
+              :value="true"
+              label="仅看超额"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-select
+            v-model="query.sort"
+            class="w-[150px]!"
+          >
+            <el-option
+              v-for="option in SORT_OPTIONS"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <div class="admin-filter-actions">
+          <el-button
+            type="primary"
+            native-type="submit"
+            :loading="loading"
+          >
+            查询
+          </el-button>
+          <el-button
+            :disabled="loading"
+            @click="resetFilters"
+          >
+            重置
+          </el-button>
+        </div>
+      </el-form>
+
       <el-skeleton
         v-if="!ready"
         :rows="5"
@@ -303,7 +423,7 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
       >
         <template #empty>
           <el-empty
-            description="今日暂无 AI 用量记录"
+            :description="filtering ? '没有符合条件的用户' : '今日暂无 AI 用量记录'"
             :image-size="72"
           />
         </template>
@@ -385,6 +505,19 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
           </template>
         </el-table-column>
       </el-table>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim">
+        <span>共 {{ total }} 条 · 第 {{ query.page + 1 }} / {{ totalPages }} 页</span>
+        <el-pagination
+          :current-page="query.page + 1"
+          :page-size="query.size"
+          :page-sizes="[20, 50, 100]"
+          :total="total"
+          layout="sizes, prev, pager, next"
+          @current-change="pageTo"
+          @size-change="onSizeChange"
+        />
+      </div>
     </el-card>
 
     <AdminDangerZone>

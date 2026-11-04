@@ -14,6 +14,13 @@ public class ReAuthVerifyReq {
     /** Optional channel; must match the channel used to request the code. */
     private VerifyChannel channel;
 
+    /**
+     * Key returned by {@code POST /api/auth/account/re-auth}. Sent explicitly because the BFF drops
+     * downstream {@code Set-Cookie}, so a cookie-carried key never reaches the browser.
+     */
+    @NotBlank
+    private String verifyKey;
+
     @NotBlank
     private String code;
 }

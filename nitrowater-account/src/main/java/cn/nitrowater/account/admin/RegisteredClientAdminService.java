@@ -6,9 +6,17 @@ import cn.nitrowater.account.admin.dto.ClientSecretVO;
 import cn.nitrowater.account.admin.dto.ClientUpdateReq;
 import cn.nitrowater.account.admin.dto.ClientVO;
 import cn.nitrowater.account.config.AuthorizationServerConfig;
+import cn.nitrowater.core.domain.oauth2.RegisteredClientRow;
 import cn.nitrowater.core.exception.BizException;
+import cn.nitrowater.core.infrastructure.persistence.oauth2.RegisteredClientRowRepository;
+import cn.nitrowater.core.infrastructure.persistence.specification.RegisteredClientSpec;
 import cn.nitrowater.lib.api.BaseResponseCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,6 +36,8 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -73,24 +83,42 @@ public class RegisteredClientAdminService {
     private static final Duration DEFAULT_ACCESS_TOKEN_TTL = Duration.ofMinutes(15);
     private static final Duration DEFAULT_REFRESH_TOKEN_TTL = Duration.ofDays(30);
 
+    /** Upper bound on a client listing page size. */
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final RegisteredClientRepository registeredClientRepository;
+    private final RegisteredClientRowRepository registeredClientRows;
     private final JdbcTemplate jdbcTemplate;
 
     // ------------------------------------------------------------------ queries
 
-    /** All registered applications, ordered by {@code client_id}. */
+    /**
+     * Paged registered applications, ordered by {@code client_id}.
+     *
+     * <p>The page and the keyword filter run as a JPA query over
+     * {@link RegisteredClientRow}; each row is then hydrated through the Spring Authorization Server
+     * repository so typed settings (proof key, consent, TTLs) keep coming from one parser.</p>
+     *
+     * @param keyword optional case-insensitive client_id / client_name substring
+     * @param page zero-based page index
+     * @param size page size, clamped to the maximum
+     * @return one page of clients
+     */
     @Transactional(readOnly = true)
-    public List<ClientVO> listClients() {
-        List<String> ids = jdbcTemplate.queryForList(
-                "SELECT id FROM oauth2_registered_client ORDER BY client_id", String.class);
-        List<ClientVO> result = new ArrayList<>(ids.size());
-        for (String id : ids) {
-            RegisteredClient client = registeredClientRepository.findById(id);
-            if (client != null) {
-                result.add(toVO(client));
-            }
-        }
-        return result;
+    public Page<ClientVO> listClients(String keyword, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+
+        Specification<RegisteredClientRow> filters = RegisteredClientSpec.of(keyword);
+
+        Page<RegisteredClientRow> matched = registeredClientRows.findAll(filters,
+                PageRequest.of(safePage, safeSize, Sort.by("clientId")));
+        List<ClientVO> rows = matched.getContent().stream()
+                .map(row -> registeredClientRepository.findById(row.getId()))
+                .filter(Objects::nonNull)
+                .map(RegisteredClientAdminService::toVO)
+                .toList();
+        return new PageImpl<>(rows, matched.getPageable(), matched.getTotalElements());
     }
 
     /** One application by its internal id. */

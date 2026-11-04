@@ -7,7 +7,7 @@
  * (see `conversations.ts`).
  */
 import { apiFetch } from '../auth/bff'
-import { ResponseCode } from './codes'
+import { ResponseCode, resolveMessage } from './codes'
 import { readJson } from './envelope'
 
 /**
@@ -54,7 +54,10 @@ export function messageFor(status: number, text: string): string {
   // vs. a disabled feature), so the body wins over the generic fallback.
   try {
     const parsed = JSON.parse(text) as { message?: string; detail?: string; error?: string; code?: string }
-    if (parsed.message) return parsed.message
+    // A generic wire message (equal to the code) yields to the mapped wording; a real server
+    // message always wins.
+    const resolved = resolveMessage(parsed.code, parsed.message)
+    if (resolved) return resolved
     if (parsed.detail) return parsed.detail
     const reason = parsed.code ?? parsed.error
     if (reason === ResponseCode.DailyQuota || reason === ResponseCode.TokenQuota || reason === ResponseCode.GlobalQuotaExceeded) {
@@ -63,7 +66,7 @@ export function messageFor(status: number, text: string): string {
   } catch {
     // Not JSON; fall through to the status-based message.
   }
-  if (status === 429) return '提问过于频繁，请稍后再试'
+  if (status === 429) return '操作太频繁，请稍后再试'
   if (status === 503) return '文档助手暂不可用：索引或模型尚未就绪'
   return text || `请求失败（HTTP ${status}）`
 }

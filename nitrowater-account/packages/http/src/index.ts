@@ -44,6 +44,11 @@ export interface HttpClientOptions {
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+/** Codes the server sends with a generic (or identical) message; the UI supplies the wording. */
+const GENERIC_CODE_MESSAGES: Record<string, string> = {
+  TOO_MANY_REQUEST: '操作太频繁，请稍后再试',
+}
+
 /** Reads a cookie value by name. */
 function readCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
@@ -88,11 +93,16 @@ export function createHttpClient(options: HttpClientOptions = {}) {
     }
 
     if (!res.ok || payload?.success === false) {
-      const parts = [payload?.message, ...(payload?.errors ?? [])].filter(
+      const code = payload?.code ?? String(res.status)
+      // The backend answers every limiter bucket with the bare code, which is not user-facing.
+      const message = payload?.message && payload.message !== code
+        ? payload.message
+        : GENERIC_CODE_MESSAGES[code]
+      const parts = [message, ...(payload?.errors ?? [])].filter(
         (part): part is string => Boolean(part),
       )
       throw new ApiError(
-        payload?.code ?? String(res.status),
+        code,
         parts.join(errorSeparator) || `请求失败 (${res.status})`,
         res.status,
         payload?.errors ?? [],

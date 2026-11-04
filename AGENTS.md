@@ -31,6 +31,22 @@
    - dev 阶段允许"**改基线 + 重置库**"：drop schema 后由 Flyway 重放（无生产数据，随意）。
    - 每个服务管自己的库（`nitrowater_account` / `nitrowater_biz` / `nitrowater_resource`），`ddl-auto=none`。
 
+## 查询 / JPA 约定（强制）
+
+列表查询一律 **JPA**（`Repository` + `Specification` + `Page`），**禁止**手写 JDBC 拼 SQL 做列表；分页在数据库侧完成（`Pageable`），**禁止**查全量再内存分页。
+
+1. **三段式**：`Entity` → `XxxRepository extends JpaRepository<Xxx, ID>, JpaSpecificationExecutor<Xxx>` → `XxxSpec`（`public final` + 私有构造 + 纯静态工厂）。
+2. **`XxxSpec.of(...)` 是唯一入口**：service 只调 `XxxSpec.of(...)` 拿 `Specification`；service 里**不得**出现 `CriteriaBuilder` / `Predicate` / `cb.and(...)`。同一实体多视图（前台 / 后台 / 子资源）用**同类多个命名工厂**（`of` / `adminOf` / `pluginArtifactsOf`），不要按视图复制类。
+3. **公共原语**：`core.infrastructure.persistence.specification.SpecificationBuilder`（`eq` / `notEqual` / `likeIgnoreCase` / `likeIgnoreCaseAny` / `in` / `greaterThan*` / `lessThan*` / `where` / `when` / `build`）。空值自动跳过、关键字大小写不敏感且转义 `%` `_` `\`、支持点号路径（`id.uid`）；**只有 spec 内部**调它。属性名 / 排序键必须是代码里的**字面量**，**不得**来自请求参数（这是唯一可能把用户输入带进 SQL 结构的口子，堵在这里就不需要额外转义层）。
+4. **参数形状**：`of(...)` 保持 ≤ 4~5 个；再多就传查询 record（如 `AdminResourceQuery`），不要堆一串同类型 `String`（顺序错一次就是线上 bug）。
+5. **spec 的纯度**：只依赖实体 / 枚举 / `SpecificationBuilder`；**不得**注入 repository / service、读配置、发事件。跨表条件写在 `where(...)` 的子查询里。
+6. **业务规则不进 spec**：默认值（`status == null → ACTIVE`）、参数归一化（trim / 大小写 / 去 `ROLE_` 前缀）、权限判定留在 service；spec 只做"条件 → where"的翻译。
+7. **分页正确性**：可见性 / 软删除 / 状态这类**行级过滤必须进 WHERE**；**禁止**拿 `Page` 回 service 再 `filter`（会短页、`totalElements` 失真）。
+8. **排序归调用方**：`Sort` 由 service 组进 `PageRequest`，不写进 spec；排序必须带唯一键兜底（`id` / `uid`），否则翻页会重复或漏行。
+9. **性能红线**：`likeIgnoreCase` 生成的 `%x%` 用不到索引，只用于后台低频搜索；`Page` 的 count 查询复用同一 spec，故 spec 内**不要**加 `fetch join`（需要抓取用 `@EntityGraph`），也不要在 WHERE 里对列做函数/算术（如 `SUM(a,b) >= x`）；报表 / 聚合走专门 read model，别把 spec 写成万能 ORM。
+10. **实体归属**：跨服务共享的实体与仓储放 `nitrowater-core`（`core.domain.*` + `core.infrastructure.persistence.*`），服务用 `@EntityScan` + `@EnableJpaRepositories` 显式声明扫描范围；**只属于单个服务**的实体留在该模块，spec 与实体同包（`server.infra.specification` / `resource.application.specification`）。**不要**为了"统一"把各库实体全堆进 core——core 会变成所有 schema 的耦合点，`compileOnly` 数据栈的边界也失去意义。
+11. **可测性**：spec 不碰容器，用 `@DataJpaTest` 可直接断言生成的 where；改动 spec 时要能回答"哪个索引能消化这个条件"。
+
 ## 其它工程约定
 
 - **无 subagent**：由主进程直接执行，不派子代理/后台任务。

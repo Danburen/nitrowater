@@ -26,7 +26,7 @@ async function load(): Promise<void> {
   loading.value = true
   failed.value = false
   try {
-    plugins.value = await fetchPlugins()
+    plugins.value = (await fetchPlugins({ size: 100 })).content
   } catch {
     failed.value = true
   } finally {

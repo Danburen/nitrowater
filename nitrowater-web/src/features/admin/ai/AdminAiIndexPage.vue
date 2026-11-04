@@ -1,33 +1,21 @@
 <script setup lang="ts">
 /**
- * Index status, skills and tools. Data loading lives here (not in the layout) so the settings and
- * usage pages do not fetch catalogs they never render.
+ * Documentation index status page.
+ *
+ * <p>Owns everything that is specific to this page: the health request, the error banner and the
+ * rebuild action. Nothing here knows about skills or tools, which is what lets the two catalogue
+ * routes load independently (the old shared component fetched all three resources for both).</p>
  */
-import { computed, onMounted, ref } from 'vue'
-import { confirm } from '../../../shared/ui/confirm.ts'
-import { toast } from '../../../shared/ui/toast.ts'
+import { onMounted, ref } from 'vue'
+import { confirm } from '../../../shared/ui/confirm'
+import { toast } from '../../../shared/ui/toast'
+import { fetchAiStatus, reindexDocs, type AiStatus } from '../../../api/ai'
 import AdminDangerRow from '../AdminDangerRow.vue'
 import AdminDangerZone from '../AdminDangerZone.vue'
-import AdminPage from './AdminPage.vue'
-import {
-  fetchAdminSkills,
-  fetchAdminTools,
-  fetchAiStatus,
-  reindexDocs,
-  type AiSkill,
-  type AiStatus,
-  type AiTool,
-} from '../../../api/ai'
-import AiAdminCatalog from '../ai/AiAdminCatalog.vue'
-
-/** Which half of the catalogue this route renders (the index is its own page now). */
-const props = defineProps<{ section: 'index' | 'capabilities' }>()
-
-const isIndex = computed(() => props.section === 'index')
+import AdminPage from '../components/AdminPage.vue'
+import AiAdminIndexOverview from '../components/AiAdminIndexOverview.vue'
 
 const status = ref<AiStatus | null>(null)
-const skills = ref<AiSkill[]>([])
-const tools = ref<AiTool[]>([])
 const loading = ref(false)
 const reindexing = ref(false)
 const error = ref('')
@@ -38,14 +26,7 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const [statusResult, skillsResult, toolsResult] = await Promise.all([
-      fetchAiStatus(),
-      fetchAdminSkills(),
-      fetchAdminTools(),
-    ])
-    status.value = statusResult
-    skills.value = skillsResult
-    tools.value = toolsResult
+    status.value = await fetchAiStatus()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
@@ -53,7 +34,7 @@ async function load(): Promise<void> {
   }
 }
 
-/** Danger zone: the rebuild wipes and re-embeds the whole collection, so it asks first. */
+/** The rebuild wipes and re-embeds the whole collection, so it asks first. */
 async function reindex(): Promise<void> {
   if (reindexing.value) return
   if (!(await confirm({
@@ -79,10 +60,8 @@ async function reindex(): Promise<void> {
 
 <template>
   <AdminPage
-    :title="isIndex ? '索引状态' : '能力'"
-    :description="isIndex
-      ? '向量索引的健康状态、模型与集合信息；重建索引会整库重算。'
-      : '已挂载的技能与 Agent 工具，以及各自的启用来源。'"
+    title="索引状态"
+    description="向量索引的健康状态、模型与集合信息；重建索引会整库重算。"
   >
     <template #actions>
       <el-button
@@ -101,15 +80,12 @@ async function reindex(): Promise<void> {
       :closable="false"
     />
 
-    <AiAdminCatalog
-      :section="section"
+    <AiAdminIndexOverview
       :status="status"
-      :skills="skills"
-      :tools="tools"
       :loading="loading"
     />
 
-    <AdminDangerZone v-if="isIndex">
+    <AdminDangerZone>
       <AdminDangerRow label="重建向量索引">
         <el-button
           type="danger"

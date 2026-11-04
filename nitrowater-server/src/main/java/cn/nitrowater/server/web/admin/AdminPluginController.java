@@ -1,9 +1,11 @@
 package cn.nitrowater.server.web.admin;
 
+import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.service.plugin.PluginService;
 import cn.nitrowater.server.web.dto.PluginAdminResp;
 import cn.nitrowater.server.web.dto.PluginUpsertReq;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -12,10 +14,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 /**
  * Admin plugin-center endpoints (CRUD).
@@ -33,10 +34,24 @@ public class AdminPluginController {
         this.pluginService = pluginService;
     }
 
-    /** Admin: list all plugins. */
+    /**
+     * Admin: paged list of every plugin.
+     *
+     * @param keyword optional key / name / tagline / summary substring
+     * @param enabled optional enabled-state filter
+     * @param sort {@code default}, {@code updated} or {@code name}
+     * @param page zero-based page index
+     * @param size page size
+     * @return one page of plugin rows
+     */
     @GetMapping("/api/plugins")
-    public List<PluginAdminResp> listAll() {
-        return pluginService.listAdmin();
+    public ApiResponse<Page<PluginAdminResp>> listAll(
+            @RequestParam(name = "q", required = false) String keyword,
+            @RequestParam(required = false) Boolean enabled,
+            @RequestParam(defaultValue = "default") String sort,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(pluginService.listAdmin(keyword, enabled, sort, page, size));
     }
 
     /** Admin: create a plugin. */

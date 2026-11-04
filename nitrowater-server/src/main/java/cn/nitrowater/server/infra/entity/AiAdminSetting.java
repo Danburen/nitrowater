@@ -57,6 +57,10 @@ public class AiAdminSetting {
     @Column(name = "skills_enabled", nullable = false, columnDefinition = "tinyint(1)")
     private Boolean skillsEnabled = true;
 
+    /** JSON array of tool names that stay registered but are hidden from the model. */
+    @Column(name = "disabled_tools", nullable = false, length = 500)
+    private String disabledTools = "[]";
+
     /** Content-moderation posture; see {@link cn.nitrowater.server.infra.enums.ModerationMode}. */
     @Column(name = "moderation_mode", nullable = false, columnDefinition = "tinyint UNSIGNED")
     private ModerationMode moderationMode = ModerationMode.LOG;

@@ -42,6 +42,17 @@ public interface VerificationService {
     CodeResult sendCodeForAnonymous(SendCodeReq dto);
 
     /**
+     * Checks the per-target resend window without sending or consuming a captcha.
+     * Controllers call this before captcha verification so a rate-limited request does not burn
+     * the user's captcha.
+     *
+     * @param target phone or email
+     * @param channel SMS / EMAIL
+     * @throws cn.nitrowater.core.exception.threshold.RateLimitException when the target is cooling down
+     */
+    void assertSendable(String target, VerifyChannel channel);
+
+    /**
      * Verify code
      * @param target target
      * @param scene  scene

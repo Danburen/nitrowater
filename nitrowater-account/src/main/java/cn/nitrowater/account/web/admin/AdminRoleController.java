@@ -8,6 +8,7 @@ import cn.nitrowater.lib.api.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,9 +16,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 /**
  * Role CRUD for the admin console. Access is restricted to {@code ROLE_SUPER_ADMIN} by the
@@ -30,10 +30,14 @@ public class AdminRoleController {
 
     private final RoleAdminService roleAdminService;
 
-    @Operation(summary = "List all roles with bound-account counts")
+    @Operation(summary = "Paged role listing with bound-account counts")
     @GetMapping
-    public ApiResponse<List<RoleVO>> list() {
-        return ApiResponse.success(roleAdminService.listRoles());
+    public ApiResponse<Page<RoleVO>> list(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Boolean builtin,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(roleAdminService.listRoles(keyword, builtin, page, size));
     }
 
     @Operation(summary = "Create a custom role")

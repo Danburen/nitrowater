@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElButton, ElInput } from 'element-plus'
 import { Lock, Message, User } from '@element-plus/icons-vue'
@@ -14,6 +14,7 @@ import {
   type LoginContext,
 } from '@/api/auth'
 import { getDeviceFp } from '@/composables/useDeviceFp'
+import { useCodeCooldown, type CooldownScope } from '@/composables/useCodeCooldown'
 
 const route = useRoute()
 
@@ -59,9 +60,16 @@ const codeError = ref('')
 const codeNotice = ref('')
 const sendingCode = ref(false)
 const codeSubmitting = ref(false)
-const codeCountdown = ref(0)
 const showCodeCaptcha = ref(false)
-let codeTimer: ReturnType<typeof setInterval> | null = null
+/** Target the last code was sent to; changing the identifier invalidates the input + cookie. */
+const codeSentTo = ref('')
+const {
+  remaining: codeCooldown,
+  start: startCodeCooldown,
+  restore: restoreCodeCooldown,
+  clear: clearCodeCooldown,
+  sync: syncCodeCooldown,
+} = useCodeCooldown()
 
 function messageOf(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -82,17 +90,28 @@ function switchMode(next: LoginMode) {
   codeNotice.value = ''
 }
 
-function startCodeCountdown() {
-  codeCountdown.value = 60
-  if (codeTimer) clearInterval(codeTimer)
-  codeTimer = setInterval(() => {
-    codeCountdown.value -= 1
-    if (codeCountdown.value <= 0 && codeTimer) {
-      clearInterval(codeTimer)
-      codeTimer = null
-    }
-  }, 1000)
+/** Cooldown scope: the backend keys its 1-minute window by channel + normalized target. */
+function codeScope(): CooldownScope {
+  const target = codeIdentifier.value.trim()
+  return { scene: 'login', channel: channelOf(target) ?? 'sms', target }
 }
+
+watch(codeIdentifier, () => {
+  const target = codeIdentifier.value.trim()
+  if (codeSentTo.value && codeSentTo.value !== target) {
+    // The previous *_CODE_KEY cookie belongs to the old target; clear the stale input so the user
+    // does not submit a code that can never verify against the new identifier.
+    codeSentTo.value = ''
+    loginCode.value = ''
+    codeNotice.value = ''
+    codeError.value = ''
+  }
+  if (target && channelOf(target)) {
+    restoreCodeCooldown(codeScope())
+  } else {
+    clearCodeCooldown()
+  }
+})
 
 function openCodeCaptcha() {
   const target = codeIdentifier.value.trim()
@@ -122,10 +141,12 @@ async function sendCodeWithCaptcha(captcha: string) {
   codeNotice.value = ''
   try {
     await sendLoginCode(target, channel, captcha)
+    codeSentTo.value = target
     codeNotice.value = '验证码已发送，请留意短信或邮箱'
-    startCodeCountdown()
+    startCodeCooldown(60, codeScope())
   } catch (error) {
     codeError.value = messageOf(error)
+    syncCodeCooldown(error, codeScope())
   } finally {
     sendingCode.value = false
   }
@@ -189,10 +210,6 @@ onMounted(() => {
     .catch(() => {
       // Context is a nicety; a failure must never block the form.
     })
-})
-
-onUnmounted(() => {
-  if (codeTimer) clearInterval(codeTimer)
 })
 </script>
 
@@ -371,10 +388,10 @@ onUnmounted(() => {
           <ElButton
             class="shrink-0"
             size="large"
-            :disabled="sendingCode || codeCountdown > 0"
+            :disabled="sendingCode || codeCooldown > 0"
             @click="openCodeCaptcha"
           >
-            {{ codeCountdown > 0 ? `${codeCountdown}s 后重发` : '获取验证码' }}
+            {{ codeCooldown > 0 ? `${codeCooldown}s 后重发` : '获取验证码' }}
           </ElButton>
         </div>
       </div>

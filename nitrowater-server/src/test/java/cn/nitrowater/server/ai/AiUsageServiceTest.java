@@ -6,6 +6,7 @@ import cn.nitrowater.server.infra.entity.AiDailyUsageEntity;
 import cn.nitrowater.server.infra.entity.AiDailyUsageId;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.infra.repository.AiDailyUsageRepository;
+import cn.nitrowater.server.infra.specification.AiUsageSpec;
 import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
 import cn.nitrowater.server.service.ai.AiUsageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,8 +50,8 @@ class AiUsageServiceTest {
     void blocksTheTurnWhenThePlatformCeilingIsGone() {
         when(settings.get()).thenReturn(runtime(true, 1_000L));
         // 950 of 1000 used, and this turn would reserve 100 + 100 = 200 more.
-        when(repository.findByIdUidAndIdUsageDate(eq(AiUsageService.GLOBAL_UID), eq(TODAY)))
-                .thenReturn(Optional.of(row(AiUsageService.GLOBAL_UID, 900L, 50L, 0L)));
+        when(repository.findByIdUidAndIdUsageDate(eq(AiUsageSpec.GLOBAL_UID), eq(TODAY)))
+                .thenReturn(Optional.of(row(AiUsageSpec.GLOBAL_UID, 900L, 50L, 0L)));
 
         assertThatThrownBy(() -> service.reserve(7L, 100))
                 .isInstanceOfSatisfying(AiQuotaExceededException.class, ex -> {
@@ -71,14 +72,14 @@ class AiUsageServiceTest {
         AiUsageService.Reservation reservation = service.reserve(7L, 100);
 
         assertThat(reservation.global()).isFalse();
-        verify(repository, never()).findByIdUidAndIdUsageDate(eq(AiUsageService.GLOBAL_UID), any());
+        verify(repository, never()).findByIdUidAndIdUsageDate(eq(AiUsageSpec.GLOBAL_UID), any());
     }
 
     @Test
     void reservesBothCountersWhenThePlatformCeilingIsActive() {
         when(settings.get()).thenReturn(runtime(true, 1_000_000L));
-        when(repository.findByIdUidAndIdUsageDate(eq(AiUsageService.GLOBAL_UID), eq(TODAY)))
-                .thenReturn(Optional.of(row(AiUsageService.GLOBAL_UID, 10L, 0L, 0L)));
+        when(repository.findByIdUidAndIdUsageDate(eq(AiUsageSpec.GLOBAL_UID), eq(TODAY)))
+                .thenReturn(Optional.of(row(AiUsageSpec.GLOBAL_UID, 10L, 0L, 0L)));
         when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY)))
                 .thenReturn(Optional.of(row(7L, 0L, 0L, 0L)));
 
@@ -92,7 +93,7 @@ class AiUsageServiceTest {
     void platformRowIsHiddenFromThePerUserAdminList() {
         when(settings.get()).thenReturn(runtime(true, 1_000L));
         when(repository.findByIdUsageDate(TODAY)).thenReturn(List.of(
-                row(AiUsageService.GLOBAL_UID, 500L, 500L, 0L),
+                row(AiUsageSpec.GLOBAL_UID, 500L, 500L, 0L),
                 row(7L, 10L, 20L, 0L)));
 
         List<AiUsageService.UserUsage> rows = service.allUsersToday();
@@ -103,8 +104,8 @@ class AiUsageServiceTest {
     @Test
     void reportsTrippedOnceConsumedPlusReservedReachesTheCeiling() {
         when(settings.get()).thenReturn(runtime(true, 1_000L));
-        when(repository.findById(new AiDailyUsageId(AiUsageService.GLOBAL_UID, TODAY)))
-                .thenReturn(Optional.of(row(AiUsageService.GLOBAL_UID, 700L, 200L, 100L)));
+        when(repository.findById(new AiDailyUsageId(AiUsageSpec.GLOBAL_UID, TODAY)))
+                .thenReturn(Optional.of(row(AiUsageSpec.GLOBAL_UID, 700L, 200L, 100L)));
 
         AiUsageService.GlobalUsage global = service.globalToday();
 

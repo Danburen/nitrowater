@@ -18,7 +18,7 @@ import {
   createPlugin,
   deletePluginJar,
   listPluginJars,
-  listPlugins,
+  findPluginAdmin,
   updatePlugin,
   uploadPluginJar,
   versionFromName,
@@ -117,8 +117,7 @@ async function loadAdminPlugin(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    const all = await listPlugins()
-    adminPlugin.value = all.find((p) => p.key === props.pluginKey) ?? null
+    adminPlugin.value = await findPluginAdmin(props.pluginKey)
     if (!adminPlugin.value) loadError.value = '未找到该插件的管理数据，可能已被删除。'
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
@@ -132,7 +131,7 @@ async function loadJars(): Promise<void> {
   jarsLoading.value = true
   jarsError.value = ''
   try {
-    jars.value = await listPluginJars(props.pluginKey)
+    jars.value = (await listPluginJars(props.pluginKey, 0, 100)).content
   } catch (e) {
     jarsError.value = e instanceof Error ? e.message : String(e)
   } finally {

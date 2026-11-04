@@ -84,18 +84,24 @@ export async function fetchReAuthInfo(): Promise<ReAuthInfo> {
   return readJson<ReAuthInfo>(await apiFetch('/api/auth/account/re-auth/info'))
 }
 
-export async function sendReAuthCode(scene: ReAuthScene, channel: VerifyChannel): Promise<void> {
-  await readJson<void>(await apiFetch('/api/auth/account/re-auth', jsonInit({ scene, channel })))
+export async function sendReAuthCode(scene: ReAuthScene, channel: VerifyChannel): Promise<string> {
+  const data = await readJson<{ reAuthKey: string }>(await apiFetch(
+    '/api/auth/account/re-auth',
+    jsonInit({ scene, channel }),
+  ))
+  if (!data.reAuthKey) throw new Error('验证码发送失败，请重试')
+  return data.reAuthKey
 }
 
 export async function verifyReAuthCode(
   scene: ReAuthScene,
   channel: VerifyChannel,
+  verifyKey: string,
   code: string,
 ): Promise<string> {
   const data = await readJson<ReAuthToken>(await apiFetch(
     '/api/auth/account/re-auth/verify',
-    jsonInit({ scene, channel, code }),
+    jsonInit({ scene, channel, verifyKey, code }),
   ))
   if (!data.reAuthTokenValue) throw new Error('验证码验证失败')
   return data.reAuthTokenValue

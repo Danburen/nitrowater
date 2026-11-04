@@ -35,7 +35,7 @@ const filtered = computed(() => {
 
 onMounted(async () => {
   try {
-    plugins.value = await fetchPlugins()
+    plugins.value = (await fetchPlugins({ size: 100 })).content
   } catch {
     plugins.value = []
   }

@@ -7,6 +7,12 @@ import cn.nitrowater.server.web.dto.PluginAdminResp;
 import cn.nitrowater.server.web.dto.PluginDetailResp;
 import cn.nitrowater.server.web.dto.PluginSummaryResp;
 import cn.nitrowater.server.web.dto.PluginUpsertReq;
+import cn.nitrowater.lib.utils.StringUtil;
+import cn.nitrowater.server.infra.specification.PluginSpec;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +21,6 @@ import tools.jackson.core.type.TypeReference;
 
 import java.time.Instant;
 import java.util.List;
-import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * Reads and writes plugin-center metadata.
@@ -30,18 +35,24 @@ public class PluginService {
     private static final TypeReference<List<String>> TAGS = new TypeReference<List<String>>() {
     };
 
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final PluginRepository plugins;
 
     public PluginService(PluginRepository plugins) {
         this.plugins = plugins;
     }
 
-    /** @return enabled plugins ordered by sort order (public listing, no readme) */
+    /**
+     * @param keyword optional case-insensitive match on key / name / tagline / summary
+     * @param page zero-based page index
+     * @param size page size
+     * @return enabled plugins ordered by sort order (public listing, no readme)
+     */
     @Transactional(readOnly = true)
-    public List<PluginSummaryResp> listPublic() {
-        return plugins.findByEnabledTrueOrderBySortOrderAscIdAsc().stream()
-                .map(PluginService::toSummary)
-                .toList();
+    public Page<PluginSummaryResp> listPublic(String keyword, int page, int size) {
+        Pageable pageable = pageable(page, size, Sort.by(Sort.Direction.ASC, "sortOrder").and(Sort.by("id")));
+        return plugins.findAll(PluginSpec.of(true, keyword), pageable).map(PluginService::toSummary);
     }
 
     /**
@@ -55,12 +66,30 @@ public class PluginService {
         return toDetail(plugin);
     }
 
-    /** @return every plugin ordered by sort order (admin) */
+    /**
+     * @param keyword optional case-insensitive match on key / name / tagline / summary
+     * @param enabled optional enabled-state filter
+     * @param sort {@code default} (sort order), {@code updated} (newest change first) or {@code name}
+     * @param page zero-based page index
+     * @param size page size
+     * @return one page of plugin rows (admin)
+     */
     @Transactional(readOnly = true)
-    public List<PluginAdminResp> listAdmin() {
-        return plugins.findAllByOrderBySortOrderAscIdAsc().stream()
-                .map(PluginService::toAdmin)
-                .toList();
+    public Page<PluginAdminResp> listAdmin(String keyword, Boolean enabled, String sort, int page, int size) {
+        return plugins.findAll(PluginSpec.of(enabled, keyword), pageable(page, size, adminSort(sort)))
+                .map(PluginService::toAdmin);
+    }
+
+    private static Pageable pageable(int page, int size, Sort sort) {
+        return PageRequest.of(Math.max(0, page), Math.min(MAX_PAGE_SIZE, Math.max(1, size)), sort);
+    }
+
+    private static Sort adminSort(String sort) {
+        return switch (sort == null ? "" : sort) {
+            case "updated" -> Sort.by(Sort.Direction.DESC, "updatedAt");
+            case "name" -> Sort.by(Sort.Direction.ASC, "name").and(Sort.by("id"));
+            default -> Sort.by(Sort.Direction.ASC, "sortOrder").and(Sort.by("id"));
+        };
     }
 
     /**

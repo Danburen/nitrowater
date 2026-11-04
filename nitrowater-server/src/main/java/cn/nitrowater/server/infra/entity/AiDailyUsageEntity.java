@@ -8,6 +8,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.Formula;
 
 import java.time.Instant;
 
@@ -38,6 +39,13 @@ public class AiDailyUsageEntity {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
+
+    /**
+     * Derived total, mapped as a SQL expression so the admin listing can sort and filter on it
+     * without loading every row into memory.
+     */
+    @Formula("input_tokens + output_tokens")
+    private Long totalTokens;
 
     public AiDailyUsageEntity() {
     }

@@ -3,6 +3,8 @@ package cn.nitrowater.account.web.admin;
 import cn.nitrowater.account.admin.RoleAdminService;
 import cn.nitrowater.account.admin.dto.AssignRolesReq;
 import cn.nitrowater.account.admin.dto.UserSummaryVO;
+import cn.nitrowater.core.domain.user.AccountStatus;
+import cn.nitrowater.core.domain.user.UserType;
 import cn.nitrowater.lib.api.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -29,13 +31,16 @@ public class AdminUserController {
 
     private final RoleAdminService roleAdminService;
 
-    @Operation(summary = "Paged account search by username / nickname, each row carrying its role codes")
+    @Operation(summary = "Paged account search with optional status / type / role filters")
     @GetMapping
     public ApiResponse<Page<UserSummaryVO>> list(
             @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(required = false) AccountStatus status,
+            @RequestParam(required = false) UserType userType,
+            @RequestParam(required = false) String roleCode,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(roleAdminService.listUsers(keyword, page, size));
+        return ApiResponse.success(roleAdminService.listUsers(keyword, status, userType, roleCode, page, size));
     }
 
     @Operation(summary = "Role codes bound to one account")

@@ -4,13 +4,15 @@ import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 /** Persistence for {@link AiConversation}. */
-public interface AiConversationRepository extends JpaRepository<AiConversation, Long> {
+public interface AiConversationRepository extends JpaRepository<AiConversation, Long>,
+        JpaSpecificationExecutor<AiConversation> {
 
     /**
      * @param uuid external conversation id

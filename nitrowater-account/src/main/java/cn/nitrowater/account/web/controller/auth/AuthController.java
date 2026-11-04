@@ -104,9 +104,12 @@ public class AuthController {
      */
     @Operation(summary = "发送验证码（需图形验证码）")
     @PostMapping("/send-code")
+    @RateLimit(key = "ip", permits = 10, window = 60)
     public ApiResponse<Void> sendCode(@Valid @RequestBody SendCodeReq dto,
                                       HttpServletRequest request,
                                       HttpServletResponse response) {
+        // Check the resend window first: on 429 the captcha must remain usable for a retry.
+        verificationService.assertSendable(dto.getTarget(), dto.getChannel());
         if (!captchaService.verifyCode(request.getSession(false), dto.getCaptcha())) {
             throw new AuthException(AuthCode.CAPTCHA_INVALID);
         }

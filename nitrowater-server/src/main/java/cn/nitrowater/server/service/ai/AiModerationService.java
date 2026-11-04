@@ -7,16 +7,20 @@ import cn.nitrowater.server.service.ai.model.OutputRedactor;
 import cn.nitrowater.server.service.ai.model.PromptLeakGuard;
 import cn.nitrowater.server.service.ai.properties.ModerationProperties;
 import cn.nitrowater.server.infra.entity.AiModerationHit;
+import cn.nitrowater.server.infra.entity.BizUser;
 import cn.nitrowater.server.infra.enums.ModerationAction;
 import cn.nitrowater.server.infra.enums.ModerationDirection;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.infra.repository.AiModerationHitRepository;
+import cn.nitrowater.server.infra.specification.AiModerationSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -27,10 +31,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import cn.nitrowater.lib.utils.StringUtil;
 
 /**
@@ -279,37 +286,25 @@ public class AiModerationService {
     /**
      * Review page over the audit rows.
      *
-     * <p>Keyset paging by {@code id} rather than offset: new hits arrive constantly, so an offset
-     * page would shift under the reviewer. {@code total} ignores the cursor so the panel can show
-     * "showing N of M matching" with a stable count.</p>
+     * <p>Offset paging is acceptable here because the console shows an explicit page/total pair;
+     * the keyset variant was dropped so every list endpoint exposes the same {@code Page} contract.
+     * Newest rows come first.</p>
      *
      * @param direction optional direction filter
      * @param action optional action filter
-     * @param beforeId return rows with an id lower than this value; {@code null} for the newest page
-     * @param limit requested page size
-     * @return the page, the filtered total and whether older rows remain
+     * @param keyword optional username / nickname / uid substring
+     * @param from inclusive lower bound on {@code createdAt}, or {@code null}
+     * @param to exclusive upper bound on {@code createdAt}, or {@code null}
+     * @param page zero-based page index
+     * @param size page size, clamped to the report maximum
+     * @return one page of matching hits
      */
     @Transactional(readOnly = true)
-    public HitPage search(ModerationDirection direction, ModerationAction action, Long beforeId, int limit) {
-        int size = Math.max(1, Math.min(MAX_REPORT_ROWS, limit));
-        Specification<AiModerationHit> filters = (root, query, cb) -> {
-            List<Predicate> parts = new ArrayList<>(2);
-            if (direction != null) {
-                parts.add(cb.equal(root.get("direction"), direction));
-            }
-            if (action != null) {
-                parts.add(cb.equal(root.get("action"), action));
-            }
-            return cb.and(parts.toArray(Predicate[]::new));
-        };
-        Specification<AiModerationHit> bounded = beforeId == null
-                ? filters
-                : filters.and((root, query, cb) -> cb.lessThan(root.get("id"), beforeId));
-        List<AiModerationHit> rows = hits.findAll(bounded,
-                PageRequest.of(0, size + 1, Sort.by(Sort.Direction.DESC, "id"))).getContent();
-        boolean hasMore = rows.size() > size;
-        List<AiModerationHit> page = hasMore ? List.copyOf(rows.subList(0, size)) : List.copyOf(rows);
-        return new HitPage(page, hits.count(filters), hasMore);
+    public Page<AiModerationHit> search(ModerationDirection direction, ModerationAction action,
+            String keyword, Instant from, Instant to, int page, int size) {
+        int safeSize = Math.max(1, Math.min(MAX_REPORT_ROWS, size));
+        Pageable pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "id"));
+        return hits.findAll(AiModerationSpec.of(direction, action, keyword, from, to), pageable);
     }
 
     /**
@@ -381,15 +376,5 @@ public class AiModerationService {
      *     system-prompt leak, or dictionary masking; drives the stored {@code moderated} flag
      */
     public record Screened(String text, boolean masked) {
-    }
-
-    /**
-     * A page of audit rows for the admin panel.
-     *
-     * @param hits the page, newest first
-     * @param total rows matching the filters, ignoring the cursor
-     * @param hasMore whether older rows exist
-     */
-    public record HitPage(List<AiModerationHit> hits, long total, boolean hasMore) {
     }
 }

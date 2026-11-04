@@ -8,7 +8,7 @@
  * against both shapes while the rollout is in progress.
  */
 
-import { ResponseCode } from './codes'
+import { ResponseCode, resolveMessage } from './codes'
 import type { ApiResponse } from './types'
 
 /** A rejection carrying the backend's machine-readable code next to the HTTP status. */
@@ -62,7 +62,8 @@ export async function readJson<T>(response: Response): Promise<T> {
     body = null
   }
   if (isEnvelope(body) && !body.success) {
-    throw new ApiError(response.status, body.code, body.message || `HTTP ${response.status}`)
+    throw new ApiError(response.status, body.code,
+      resolveMessage(body.code, body.message) ?? `HTTP ${response.status}`)
   }
   if (!response.ok) {
     throw new ApiError(response.status, ResponseCode.HttpError, `HTTP ${response.status}${text ? `: ${text}` : ''}`)
@@ -84,7 +85,8 @@ export async function readVoid(response: Response): Promise<void> {
     body = null
   }
   if (isEnvelope(body) && !body.success) {
-    throw new ApiError(response.status, body.code, body.message || `HTTP ${response.status}`)
+    throw new ApiError(response.status, body.code,
+      resolveMessage(body.code, body.message) ?? `HTTP ${response.status}`)
   }
   if (!response.ok) {
     throw new ApiError(response.status, ResponseCode.HttpError, `HTTP ${response.status}${text ? `: ${text}` : ''}`)

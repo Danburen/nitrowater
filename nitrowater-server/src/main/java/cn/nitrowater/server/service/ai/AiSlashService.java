@@ -123,14 +123,14 @@ public class AiSlashService {
         List<String> names = new ArrayList<>();
         for (ToolCallback callback : tools.core().getToolCallbacks()) {
             String name = callback.getToolDefinition().name();
-            if (runtime.toolEnabled(name)) {
+            if (settings.toolEnabled(name)) {
                 names.add(name);
             }
         }
         boolean webReady = runtime.webSearchEnabled() && webSearch.enabled();
         for (ToolCallback callback : tools.web().getToolCallbacks()) {
             String name = callback.getToolDefinition().name();
-            if (webReady && runtime.toolEnabled(name)) {
+            if (webReady && settings.toolEnabled(name)) {
                 names.add(name);
             }
         }

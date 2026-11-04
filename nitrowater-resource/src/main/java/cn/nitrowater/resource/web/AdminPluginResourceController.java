@@ -1,9 +1,11 @@
 package cn.nitrowater.resource.web;
 
+import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.resource.application.PluginArtifactPolicy;
 import cn.nitrowater.resource.application.ResourceService;
 import cn.nitrowater.resource.web.dto.ResourceMetaResp;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.data.domain.Page;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.util.List;
 
 /**
  * Admin surface for a plugin's downloadable artifacts (jars), mounted under
@@ -50,12 +51,14 @@ public class AdminPluginResourceController {
         this.policy = policy;
     }
 
-    /** Lists the plugin's active artifacts (newest first) with public download links. */
+    /** Paged list of the plugin's active artifacts (newest first) with public download links. */
     @GetMapping("/{key}")
-    public List<ResourceMetaResp> list(@PathVariable String key) {
-        return resourceService.listPluginArtifacts(key).stream()
-                .map(ResourceWebMapper::toResp)
-                .toList();
+    public ApiResponse<Page<ResourceMetaResp>> list(@PathVariable String key,
+            @RequestParam(name = "q", required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(resourceService.listPluginArtifacts(key, keyword, page, size)
+                .map(ResourceWebMapper::toResp));
     }
 
     /**

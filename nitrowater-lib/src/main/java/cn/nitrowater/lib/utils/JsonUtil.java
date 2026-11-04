@@ -6,7 +6,10 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Shared JSON helper (Jackson 3 — {@code tools.jackson}). Internally used by the caching/IO layers
@@ -78,5 +81,22 @@ public final class JsonUtil {
     public static <T> List<T> parseList(String json, TypeReference<List<T>> type) {
         List<T> value = fromJson(json, type);
         return value == null ? List.of() : value;
+    }
+
+    public static <T> String mergeJson(String stored, List<T> extra,
+                                       TypeReference<List<T>> type, java.util.function.Function<T, String> key) {
+        List<T> merged = new ArrayList<>(parseList(stored, type));
+        Set<String> seen = new LinkedHashSet<>();
+        for (T entry : merged) {
+            seen.add(key.apply(entry));
+        }
+        if (extra != null) {
+            for (T entry : extra) {
+                if (seen.add(key.apply(entry))) {
+                    merged.add(entry);
+                }
+            }
+        }
+        return merged.isEmpty() ? null : toJson(merged);
     }
 }

@@ -20,8 +20,20 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+
+import cn.nitrowater.lib.utils.StringUtil;
+import cn.nitrowater.server.infra.specification.AiUsageSpec;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+
+import static cn.nitrowater.server.infra.specification.AiUsageSpec.GLOBAL_UID;
 
 /** Race-safe daily token quota reservation, settlement, inspection and reset. */
 @Service
@@ -29,12 +41,8 @@ public class AiUsageService {
 
     private static final Logger LOG = LoggerFactory.getLogger(AiUsageService.class);
 
-    /**
-     * Sentinel uid for the all-users counter. Real uids start at 1, and this row reuses the exact
-     * same reservation/settlement path as a per-user row, so the global breaker needs no second
-     * data structure.
-     */
-    public static final long GLOBAL_UID = 0L;
+    /** Upper bound on the admin listing page size, so a caller cannot force an unbounded scan. */
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final AiDailyUsageRepository usageRepository;
     private final AiAdminSettingsService settings;
@@ -127,10 +135,49 @@ public class AiUsageService {
                 .sorted(Comparator.comparingLong((AiDailyUsageEntity row) ->
                                 row.getInputTokens() + row.getOutputTokens()).reversed()
                         .thenComparing(row -> row.getId().getUid()))
-                .map(row -> new UserUsage(row.getId().getUid(), date, row.getInputTokens(),
-                        row.getOutputTokens(), row.getReservedTokens(), row.getRequestCount(),
-                        row.getEstimatedRequests(), limit, row.getInputTokens() + row.getOutputTokens()))
+                .map(row -> toUserUsage(row, date, limit))
                 .toList();
+    }
+
+    /**
+     * Paged, filtered administrator listing of one UTC day's per-user usage.
+     *
+     * <p>Filtering and ordering happen in SQL: {@code keyword} matches the {@code biz_user} mirror
+     * (username / nickname / uid) through a correlated subquery, {@code onlyExceeded} compares the
+     * stored counters against the current daily limit, and the total is ordered through the
+     * mapped {@code totalTokens} expression.</p>
+     *
+     * @param keyword optional username / nickname / uid substring
+     * @param onlyExceeded keep only users at or above their daily token limit
+     * @param sort {@code tokens} (default), {@code tokens_asc}, {@code requests} or {@code uid}
+     * @param page zero-based page index
+     * @param size page size, clamped to 1..100
+     * @return one page of usage rows
+     */
+    @Transactional(readOnly = true)
+    public Page<UserUsage> pageUsersToday(String keyword, boolean onlyExceeded, String sort, int page, int size) {
+        LocalDate date = LocalDate.now(ZoneOffset.UTC);
+        long limit = settings.get().dailyTokenLimit();
+        Pageable pageable = PageRequest.of(Math.max(0, page),
+                Math.min(MAX_PAGE_SIZE, Math.max(1, size)), usageSort(sort));
+        return usageRepository.findAll(AiUsageSpec.of(date, keyword, onlyExceeded, limit), pageable)
+                .map(row -> toUserUsage(row, date, limit));
+    }
+
+    /** @return the requested ordering, always falling back to uid for a deterministic page */
+    private static Sort usageSort(String sort) {
+        return switch (sort == null ? "" : sort) {
+            case "tokens_asc" -> Sort.by(Sort.Direction.ASC, "totalTokens").and(Sort.by("id.uid"));
+            case "requests" -> Sort.by(Sort.Direction.DESC, "requestCount").and(Sort.by("id.uid"));
+            case "uid" -> Sort.by(Sort.Direction.ASC, "id.uid");
+            default -> Sort.by(Sort.Direction.DESC, "totalTokens").and(Sort.by("id.uid"));
+        };
+    }
+
+    private static UserUsage toUserUsage(AiDailyUsageEntity row, LocalDate date, long limit) {
+        return new UserUsage(row.getId().getUid(), date, row.getInputTokens(), row.getOutputTokens(),
+                row.getReservedTokens(), row.getRequestCount(), row.getEstimatedRequests(), limit,
+                row.getInputTokens() + row.getOutputTokens());
     }
 
     /** Resets today's usage and any leaked reservation for the selected users (all when empty). */

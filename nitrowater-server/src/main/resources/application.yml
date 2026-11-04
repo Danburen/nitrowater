@@ -180,9 +180,6 @@ app:
       # Audit rows are kept this long, then purged by the nightly cleanup (cleanup-cron below).
       retention-days: ${AI_MODERATION_RETENTION_DAYS:90}
       cleanup-cron: "${AI_MODERATION_CLEANUP_CRON:0 30 4 * * *}"
-    # External skills are markdown files at <skills-dir>/<name>/SKILL.md; built-in skills live on
-    # the classpath (resources/ai/skills). External files override a same-named built-in.
-    skills-dir: ${AI_SKILLS_DIR:deploy/ai-skills}
     # Web search is DeepSeek's search API. The tool is only advertised when a key is present and
     # the user opted in for the turn (`AiStatusResp.webSearchEnabled` reflects the real state).
     web-search:

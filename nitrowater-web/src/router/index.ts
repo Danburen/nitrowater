@@ -42,23 +42,10 @@ const router = createRouter({
       { path: 'ai', redirect: '/admin/ai/settings' },
       { path: 'ai/settings', name: 'admin-ai-settings', component: () => import('../features/admin/ai/AdminAiSettingsPage.vue') },
       { path: 'ai/usage', name: 'admin-ai-usage', component: () => import('../features/admin/ai/AdminAiUsagePage.vue') },
-      {
-      path: 'ai/moderation',
-      name: 'admin-ai-moderation',
-      component: () => import('../features/admin/ai/AdminAiModerationPage.vue'),
-    },
-    {
-      path: 'ai/index',
-      name: 'admin-ai-index',
-      component: () => import('../features/admin/components/AdminAiCatalogPage.vue'),
-      props: { section: 'index' },
-    },
-    {
-      path: 'ai/catalog',
-      name: 'admin-ai-catalog',
-      component: () => import('../features/admin/components/AdminAiCatalogPage.vue'),
-      props: { section: 'capabilities' },
-    },
+      { path: 'ai/moderation', name: 'admin-ai-moderation', component: () => import('../features/admin/ai/AdminAiModerationPage.vue') },
+      { path: 'ai/index', name: 'admin-ai-index', component: () => import('../features/admin/ai/AdminAiIndexPage.vue') },
+      { path: 'ai/skills', name: 'admin-ai-skills', component: () => import('../features/admin/ai/AdminAiSkillsPage.vue') },
+      { path: 'ai/tools', name: 'admin-ai-tools', component: () => import('../features/admin/ai/AdminAiToolsPage.vue') },
       ],
     },
     {

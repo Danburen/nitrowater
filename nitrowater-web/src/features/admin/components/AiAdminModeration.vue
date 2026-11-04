@@ -11,7 +11,7 @@
  * <p>Paging is keyset by hit id: rows arrive continuously, so an offset page would shift under the
  * reviewer between clicks.</p>
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { toast } from '../../../shared/ui/toast'
 import {
   fetchAdminModeration,
@@ -26,12 +26,13 @@ const PAGE_SIZE = 50
 const report = ref<AiModerationReport | null>(null)
 const hits = ref<AiModerationHit[]>([])
 const loading = ref(false)
-const loadingMore = ref(false)
 const reloading = ref(false)
 const error = ref('')
 /** False until the first load settles; prevents an empty table from flashing. */
 const ready = ref(false)
+const page = ref(0)
 
+const keyword = ref('')
 const direction = ref('')
 const action = ref('')
 
@@ -58,30 +59,28 @@ const DIRECTION_OPTIONS = Object.entries(DIRECTION_LABEL).map(([value, label]) =
 const ACTION_OPTIONS = Object.entries(ACTION_LABEL).map(([value, label]) => ({ value, label }))
 
 const modeLabel = computed(() => MODE_LABEL[report.value?.mode ?? 'OFF'] ?? report.value?.mode ?? '—')
-const filtering = computed(() => direction.value !== '' || action.value !== '')
+const filtering = computed(() => keyword.value.trim() !== '' || direction.value !== '' || action.value !== '')
 
 onMounted(() => load())
 
-// Re-query from the newest row whenever a filter changes; the accumulated page is discarded.
-watch([direction, action], () => load())
-
-function query(beforeId?: number): AiModerationQuery {
+function query(target = page.value): AiModerationQuery {
   return {
+    keyword: keyword.value || undefined,
     direction: direction.value || undefined,
     action: action.value || undefined,
-    beforeId,
-    limit: PAGE_SIZE,
+    page: target,
+    size: PAGE_SIZE,
   }
 }
 
-/** Loads the newest page, replacing whatever was on screen. */
+/** Loads the selected page, replacing whatever was on screen. */
 async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const page = await fetchAdminModeration(query())
-    report.value = page
-    hits.value = page.hits
+    const result = await fetchAdminModeration(query())
+    report.value = result
+    hits.value = result.hits.content
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
@@ -90,21 +89,16 @@ async function load(): Promise<void> {
   }
 }
 
-/** Appends the next page, using the oldest loaded id as the cursor. */
-async function loadMore(): Promise<void> {
-  const last = hits.value[hits.value.length - 1]
-  if (!last) return
-  loadingMore.value = true
-  error.value = ''
-  try {
-    const page = await fetchAdminModeration(query(last.id))
-    report.value = page
-    hits.value = [...hits.value, ...page.hits]
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
-  } finally {
-    loadingMore.value = false
-  }
+/** Restarts from the first page whenever a filter changes. */
+function search(): void {
+  page.value = 0
+  void load()
+}
+
+/** `el-pagination` reports a 1-based page; the wire contract is 0-based. */
+function pageTo(oneBased: number): void {
+  page.value = Math.max(0, oneBased - 1)
+  void load()
 }
 
 /**
@@ -115,10 +109,10 @@ async function reload(): Promise<void> {
   reloading.value = true
   error.value = ''
   try {
-    const page = await reloadAdminModeration(query())
-    report.value = page
-    hits.value = page.hits
-    toast.success(`词表已重载：${page.dictionarySize} 条`)
+    const result = await reloadAdminModeration(query())
+    report.value = result
+    hits.value = result.hits.content
+    toast.success(`词表已重载：${result.dictionarySize} 条`)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
     toast.error('词表重载失败')
@@ -128,8 +122,10 @@ async function reload(): Promise<void> {
 }
 
 function resetFilters(): void {
+  keyword.value = ''
   direction.value = ''
   action.value = ''
+  search()
 }
 
 /** Table slots hand back an untyped row; narrow it once. */
@@ -181,7 +177,7 @@ function formatTime(value: string): string {
           </el-tag>
           <span class="admin-card-meta">
             词表 {{ report?.dictionarySize ?? 0 }} 条 · 近 24h 命中 {{ report?.hitsLast24Hours ?? 0 }} ·
-            {{ filtering ? `筛选命中 ${report?.total ?? 0} 条` : `命中合计 ${report?.total ?? 0} 条` }}
+            {{ filtering ? `筛选命中 ${report?.hits.page.totalElements ?? 0} 条` : `命中合计 ${report?.hits.page.totalElements ?? 0} 条` }}
           </span>
         </div>
         <div class="admin-actions">
@@ -213,8 +209,16 @@ function formatTime(value: string): string {
     <el-form
       :inline="true"
       class="admin-filter-form mb-3"
-      @submit.prevent="load"
+      @submit.prevent="search"
     >
+      <el-form-item label="用户">
+        <el-input
+          v-model.trim="keyword"
+          placeholder="用户名 / 昵称 / UID"
+          clearable
+          class="w-[200px]!"
+        />
+      </el-form-item>
       <el-form-item label="来源">
         <el-select
           v-model="direction"
@@ -247,6 +251,13 @@ function formatTime(value: string): string {
       </el-form-item>
       <div class="admin-filter-actions">
         <el-button
+          type="primary"
+          native-type="submit"
+          :loading="loading"
+        >
+          查询
+        </el-button>
+        <el-button
           size="small"
           text
           @click="resetFilters"
@@ -268,10 +279,11 @@ function formatTime(value: string): string {
     />
     <template v-else>
       <el-table
+        v-loading="loading"
         :data="hits"
         size="small"
         stripe
-        empty-text="暂无命中记录"
+        :empty-text="filtering ? '没有符合条件的命中记录' : '暂无命中记录'"
       >
         <el-table-column
           label="时间"
@@ -321,19 +333,18 @@ function formatTime(value: string): string {
         </el-table-column>
       </el-table>
 
-      <div class="mt-3 flex items-center gap-3">
-        <el-button
-          v-if="report?.hasMore"
-          size="small"
-          :loading="loadingMore"
-          @click="loadMore"
-        >
-          加载更多
-        </el-button>
-        <span
-          v-else-if="hits.length > 0"
-          class="text-xs text-faint"
-        >已加载全部 {{ hits.length }} 条</span>
+      <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-[12.5px] text-dim">
+        <span>
+          共 {{ report?.hits.page.totalElements ?? 0 }} 条 ·
+          第 {{ page + 1 }} / {{ Math.max(report?.hits.page.totalPages ?? 1, 1) }} 页
+        </span>
+        <el-pagination
+          :current-page="page + 1"
+          :page-size="PAGE_SIZE"
+          :total="report?.hits.page.totalElements ?? 0"
+          layout="prev, pager, next"
+          @current-change="pageTo"
+        />
       </div>
     </template>
   </el-card>
