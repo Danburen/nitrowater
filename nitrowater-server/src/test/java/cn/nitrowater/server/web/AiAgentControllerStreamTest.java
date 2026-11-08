@@ -1,10 +1,12 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.infra.entity.AiConversation;
+import cn.nitrowater.server.service.ai.AgentTurnService;
 import cn.nitrowater.server.service.ai.AiAdminSettingsService;
 import cn.nitrowater.server.service.ai.AiModerationService;
 import cn.nitrowater.server.service.ai.ConversationService;
 import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.service.ai.model.ConversationTurn;
 import cn.nitrowater.server.service.ai.model.agent.AiAgentService;
 import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.web.dto.AiAgentReq;
@@ -36,15 +38,16 @@ class AiAgentControllerStreamTest {
     private final AiProperties properties = mock(AiProperties.class);
     private final AiAdminSettingsService adminSettings = mock(AiAdminSettingsService.class);
     private final AiModerationService moderation = mock(AiModerationService.class);
-    private final AiAgentController controller = new AiAgentController(agentService, conversations,
-            skills, properties, adminSettings, moderation, "test-model", false);
+    private final AgentTurnService turns = new AgentTurnService(agentService, conversations, moderation,
+            skills, adminSettings, properties, "test-model", false);
+    private final AiAgentController controller = new AiAgentController(turns);
 
     @Test
     void streamSchedulesContextAssemblyOffTheRequestThread() throws Exception {
         AiConversation conversation = mock(AiConversation.class);
         when(conversation.getUuid()).thenReturn("c-1");
         when(conversations.start(eq(7L), isNull(), eq("hi")))
-                .thenReturn(new ConversationService.StartedTurn(conversation, List.of()));
+                .thenReturn(new ConversationTurn(conversation, List.of()));
 
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);

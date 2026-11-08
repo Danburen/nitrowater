@@ -1,8 +1,12 @@
 package cn.nitrowater.server.web;
 
-import cn.nitrowater.server.service.ai.ConversationService;
 import cn.nitrowater.server.service.ai.AiSlashService;
+import cn.nitrowater.server.service.ai.model.ContextReset;
 import cn.nitrowater.server.web.dto.AiSlashClearReq;
+import cn.nitrowater.server.web.vo.AiContextResetResp;
+import cn.nitrowater.server.web.vo.AiProfileResp;
+import cn.nitrowater.server.web.vo.AiQuotaResp;
+import cn.nitrowater.server.web.vo.AiSlashStatusResp;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,20 +41,20 @@ public class AiSlashController {
 
     /** Login: today's UTC-day quota snapshot. */
     @GetMapping("/api/ai/slash/quota")
-    public AiSlashService.Quota quota(Principal principal) {
-        return slash.quota(CurrentUser.requireUid(principal));
+    public AiQuotaResp quota(Principal principal) {
+        return AiQuotaResp.from(slash.quota(CurrentUser.requireUid(principal)));
     }
 
     /** Login: the stored assistant preferences (defaults when no row exists). */
     @GetMapping("/api/ai/slash/profile")
-    public AiSlashService.Profile profile(Principal principal) {
-        return slash.profile(CurrentUser.requireUid(principal));
+    public AiProfileResp profile(Principal principal) {
+        return AiProfileResp.from(slash.profile(CurrentUser.requireUid(principal)));
     }
 
     /** Login: runtime self-check for troubleshooting. */
     @GetMapping("/api/ai/slash/status")
-    public AiSlashService.Status status() {
-        return slash.status();
+    public AiSlashStatusResp status() {
+        return AiSlashStatusResp.from(slash.status());
     }
 
     /**
@@ -61,8 +65,10 @@ public class AiSlashController {
      * @return how many messages left the context
      */
     @PostMapping("/api/ai/slash/clear")
-    public ConversationService.ContextReset clear(@Valid @RequestBody AiSlashClearReq request,
+    public AiContextResetResp clear(@Valid @RequestBody AiSlashClearReq request,
             Principal principal) {
-        return slash.clearContext(CurrentUser.requireUid(principal), request.conversationUuid());
+        ContextReset reset = slash.clearContext(CurrentUser.requireUid(principal),
+                request.conversationUuid());
+        return new AiContextResetResp(reset.cleared(), reset.droppedMessages(), reset.boundarySeq());
     }
 }

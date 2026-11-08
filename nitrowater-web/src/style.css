@@ -232,19 +232,11 @@ html:root {
    * Admin console primitives. Every admin page composes these instead of repeating Tailwind
    * strings, so spacing, borders and control sizes stay identical across pages. Keep the values
    * in sync with the Element Plus bridge above (9px control radius, 14px card radius, 34px高).
+   *
+   * The card SHELL rules (`.admin-card*`) live below this layer on purpose: Element Plus ships its
+   * own unlayered `.el-card` rules, and unlayered CSS outranks every cascade layer, so a layered
+   * `.admin-card` would lose its border/radius to `.el-card`.
    */
-  .admin-card {
-    @apply rounded-[14px] border border-line bg-card shadow-none;
-  }
-
-  .admin-card > .el-card__header {
-    @apply border-b border-line px-4 py-3;
-  }
-
-  .admin-card > .el-card__body {
-    @apply p-4;
-  }
-
   .admin-card-title {
     @apply text-[13.5px] font-semibold text-ink;
   }
@@ -254,25 +246,16 @@ html:root {
     @apply text-[12px] text-faint;
   }
 
-  /* Header row of a card: title on the left, actions on the right. */
-  .admin-toolbar {
+  /*
+   * Card header row: title / counters on the left, batch actions bound to the row selection on the
+   * right. Module-level actions (create / import / reload) belong in the page header instead, so the
+   * list card never grows a second toolbar.
+   */
+  .admin-card-header {
     @apply flex flex-wrap items-center justify-between gap-3;
   }
 
-  /* Action cluster: identical button size/rhythm wherever it appears above a table. */
-  .admin-actions {
-    @apply flex flex-wrap items-center gap-2;
-  }
-
-  .admin-actions .el-button {
-    @apply m-0 h-7 px-2.5 text-[12.5px];
-  }
-
-  .admin-actions .el-button + .el-button {
-    margin-left: 0;
-  }
-
-  /* Page-level action cluster (below the H1): full-size buttons, unlike the dense card toolbars. */
+  /* Page-level action cluster (right of the H1): full-size buttons, unlike the dense card toolbars. */
   .admin-page-actions {
     @apply flex flex-wrap items-center gap-2;
   }
@@ -282,51 +265,12 @@ html:root {
   }
 
   /*
-   * List-page shell: filter bar on top, table in the middle, pager at the bottom. The card body
-   * drops its padding so the table can run edge to edge; the bars keep their own padding.
+   * Bottom bar of a list card: the pager sits on the right, hairline above. Lives inside the flush
+   * card body so the card's rounded corners clip it exactly like the table. Row counts belong to
+   * the card header, not here.
    */
-  .admin-card-flush > .el-card__body {
-    @apply p-0;
-  }
-
-  /*
-   * Query form: one inline row, label left / control right, action cluster pinned right. This owns
-   * the layout only — control widths stay on the page as plain utilities (`w-[220px]`).
-   */
-  .admin-filter-form {
-    @apply flex flex-wrap items-center;
-  }
-
-  .admin-filter-form .el-form-item {
-    @apply mb-0 mr-0;
-  }
-
-  .admin-filter-form .admin-filter-actions {
-    @apply ml-auto flex items-center gap-2;
-  }
-
-  /* Narrow screens: one field per row, controls take the full width. `!important` beats the fixed
-     widths the page sets on the controls (Element Plus ships unlayered CSS, so utilities need it). */
-  @media (max-width: 991px) {
-    .admin-filter-form .el-form-item,
-    .admin-filter-form .admin-filter-actions {
-      width: 100%;
-    }
-
-    .admin-filter-form .admin-filter-actions {
-      margin-left: 0;
-      justify-content: flex-end;
-    }
-
-    .admin-filter-form .el-form-item .el-input,
-    .admin-filter-form .el-form-item .el-select {
-      width: 100% !important;
-    }
-  }
-
-  /* Tables inside a card should not paint their own outer frame/bottom rule. */
-  .admin-card .el-table__inner-wrapper::before {
-    display: none;
+  .admin-pager {
+    @apply flex flex-wrap items-center justify-end gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim;
   }
 
   .tag {
@@ -354,6 +298,40 @@ html:root {
   .panel {
     @apply rounded-[14px] border border-line bg-card p-4;
   }
+}
+
+/*
+ * Admin card shell — unlayered so the rounded corners and hairline actually apply. Element Plus
+ * ships `.el-card` outside any cascade layer, and unlayered CSS outranks every layer regardless of
+ * specificity; keeping these next to their peers inside `@layer components` would let EP's 4px
+ * radius and default border win. The `.el-card` prefix also breaks the specificity tie with EP's
+ * own rule, because EP's per-component CSS chunks are injected *after* this file at runtime.
+ * Template-level utilities never land on the card element, so nothing layered needs to override it.
+ */
+.el-card.admin-card {
+  @apply overflow-hidden rounded-[14px] border border-line bg-card shadow-none;
+}
+
+.admin-card > .el-card__header {
+  @apply border-b border-line px-4 py-3;
+}
+
+.admin-card > .el-card__body {
+  @apply p-4;
+}
+
+/*
+ * List-page shell: table in the middle, pager at the bottom (the query card lives above it).
+ * The card body drops its padding so the table can run edge to edge; the bars keep their own
+ * padding.
+ */
+.admin-card-flush > .el-card__body {
+  @apply p-0;
+}
+
+/* Tables inside a card should not paint their own outer frame/bottom rule. */
+.admin-card .el-table__inner-wrapper::before {
+  display: none;
 }
 
 @layer utilities {

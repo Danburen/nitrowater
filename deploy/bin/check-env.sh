@@ -2,8 +2,9 @@
 # ============================================================
 # NitroWater 上线环境自检 (Linux / macOS)
 #
-# 与 check-env.ps1 对齐：.env 加载、必需变量与占位值、条件变量、
-# 内容资产（词表双层 + 非空 / 文档语料 / 外部 skills）、密钥、端口。
+# 与 check-env.ps1 对齐：.env 加载、必需变量与占位值（YOUR_*_HERE / 123456 /
+# change-me / dev salt）、条件变量、内容资产（词表双层 + 非空 / 文档语料）、
+# 密钥、端口。
 #
 # 用法：
 #   bash deploy/bin/check-env.sh              # Docker 上线
@@ -69,7 +70,6 @@ resolve_host_path() {
     case "$path" in
         /etc/nitrowater/moderation*) echo "$CONTENT_ROOT/moderation${path#/etc/nitrowater/moderation}"; return ;;
         /etc/nitrowater/docs*) echo "$CONTENT_ROOT/docs${path#/etc/nitrowater/docs}"; return ;;
-        /etc/nitrowater/skills*) echo "$CONTENT_ROOT/skills${path#/etc/nitrowater/skills}"; return ;;
     esac
     # Local dev passes repo-relative paths (bootRun pins the working dir to the repo root).
     case "$path" in
@@ -83,6 +83,12 @@ count_entries() {
     grep -cv -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$1"
 }
 
+# Template placeholders (YOUR_*_HERE) mean "not configured yet". Uppercase-only on purpose:
+# a real value such as `your_name@corp.com` must not trip the check.
+is_placeholder() {
+    printf '%s' "$1" | grep -Eq 'YOUR_[A-Z0-9_]*|_HERE$'
+}
+
 echo '=== NitroWater 上线环境自检 ==='
 if [ "$LOCAL" -eq 1 ]; then echo 'mode: local (dev)'; else echo 'mode: docker (prod)'; fi
 echo ''
@@ -91,6 +97,27 @@ echo 'Result:'
 echo '--------------------------------------------------------------------'
 
 # ---------- 2. 必需变量 / 占位值 ----------
+# 模板占位值（YOUR_*_HERE）必须阻断：把 .env.prod.example 原样复制过来时，
+# 以下逐项规则只认空值 / 已知弱默认，占位值会一路 PASS（评估 M3）。
+PLACEHOLDERS=''
+if [ -f "$ENV_PATH" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        case "$trimmed" in ''|'#'*) continue ;; esac
+        key="${trimmed%%=*}"
+        case "$key" in ''|*[!A-Za-z0-9_]*) continue ;; esac
+        value="${!key:-}"
+        if [ -n "$value" ] && is_placeholder "$value"; then
+            PLACEHOLDERS="$PLACEHOLDERS $key"
+        fi
+    done < "$ENV_PATH"
+fi
+if [ -n "$PLACEHOLDERS" ]; then
+    fail 'placeholders' "仍是模板占位值，需换成真实值：$PLACEHOLDERS"
+else
+    pass 'placeholders' '未发现 YOUR_*_HERE 占位值'
+fi
+
 if [ -z "${NITROWATER_KEK:-}" ]; then
     fail 'NITROWATER_KEK' '未设置（account 启动失败）'
 elif [ "${#NITROWATER_KEK}" -lt 40 ]; then
@@ -139,6 +166,36 @@ elif [ "$LOCAL" -eq 0 ] && [ "$BFF_SECRET" = 'nitrowater-bff-secret' ]; then
     fail 'BFF_CLIENT_SECRET' '仍是 dev 默认值'
 else
     pass 'BFF_CLIENT_SECRET' '已设置'
+fi
+
+# Redis holds BFF sessions (access + refresh tokens) and the account sessions, and it shares
+# the compose network with Piston. Running it without AUTH in production is not acceptable.
+REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+if [ -z "$REDIS_PASSWORD" ]; then
+    if [ "$LOCAL" -eq 1 ]; then
+        info 'REDIS_PASSWORD' '未设置（本地 dev 允许无密码 Redis）'
+    else
+        fail 'REDIS_PASSWORD' '未设置：会话/令牌无认证，且与 Piston 同网段（评估 M4）'
+    fi
+elif is_placeholder "$REDIS_PASSWORD"; then
+    fail 'REDIS_PASSWORD' '仍是模板占位值'
+else
+    pass 'REDIS_PASSWORD' '已设置'
+fi
+
+# SessionEpochFilter drops sessions whose epoch differs from the current one; a constant
+# "dev" means redeploys never invalidate old sessions (assessment H5).
+SESSION_EPOCH="${APP_SESSION_EPOCH:-}"
+if [ "$LOCAL" -eq 1 ]; then
+    info 'APP_SESSION_EPOCH' "本地 dev 使用默认 epoch=${SESSION_EPOCH:-dev}"
+elif [ -z "$SESSION_EPOCH" ]; then
+    fail 'APP_SESSION_EPOCH' '未设置：恒为 dev，发布不会失效旧会话'
+elif [ "$SESSION_EPOCH" = 'dev' ]; then
+    fail 'APP_SESSION_EPOCH' '仍是 dev 默认值，每次发布应写入新值'
+elif is_placeholder "$SESSION_EPOCH"; then
+    fail 'APP_SESSION_EPOCH' '仍是模板占位值'
+else
+    pass 'APP_SESSION_EPOCH' "$SESSION_EPOCH"
 fi
 
 BACKEND="${RESOURCE_BACKEND:-s3}"
@@ -286,13 +343,7 @@ fi
 
 SKILLS_DIR="${AI_SKILLS_DIR:-}"
 if [ -n "$SKILLS_DIR" ]; then
-    host="$(resolve_host_path "$SKILLS_DIR")"
-    if [ -n "$host" ] && [ -d "$host" ]; then
-        skills="$(find "$host" -type f -name 'SKILL.md' | wc -l | tr -d ' ')"
-        info 'AI_SKILLS_DIR' "$skills 个外部技能（$host）"
-    elif [ -n "$host" ]; then
-        warn 'AI_SKILLS_DIR' "目录不存在：$host（内置技能仍可用）"
-    fi
+    info 'AI_SKILLS_DIR' '已废弃（服务不再读取），可从 .env 删除'
 fi
 
 # ---------- 6. 密钥 ----------

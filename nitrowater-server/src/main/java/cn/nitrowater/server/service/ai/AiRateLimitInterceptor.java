@@ -1,6 +1,8 @@
 package cn.nitrowater.server.service.ai;
 
 import cn.nitrowater.core.web.ApiResponseWriter;
+import cn.nitrowater.server.service.ai.model.AiGlobalUsage;
+import cn.nitrowater.server.service.ai.model.AiSettings;
 import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.infra.ratelimit.RedisRateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -46,7 +48,7 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws IOException {
-        AiAdminSettingsService.Settings runtime = settings.get();
+        AiSettings runtime = settings.get();
         if (!properties.enabled() || !runtime.aiEnabled()) {
             reject(response, HttpStatus.SERVICE_UNAVAILABLE, "ai_disabled", "AI assistant is disabled");
             return false;
@@ -59,7 +61,7 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
         // Platform-wide budget: fail fast and with a distinguishable code so the web client can
         // explain WHY chat is closed (history and slash commands keep working - they never reach
         // a provider). Slash requests do not pass through this interceptor at all.
-        AiUsageService.GlobalUsage global = usage.globalToday();
+        AiGlobalUsage global = usage.globalToday();
         if (global.tripped()) {
             rejectGlobal(response, global);
             return false;
@@ -87,7 +89,7 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
     }
 
     /** Rejects a model call because the all-users daily ceiling is exhausted. */
-    private static void rejectGlobal(HttpServletResponse response, AiUsageService.GlobalUsage global)
+    private static void rejectGlobal(HttpServletResponse response, AiGlobalUsage global)
             throws IOException {
         ApiResponseWriter.error(response, HttpStatus.TOO_MANY_REQUESTS.value(), "global_quota_exceeded",
                 "全站当日 AI token 额度已用完，请明天再试。",

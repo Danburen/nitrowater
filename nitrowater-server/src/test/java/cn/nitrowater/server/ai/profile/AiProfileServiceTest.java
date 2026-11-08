@@ -11,6 +11,8 @@ import cn.nitrowater.server.infra.enums.ReplyStyle;
 import cn.nitrowater.server.infra.repository.AiProfileChangeRepository;
 import cn.nitrowater.server.infra.repository.AiUserProfileRepository;
 import cn.nitrowater.server.service.ai.AiProfileService;
+import cn.nitrowater.server.service.ai.model.AiProfile;
+import cn.nitrowater.server.service.ai.model.AiProfileUpdate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -46,7 +48,7 @@ class AiProfileServiceTest {
     void returnsDefaultsWhenNoRowExists() {
         when(profiles.findById(7L)).thenReturn(Optional.empty());
 
-        AiProfileService.Profile profile = service.get(7L);
+        AiProfile profile = service.get(7L);
 
         assertThat(profile.exists()).isFalse();
         assertThat(profile.language()).isEqualTo("zh-CN");
@@ -59,7 +61,7 @@ class AiProfileServiceTest {
     void emptyUpdateDoesNotCreateOrSaveARow() {
         when(profiles.findById(7L)).thenReturn(Optional.empty());
 
-        AiProfileService.Profile profile = service.update(7L, new AiProfileService.Update(
+        AiProfile profile = service.update(7L, new AiProfileUpdate(
                 null, null, null, null, null, null));
 
         assertThat(profile.exists()).isFalse();
@@ -71,7 +73,7 @@ class AiProfileServiceTest {
         when(profiles.findById(7L)).thenReturn(Optional.empty());
         when(profiles.save(any(AiUserProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        AiProfileService.Profile profile = service.update(7L, new AiProfileService.Update(
+        AiProfile profile = service.update(7L, new AiProfileUpdate(
                 "en", ReplyStyle.CONCISE, null, "Asia/Shanghai", List.of("Java", "Gradle"), true));
 
         assertThat(profile.exists()).isTrue();
@@ -95,7 +97,7 @@ class AiProfileServiceTest {
     void invalidTimezoneIsRejectedBeforeSaving() {
         when(profiles.findById(7L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.update(7L, new AiProfileService.Update(
+        assertThatThrownBy(() -> service.update(7L, new AiProfileUpdate(
                 null, null, null, "Not/AZone", null, null)))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
@@ -130,7 +132,7 @@ class AiProfileServiceTest {
         doThrow(new ContentBlockedException("个人偏好包含不适宜内容，请修改后重试。"))
                 .when(moderation).guardProfile(7L, "帮我代开发票");
 
-        assertThatThrownBy(() -> service.update(7L, new AiProfileService.Update(
+        assertThatThrownBy(() -> service.update(7L, new AiProfileUpdate(
                 null, null, null, null, List.of("帮我代开发票"), null)))
                 .isInstanceOf(ContentBlockedException.class);
 

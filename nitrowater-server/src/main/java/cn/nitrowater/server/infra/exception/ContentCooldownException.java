@@ -1,7 +1,6 @@
 package cn.nitrowater.server.infra.exception;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Raised while a user is in the risk-control cooldown.
@@ -10,7 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
  * account keeps working. The cooldown expires on its own, so a false positive costs a pause rather
  * than an appeal.</p>
  */
-public class ContentCooldownException extends ResponseStatusException {
+public class ContentCooldownException extends CodedException {
 
     /** Stable machine-readable code for the rejection body. */
     public static final String CODE = "content_cooldown";
@@ -19,6 +18,6 @@ public class ContentCooldownException extends ResponseStatusException {
      * @param reason user-facing explanation
      */
     public ContentCooldownException(String reason) {
-        super(HttpStatus.TOO_MANY_REQUESTS, reason);
+        super(HttpStatus.TOO_MANY_REQUESTS, CODE, reason);
     }
 }

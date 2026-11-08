@@ -63,15 +63,6 @@ async function reindex(): Promise<void> {
     title="索引状态"
     description="向量索引的健康状态、模型与集合信息；重建索引会整库重算。"
   >
-    <template #actions>
-      <el-button
-        :disabled="loading || reindexing"
-        @click="load"
-      >
-        刷新
-      </el-button>
-    </template>
-
     <el-alert
       v-if="error"
       :title="error"

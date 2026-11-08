@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 import java.net.ConnectException;
 
@@ -47,6 +49,37 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getCode()).isEqualTo("internal_error");
+    }
+
+    /**
+     * Regression: an unparsable multipart body (a proxy drained it before forwarding, so the
+     * downstream sees Content-Length N but zero bytes) used to be logged as "Unhandled exception"
+     * and answered 500, which made a client-side upload fault look like a server bug.
+     */
+    @Test
+    void unparsableMultipartBecomes400InsteadOf500() {
+        MultipartException ex = new MultipartException(
+                "Failed to parse multipart servlet request",
+                new IllegalStateException("no multipart body"));
+
+        ResponseEntity<ApiResponse<Object>> response = handler.handleMultipart(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getSuccess()).isFalse();
+        assertThat(response.getBody().getCode()).isEqualTo("invalid_multipart");
+    }
+
+    @Test
+    void oversizedUploadBecomes413() {
+        MaxUploadSizeExceededException ex =
+                new MaxUploadSizeExceededException(1024L, new IllegalStateException("too big"));
+
+        ResponseEntity<ApiResponse<Object>> response = handler.handleUploadTooLarge(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONTENT_TOO_LARGE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isEqualTo("upload_too_large");
     }
 
     @Test

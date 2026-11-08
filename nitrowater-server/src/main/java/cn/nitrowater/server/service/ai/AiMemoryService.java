@@ -5,6 +5,8 @@ import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.infra.enums.MemoryStatus;
 import cn.nitrowater.server.infra.repository.AiMemoryRepository;
 import cn.nitrowater.server.infra.specification.MemorySpec;
+import cn.nitrowater.server.service.ai.model.MemorySaveResult;
+import cn.nitrowater.server.service.ai.model.MemoryView;
 import cn.nitrowater.lib.utils.StringUtil;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
@@ -89,30 +91,30 @@ public class AiMemoryService {
      * @return save outcome; rejected content never reaches the database
      */
     @Transactional
-    public SaveResult save(long uid, String conversationUuid, MemoryKind kind, String content) {
+    public MemorySaveResult save(long uid, String conversationUuid, MemoryKind kind, String content) {
         if (kind == null) {
-            return SaveResult.rejected("请选择记忆类型：FACT / PREFERENCE / DECISION / PROJECT。");
+            return MemorySaveResult.rejected("请选择记忆类型：FACT / PREFERENCE / DECISION / PROJECT。");
         }
         String normalized = normalize(content);
         if (normalized.isEmpty()) {
-            return SaveResult.rejected("记忆内容为空，未保存。");
+            return MemorySaveResult.rejected("记忆内容为空，未保存。");
         }
         if (normalized.length() > MAX_CONTENT_CHARS) {
-            return SaveResult.rejected("记忆内容过长，请压缩到 " + MAX_CONTENT_CHARS + " 字以内。");
+            return MemorySaveResult.rejected("记忆内容过长，请压缩到 " + MAX_CONTENT_CHARS + " 字以内。");
         }
         if (SENSITIVE.matcher(normalized).find()
                 || PHONE.matcher(normalized).find()
                 || ID_CARD.matcher(normalized).find()) {
-            return SaveResult.rejected("内容包含密码、密钥、令牌或手机号/身份证等敏感信息，拒绝保存。");
+            return MemorySaveResult.rejected("内容包含密码、密钥、令牌或手机号/身份证等敏感信息，拒绝保存。");
         }
         if (INSTRUCTION.matcher(normalized).find()) {
-            return SaveResult.rejected("记忆只能记录事实或偏好，不能包含指令式内容，请改写后再保存。");
+            return MemorySaveResult.rejected("记忆只能记录事实或偏好，不能包含指令式内容，请改写后再保存。");
         }
         // A memory is re-injected into every later turn of this user, so the content gate has to run
         // here too: letting a flagged memory in would poison the context long after the turn that
         // produced it was rejected.
         if (moderation.guardMemory(uid, conversationUuid, normalized)) {
-            return SaveResult.rejected("记忆包含不适宜内容，拒绝保存。");
+            return MemorySaveResult.rejected("记忆包含不适宜内容，拒绝保存。");
         }
 
         List<AiMemory> sameKind = memories.findByUidAndKindAndStatusOrderByUpdatedAtDesc(
@@ -124,7 +126,7 @@ public class AiMemoryService {
                 existing.setSourceConversationUuid(conversationUuid);
                 existing.setUpdatedAt(Instant.now());
                 AiMemory saved = memories.save(existing);
-                return SaveResult.updated(toView(saved));
+                return MemorySaveResult.updated(toView(saved));
             }
         }
 
@@ -141,7 +143,7 @@ public class AiMemoryService {
         memory.setHits(0);
         memory.setCreatedAt(now);
         memory.setUpdatedAt(now);
-        return SaveResult.saved(toView(memories.save(memory)));
+        return MemorySaveResult.saved(toView(memories.save(memory)));
     }
 
     /**
@@ -230,12 +232,12 @@ public class AiMemoryService {
      * Soft-deletes every active memory of one user.
      *
      * @param uid owner uid
-     * @param now update instant
      * @return number of affected rows
      */
     @Transactional
-    public int clear(long uid, Instant now) {
-        return memories.deleteAllByUid(uid, MemoryStatus.ACTIVE, MemoryStatus.USER_DELETED, now);
+    public int clear(long uid) {
+        return memories.deleteAllByUid(uid, MemoryStatus.ACTIVE, MemoryStatus.USER_DELETED,
+                Instant.now());
     }
 
     /**
@@ -361,41 +363,5 @@ public class AiMemoryService {
     }
 
     private record Scored(AiMemory memory, int overlap) {
-    }
-
-    /**
-     * Result of a save attempt.
-     *
-     * @param status {@code saved}, {@code updated} or {@code rejected}
-     * @param memory saved or updated entry, or {@code null} when rejected
-     * @param reason rejection reason, or {@code null}
-     */
-    public record SaveResult(String status, MemoryView memory, String reason) {
-
-        static SaveResult saved(MemoryView memory) {
-            return new SaveResult("saved", memory, null);
-        }
-
-        static SaveResult updated(MemoryView memory) {
-            return new SaveResult("updated", memory, null);
-        }
-
-        static SaveResult rejected(String reason) {
-            return new SaveResult("rejected", null, reason);
-        }
-    }
-
-    /**
-     * API view of one memory.
-     *
-     * @param uuid memory uuid
-     * @param kind {@code FACT} / {@code PREFERENCE} / {@code DECISION} / {@code PROJECT}
-     * @param content memory text
-     * @param confidence confidence 0-100
-     * @param updatedAt last change
-     * @param lastUsedAt last recall, or {@code null}
-     */
-    public record MemoryView(String uuid, String kind, String content, short confidence,
-            Instant updatedAt, Instant lastUsedAt) {
     }
 }

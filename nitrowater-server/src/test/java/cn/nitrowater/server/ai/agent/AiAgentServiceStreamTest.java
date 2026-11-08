@@ -1,7 +1,6 @@
 package cn.nitrowater.server.ai.agent;
 
 import cn.nitrowater.server.service.ai.AiAdminSettingsService;
-import cn.nitrowater.server.service.ai.model.agent.AgentToolProviders;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.agent.AiAgentService;
 import cn.nitrowater.server.service.ai.model.agent.PreparedAgent;
@@ -9,12 +8,17 @@ import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.service.ai.model.AiStreamChunk;
 import cn.nitrowater.server.service.ai.model.AiTokenUsage;
 import cn.nitrowater.server.service.ai.AiUsageService;
+import cn.nitrowater.server.service.ai.model.AiSettings;
 import cn.nitrowater.server.service.ai.AiUsageTracker;
 import cn.nitrowater.server.service.ai.PromptBuilder;
 import cn.nitrowater.server.service.ai.AiMemoryService;
 import cn.nitrowater.server.service.ai.AiProfileService;
 import cn.nitrowater.server.service.ai.SkillRegistry;
-import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
+import cn.nitrowater.server.service.ai.tool.AgentToolRegistry;
+import cn.nitrowater.server.service.ai.model.agent.AgentTool;
+import cn.nitrowater.server.service.ai.model.agent.ToolFeature;
+import cn.nitrowater.server.service.ai.model.agent.ToolCall;
+import cn.nitrowater.server.infra.exception.AiTurnTimeoutException;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,18 +35,22 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.chat.metadata.Usage;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
@@ -65,9 +73,9 @@ class AiAgentServiceStreamTest {
 
     @BeforeEach
     void setUp() {
-        when(settings.get()).thenReturn(new AiAdminSettingsService.Settings(
+        when(settings.get()).thenReturn(new AiSettings(
                 50_000, true, true, true, true, true, true, true, ModerationMode.LOG));
-        when(settings.toolEnabled(any(String.class))).thenReturn(true);
+        when(settings.disabledTools()).thenReturn(Set.of());
         when(usage.start(anyLong(), anyInt())).thenReturn(new NoopTracker());
     }
 
@@ -166,6 +174,47 @@ class AiAgentServiceStreamTest {
                 "thinking:null");
     }
 
+    /**
+     * The tool deadline must end the wait, not the turn: the model receives a retryable result and
+     * the card closes as {@code tool.timeout} instead of hanging.
+     */
+    @Test
+    void reportsAToolDeadlineAsARetryableResult() {
+        AssistantMessage toolCallMessage = callMessage("searchDocs", "{\"query\":\"slow\"}");
+        stubToolExecution(toolCallMessage);
+        service = service(new ScriptedChatModel(List.of(
+                Flux.just(new ChatResponse(List.of(new Generation(toolCallMessage)))),
+                chunks("暂时取不到"))), callback("searchDocs", "{\"count\":2}", 1_000L), 100, 150_000L);
+
+        PreparedAgent prepared = prepare();
+        List<AiStreamChunk.Step> steps = prepared.chunks()
+                .filter(chunk -> chunk.step() != null)
+                .map(AiStreamChunk::step)
+                .collectList()
+                .block();
+
+        AiStreamChunk.Step end = steps.stream()
+                .filter(step -> "tool_end".equals(step.phase()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(end.status()).isEqualTo("tool.timeout");
+        assertThat(end.ok()).isFalse();
+        assertThat(prepared.trace().calls())
+                .as("the model must receive the timeout as a recorded result, not an exception")
+                .extracting(ToolCall::status)
+                .containsExactly("tool.timeout");
+    }
+
+    @Test
+    void abortsTheTurnWhenTheWallClockBudgetIsSpent() {
+        service = service(new ScriptedChatModel(List.of(Flux.never())), 50L);
+
+        assertThatThrownBy(() -> prepare().chunks().collectList().block())
+                .as("a stalled model round must end the turn instead of holding the stream open")
+                .isInstanceOf(AiTurnTimeoutException.class)
+                .hasMessageContaining("50 毫秒");
+    }
+
     @Test
     void keepsModelOptionsAndToolCallbacksInTheRequestBody() {
         ScriptedChatModel chatModel = new ScriptedChatModel(List.of(chunks("好")));
@@ -213,11 +262,45 @@ class AiAgentServiceStreamTest {
     }
 
     private AiAgentService service(ChatModel chatModel) {
-        ToolCallback searchDocs = new ToolCallback() {
+        return service(chatModel, searchDocsCallback(), 0, 150_000L);
+    }
+
+    private AiAgentService service(ChatModel chatModel, long turnTimeoutMs) {
+        return service(chatModel, searchDocsCallback(), 0, turnTimeoutMs);
+    }
+
+    private AiAgentService service(ChatModel chatModel, ToolCallback callback, int toolTimeoutMs,
+            long turnTimeoutMs) {
+        AgentToolRegistry tools = mock(AgentToolRegistry.class);
+        when(tools.forTurn(any(AiSettings.class), anySet(), anyBoolean()))
+                .thenReturn(List.of(new AgentTool(callback, ToolFeature.DOCS, false, toolTimeoutMs)));
+        SkillRegistry skills = mock(SkillRegistry.class);
+        when(skills.list()).thenReturn(List.of());
+        AiProfileService profiles = mock(AiProfileService.class);
+        when(profiles.promptBlock(anyLong())).thenReturn(null);
+        AiMemoryService memories = mock(AiMemoryService.class);
+        when(memories.recall(anyLong(), any(), anyInt())).thenReturn(List.of());
+        return new AiAgentService(chatModel, toolCallingManager, tools,
+                skills, properties(), new PromptBuilder(), settings, usage, profiles,
+                memories, 10, turnTimeoutMs);
+    }
+
+    private static ToolCallback searchDocsCallback() {
+        return callback("searchDocs", "{\"count\":2}", 0L);
+    }
+
+    /**
+     * @param name      tool name
+     * @param answer    JSON the tool returns
+     * @param delayMs   how long the tool blocks before answering
+     * @return a callback with the given behaviour
+     */
+    private static ToolCallback callback(String name, String answer, long delayMs) {
+        return new ToolCallback() {
             @Override
             public org.springframework.ai.tool.definition.ToolDefinition getToolDefinition() {
                 return org.springframework.ai.tool.definition.DefaultToolDefinition.builder()
-                        .name("searchDocs")
+                        .name(name)
                         .description("search the local documentation")
                         .inputSchema("{\"type\":\"object\"}")
                         .build();
@@ -225,24 +308,16 @@ class AiAgentServiceStreamTest {
 
             @Override
             public String call(String toolInput) {
-                return "{\"count\":2}";
+                if (delayMs > 0) {
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                return answer;
             }
         };
-        ToolCallbackProvider core = mock(ToolCallbackProvider.class);
-        when(core.getToolCallbacks()).thenReturn(new ToolCallback[] { searchDocs });
-        ToolCallbackProvider web = mock(ToolCallbackProvider.class);
-        when(web.getToolCallbacks()).thenReturn(new ToolCallback[0]);
-        WebSearchProvider webSearch = mock(WebSearchProvider.class);
-        when(webSearch.enabled()).thenReturn(false);
-        SkillRegistry skills = mock(SkillRegistry.class);
-        when(skills.list()).thenReturn(List.of());
-        AiProfileService profiles = mock(AiProfileService.class);
-        when(profiles.promptBlock(anyLong())).thenReturn(null);
-        AiMemoryService memories = mock(AiMemoryService.class);
-        when(memories.recall(anyLong(), any(), anyInt())).thenReturn(List.of());
-        return new AiAgentService(chatModel, toolCallingManager, new AgentToolProviders(core, web),
-                webSearch, skills, properties(), new PromptBuilder(), settings, usage, profiles,
-                memories, 10);
     }
 
     private static AssistantMessage callMessage(String tool, String arguments) {

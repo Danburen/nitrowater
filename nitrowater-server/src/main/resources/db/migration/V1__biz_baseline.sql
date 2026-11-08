@@ -4,6 +4,8 @@
 --   库内 FK fk_*、唯一键 uk_*、索引 idx_*；表名单数；ENGINE=InnoDB CHARSET=utf8mb4。
 -- 与 SSO 库 nitrowater_account 物理隔离：仅以 uid / *_resource_uuid 逻辑关联，不建跨库 FK。
 -- 首次部署前可直接改本文件；部署后冻结，后续走 V2__...
+-- 已折叠进本基线的迁移：V1_1 (ai_message.skills_json)、V1_2 (ai_admin_setting.disabled_tools)、
+--   V1_3 (ai_skill)。折叠后必须 drop schema 让 Flyway 重放；只改文件不重置会 checksum mismatch。
 -- ============================================================
 
 -- ---------- 业务用户镜像（account 为身份权威，本表为投影 + 应用态）----------
@@ -182,6 +184,7 @@ CREATE TABLE ai_message (
   tokens           INT UNSIGNED    NOT NULL DEFAULT 0                COMMENT 'Estimated or reported usage',
   sources_json     TEXT            NULL                              COMMENT 'Citation metadata snapshot',
   tools_json       TEXT            NULL                              COMMENT 'Tool trace snapshot',
+  skills_json      TEXT            NULL                              COMMENT 'Skill trace snapshot (folded from V1_1)',
   model            VARCHAR(64)     NULL                              COMMENT 'Model that produced an assistant message',
   is_pruned        TINYINT(1)      NOT NULL DEFAULT 0                COMMENT '1=long tool output folded into a placeholder in context',
   moderated        TINYINT(1)      NOT NULL DEFAULT 0                COMMENT '1=answer matched the violation dictionary and was masked',
@@ -268,6 +271,7 @@ CREATE TABLE ai_admin_setting (
   web_search_enabled      TINYINT(1)      NOT NULL DEFAULT 1,
   code_runner_enabled     TINYINT(1)      NOT NULL DEFAULT 1,
   skills_enabled          TINYINT(1)      NOT NULL DEFAULT 1,
+  disabled_tools          VARCHAR(500)    NOT NULL DEFAULT '[]' COMMENT 'JSON array of tool names hidden from the model (folded from V1_2)',
   moderation_mode         TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '0=OFF,1=LOG(仅记录),2=ENFORCE(拦截+遮蔽)',
   updated_by_uid          BIGINT UNSIGNED NULL COMMENT 'Logical ref account.user.uid',
   updated_at              TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -297,3 +301,22 @@ CREATE TABLE ai_moderation_hit (
   KEY idx_ai_moderation_hit_created (created_at),
   KEY idx_ai_moderation_hit_uid_created (uid, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='NitroBot content-moderation hits for administrator review';
+
+-- ============================================================
+-- Admin-managed agent skills (folded from V1_3). Built-in skills stay on the classpath (shipped
+-- with the code); this table holds the ones created, imported or edited from the admin console.
+-- A row whose name matches a built-in overrides it, and deleting the row restores the built-in.
+-- ============================================================
+CREATE TABLE ai_skill (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name        VARCHAR(64)     NOT NULL                         COMMENT 'stable identifier, lowercase kebab-case',
+  description VARCHAR(255)    NOT NULL DEFAULT ''              COMMENT 'one line, shown in the catalog',
+  when_to_use VARCHAR(255)    NOT NULL DEFAULT ''              COMMENT 'when the agent should load it',
+  body        MEDIUMTEXT      NOT NULL                         COMMENT 'markdown instructions',
+  origin      TINYINT UNSIGNED NOT NULL DEFAULT 0              COMMENT '0=FORM,1=IMPORT',
+  updated_by  BIGINT UNSIGNED NULL                             COMMENT 'admin uid of the last writer',
+  created_at  TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at  TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ai_skill_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='admin-managed agent skills';

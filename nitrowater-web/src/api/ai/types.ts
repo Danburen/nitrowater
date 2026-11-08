@@ -224,8 +224,18 @@ export interface AiToolCall {
 export interface AiTool {
   name: string
   description: string
-  source: 'core' | 'web'
+  /**
+   * Catalog bucket of the tool's capability (`core` / `docs` / `skills` / `code` / `web`).
+   * Deliberately a plain string: a new backend feature adds a bucket without a client change,
+   * and the page falls back to the raw value until a label is added.
+   */
+  source: string
+  /** Configuration allows it: the feature switch is on and no administrator hid the tool. */
   enabled: boolean
+  /** The user must consent before the model may call it for a turn. */
+  optIn: boolean
+  /** The runtime dependency is usable (e.g. a web-search key is configured). */
+  available: boolean
   inputSchema: string
 }
 

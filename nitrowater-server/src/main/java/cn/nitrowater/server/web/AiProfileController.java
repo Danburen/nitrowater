@@ -2,6 +2,7 @@ package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.service.ai.AiProfileService;
 import cn.nitrowater.server.web.dto.AiProfileUpdateReq;
+import cn.nitrowater.server.web.vo.AiProfileResp;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -29,17 +30,15 @@ public class AiProfileController {
 
     /** Login: read the caller's profile. */
     @GetMapping("/api/ai/profile")
-    public AiProfileService.Profile get(Principal principal) {
-        return profiles.get(CurrentUser.requireUid(principal));
+    public AiProfileResp get(Principal principal) {
+        return AiProfileResp.from(profiles.get(CurrentUser.requireUid(principal)));
     }
 
     /** Login: update the caller's profile. */
     @PutMapping("/api/ai/profile")
-    public AiProfileService.Profile update(@Valid @RequestBody AiProfileUpdateReq request,
+    public AiProfileResp update(@Valid @RequestBody AiProfileUpdateReq request,
             Principal principal) {
         long uid = CurrentUser.requireUid(principal);
-        return profiles.update(uid, new AiProfileService.Update(request.language(),
-                request.replyStyle(), request.expertise(), request.timezone(),
-                request.preferences(), request.inferenceOptIn()));
+        return AiProfileResp.from(profiles.update(uid, request.toUpdate()));
     }
 }

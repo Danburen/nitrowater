@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 
 import { adminApi, type ClientForm, type ClientVO } from '@/api/admin'
+import AdminFilterCard from '@/components/AdminFilterCard.vue'
+import AdminPage from '@/components/AdminPage.vue'
 
 const loading = ref(false)
 const clients = ref<ClientVO[]>([])
+const total = ref(0)
+const query = reactive({ keyword: '', page: 0, size: 20 })
 
 const dialogVisible = ref(false)
 const saving = ref(false)
@@ -79,12 +83,40 @@ function isPublicOnly(methods: string[]): boolean {
 async function load() {
   loading.value = true
   try {
-    clients.value = await adminApi.listClients()
+    const page = await adminApi.listClients(query.keyword, query.page, query.size)
+    clients.value = page.content
+    total.value = page.page.totalElements
+    // Deleting the last row of a page would otherwise leave an empty table behind.
+    if (page.content.length === 0 && page.page.number > 0) {
+      query.page = Math.max(page.page.number - 1, 0)
+      return load()
+    }
   } catch (e) {
     ElMessage.error(errText(e))
   } finally {
     loading.value = false
   }
+}
+
+function search() {
+  query.page = 0
+  void load()
+}
+
+function resetQuery() {
+  query.keyword = ''
+  search()
+}
+
+function pageTo(oneBased: number) {
+  query.page = Math.max(0, oneBased - 1)
+  void load()
+}
+
+function onSizeChange(size: number) {
+  query.size = size
+  query.page = 0
+  void load()
 }
 
 function openCreate() {
@@ -246,29 +278,61 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1120px] p-4 sm:p-6">
-    <div class="section-head">
-      <div>
-        <h1 class="text-lg font-semibold text-ink">
-          应用管理
-        </h1>
-        <p class="mt-1 text-[13px] text-dim">
-          注册并管理接入 SSO 的 OIDC 应用（客户端）· 共 {{ clients.length }} 个。
-        </p>
-      </div>
-      <button
-        class="btn btn-primary"
+  <AdminPage
+    title="应用管理"
+    description="注册并管理接入 SSO 的 OIDC 应用（客户端）。"
+  >
+    <template #actions>
+      <el-button
+        type="primary"
         @click="openCreate"
       >
         新建应用
-      </button>
-    </div>
+      </el-button>
+    </template>
 
-    <div class="panel overflow-hidden">
+    <AdminFilterCard
+      :loading="loading"
+      @submit="search"
+      @reset="resetQuery"
+    >
+      <el-form-item label="关键字">
+        <el-input
+          v-model="query.keyword"
+          placeholder="client_id / 名称"
+          clearable
+          class="w-[220px]!"
+          @keyup.enter="search"
+        />
+      </el-form-item>
+    </AdminFilterCard>
+
+    <el-card
+      shadow="never"
+      class="admin-card admin-card-flush"
+    >
+      <template #header>
+        <div class="admin-card-header">
+          <div class="flex items-baseline gap-2">
+            <span class="admin-card-title">应用列表</span>
+            <span class="admin-card-meta">共 {{ total }} 个</span>
+          </div>
+        </div>
+      </template>
+
       <el-table
         v-loading="loading"
         :data="clients"
+        row-key="id"
+        size="small"
+        stripe
       >
+        <template #empty>
+          <el-empty
+            description="暂无应用"
+            :image-size="60"
+          />
+        </template>
         <el-table-column
           prop="clientName"
           label="名称"
@@ -363,7 +427,20 @@ onMounted(load)
           </template>
         </el-table-column>
       </el-table>
-    </div>
+
+      <div class="admin-pager">
+        <el-pagination
+          :current-page="query.page + 1"
+          :page-size="query.size"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          background
+          layout="sizes, prev, pager, next, jumper"
+          @current-change="pageTo"
+          @size-change="onSizeChange"
+        />
+      </div>
+    </el-card>
 
     <el-dialog
       v-model="dialogVisible"
@@ -520,5 +597,5 @@ onMounted(load)
         </el-button>
       </template>
     </el-dialog>
-  </div>
+  </AdminPage>
 </template>

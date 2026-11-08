@@ -2,16 +2,17 @@
 /**
  * Admin — resources: filterable, pageable table over the resource service metadata.
  *
- * <p>Element Plus owns the table side: an inline `el-form` query bar (label left, control right,
- * actions pinned right), `el-table` and `el-pagination`. The detail panel is the shared Tailwind
- * {@link AppDrawer} and destructive actions go through the shared {@link confirm}, so popups look
- * the same here as on every other business page. Errors go to an inline `el-alert`.</p>
+ * <p>Element Plus owns the table side: a standalone {@link AdminFilterCard} (label left, control
+ * right, actions pinned right), `el-table` and `el-pagination`. The detail panel is the shared
+ * Tailwind {@link AppDrawer} and destructive actions go through the shared {@link confirm}, so
+ * popups look the same here as on every other business page. Errors go to an inline `el-alert`.</p>
  */
 import { onMounted, reactive, ref } from 'vue'
 import AppDrawer from '../../shared/ui/AppDrawer.vue'
 import { confirm } from '../../shared/ui/confirm'
 import { toast } from '../../shared/ui/toast'
 import AdminPage from './components/AdminPage.vue'
+import AdminFilterCard from './components/AdminFilterCard.vue'
 import { dayjs } from "element-plus";
 import {
   adminDeleteResource,
@@ -258,15 +259,6 @@ onMounted(() => {
     title="资源管理"
     description="统一资源服务的元数据、归属与可见性；字节存储与下载由 resource 服务负责。"
   >
-    <template #actions>
-      <el-button
-        :disabled="loading"
-        @click="refresh"
-      >
-        刷新
-      </el-button>
-    </template>
-
     <el-alert
       v-if="error"
       :title="error"
@@ -275,113 +267,110 @@ onMounted(() => {
       :closable="false"
     />
 
+    <AdminFilterCard
+      :loading="loading"
+      @submit="search"
+      @reset="resetQuery"
+    >
+      <el-form-item label="文件名">
+        <el-input
+          v-model.trim="query.q"
+          placeholder="原始文件名"
+          clearable
+          class="w-[150px]!"
+        />
+      </el-form-item>
+      <el-form-item label="来源">
+        <el-select
+          v-model="query.sourceType"
+          placeholder="全部"
+          clearable
+          class="w-[120px]!"
+        >
+          <el-option
+            v-for="o in dict.sourceType"
+            :key="o.value"
+            :label="o.label"
+            :value="o.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="状态">
+        <el-select
+          v-model="query.status"
+          placeholder="全部"
+          clearable
+          class="w-[120px]!"
+        >
+          <el-option
+            v-for="o in dict.status"
+            :key="o.value"
+            :label="o.label"
+            :value="o.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="应用">
+        <el-select
+          v-model="appChoice"
+          placeholder="全部"
+          clearable
+          class="w-[130px]!"
+        >
+          <el-option
+            v-for="o in dict.app"
+            :key="o.value"
+            :label="o.label"
+            :value="o.value"
+          />
+          <el-option
+            label="其他…"
+            :value="OTHER_APP"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item
+        v-if="appChoice === OTHER_APP"
+        label="自定义"
+      >
+        <el-input
+          v-model.trim="appCustom"
+          placeholder="输入 app 名称"
+          clearable
+          class="w-[130px]!"
+        />
+      </el-form-item>
+      <el-form-item label="归属 UID">
+        <el-input
+          v-model.trim="query.ownerUid"
+          placeholder="输入 UID"
+          inputmode="numeric"
+          clearable
+          class="w-[110px]!"
+        />
+      </el-form-item>
+      <el-form-item label="分组">
+        <el-input
+          v-model.trim="query.group"
+          placeholder="输入分组"
+          clearable
+          class="w-[110px]!"
+        />
+      </el-form-item>
+    </AdminFilterCard>
+
     <el-card
       shadow="never"
       class="admin-card admin-card-flush"
     >
-      <el-form
-        :inline="true"
-        class="admin-filter-form border-b border-line px-2 py-2"
-        @submit.prevent="search"
-      >
-        <el-form-item label="文件名">
-          <el-input
-            v-model.trim="query.q"
-            placeholder="原始文件名"
-            clearable
-            class="w-[150px]!"
-          />
-        </el-form-item>
-        <el-form-item label="来源">
-          <el-select
-            v-model="query.sourceType"
-            placeholder="全部"
-            clearable
-            class="w-[120px]!"
-          >
-            <el-option
-              v-for="o in dict.sourceType"
-              :key="o.value"
-              :label="o.label"
-              :value="o.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select
-            v-model="query.status"
-            placeholder="全部"
-            clearable
-            class="w-[120px]!"
-          >
-            <el-option
-              v-for="o in dict.status"
-              :key="o.value"
-              :label="o.label"
-              :value="o.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="app">
-          <el-select
-            v-model="appChoice"
-            placeholder="全部"
-            clearable
-            class="w-[130px]!"
-          >
-            <el-option
-              v-for="o in dict.app"
-              :key="o.value"
-              :label="o.label"
-              :value="o.value"
-            />
-            <el-option
-              label="其他…"
-              :value="OTHER_APP"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item
-          v-if="appChoice === OTHER_APP"
-          label="自定义"
-        >
-          <el-input
-            v-model.trim="appCustom"
-            placeholder="输入 app 名称"
-            clearable
-            class="w-[130px]!"
-          />
-        </el-form-item>
-        <el-form-item label="ownerUid">
-          <el-input
-            v-model.trim="query.ownerUid"
-            placeholder="输入 UID"
-            inputmode="numeric"
-            clearable
-            class="w-[110px]!"
-          />
-        </el-form-item>
-        <el-form-item label="group">
-          <el-input
-            v-model.trim="query.group"
-            placeholder="输入 group"
-            clearable
-            class="w-[110px]!"
-          />
-        </el-form-item>
-        <div class="admin-filter-actions">
-          <el-button @click="resetQuery">
-            重置
-          </el-button>
-          <el-button
-            type="primary"
-            native-type="submit"
-            :loading="loading"
-          >
-            查询
-          </el-button>
+      <template #header>
+        <div class="admin-card-header">
+          <div class="flex items-baseline gap-2">
+            <span class="admin-card-title">资源列表</span>
+            <span class="admin-card-meta">共 {{ page.total }} 条</span>
+          </div>
         </div>
-      </el-form>
+      </template>
 
       <el-table
         v-loading="loading"
@@ -415,7 +404,7 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column
-          label="version"
+          label="版本"
           width="80"
         >
           <template #default="{ row }">
@@ -444,12 +433,12 @@ onMounted(() => {
         </el-table-column>
         <el-table-column
           prop="app"
-          label="app"
+          label="应用"
           width="120"
           show-overflow-tooltip
         />
         <el-table-column
-          label="group"
+          label="分组"
           width="120"
           show-overflow-tooltip
         >
@@ -458,7 +447,7 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column
-          label="status"
+          label="状态"
           width="110"
           align="center"
         >
@@ -473,7 +462,7 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column
-          label="createdAt"
+          label="创建时间"
           width="190"
         >
           <template #default="{ row }">
@@ -517,8 +506,7 @@ onMounted(() => {
         </el-table-column>
       </el-table>
 
-      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim">
-        <span>共 {{ page.total }} 条 · 第 {{ page.page + 1 }} / {{ Math.max(page.totalPages, 1) }} 页</span>
+      <div class="admin-pager">
         <el-pagination
           :current-page="page.page + 1"
           :page-size="query.size"
@@ -564,16 +552,16 @@ onMounted(() => {
         <el-descriptions-item label="大小">
           {{ formatSize(detail.sizeBytes) }}
         </el-descriptions-item>
-        <el-descriptions-item label="resourceType">
+        <el-descriptions-item label="资源类型">
           {{ detail.resourceType }}
         </el-descriptions-item>
-        <el-descriptions-item label="version">
+        <el-descriptions-item label="版本">
           {{ detail.version ?? '—' }}
         </el-descriptions-item>
-        <el-descriptions-item label="visibility">
+        <el-descriptions-item label="可见性">
           {{ detail.visibility }}
         </el-descriptions-item>
-        <el-descriptions-item label="status">
+        <el-descriptions-item label="状态">
           <el-tag
             :type="statusTag(detail.status)"
             size="small"
@@ -582,13 +570,13 @@ onMounted(() => {
             {{ detail.status }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="app">
+        <el-descriptions-item label="应用">
           {{ detail.app }}
         </el-descriptions-item>
-        <el-descriptions-item label="group">
+        <el-descriptions-item label="分组">
           {{ detail.groupKey ?? '—' }}
         </el-descriptions-item>
-        <el-descriptions-item label="createdAt">
+        <el-descriptions-item label="创建时间">
           {{ detail.createdAt ? dayjs(detail.createdAt).format('YYYY-MM-DD HH:mm:ss') : '—' }}
         </el-descriptions-item>
         <el-descriptions-item label="下载">

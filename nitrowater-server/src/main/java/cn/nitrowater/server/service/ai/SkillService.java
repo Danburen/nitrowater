@@ -3,20 +3,19 @@ package cn.nitrowater.server.service.ai;
 import cn.nitrowater.server.infra.entity.AiSkillEntity;
 import cn.nitrowater.server.infra.enums.SkillOrigin;
 import cn.nitrowater.server.infra.repository.AiSkillRepository;
-import cn.nitrowater.server.service.ai.model.Skill;
-import cn.nitrowater.server.web.dto.AiSkillDetailResp;
-import cn.nitrowater.server.web.dto.AiSkillReq;
-import cn.nitrowater.server.web.dto.AiSkillResp;
+import cn.nitrowater.server.service.ai.model.skill.Skill;
+import cn.nitrowater.server.service.ai.model.skill.SkillDetail;
+import cn.nitrowater.server.service.ai.model.skill.SkillDraft;
+import cn.nitrowater.server.service.ai.model.skill.SkillExport;
+import cn.nitrowater.server.service.ai.model.skill.SkillRow;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,6 +33,9 @@ import java.util.regex.Pattern;
  * table on every call, so there is no cache to invalidate, no reload button and no per-replica
  * divergence. Built-in skills stay read-only on the classpath; writing a row with the same name
  * overrides one, and deleting the row restores it.</p>
+ *
+ * <p>The service returns catalog read models ({@link SkillRow} / {@link SkillDetail}); the admin
+ * controller renders them as VOs.</p>
  */
 @Service
 public class SkillService {
@@ -66,11 +68,11 @@ public class SkillService {
      * @return one page of catalog rows
      */
     @Transactional(readOnly = true)
-    public Page<AiSkillResp> page(String keyword, int page, int size) {
+    public Page<SkillRow> page(String keyword, int page, int size) {
         Map<String, AiSkillEntity> managed = byName(rows.findAllByOrderByNameAsc());
         Set<String> builtinNames = registry.builtinNames();
         String needle = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
-        List<AiSkillResp> all = new ArrayList<>();
+        List<SkillRow> all = new ArrayList<>();
         for (Skill skill : registry.list()) {
             if (!matches(skill, needle)) {
                 continue;
@@ -89,7 +91,7 @@ public class SkillService {
      * @throws ResponseStatusException 404 when no built-in or managed row matches
      */
     @Transactional(readOnly = true)
-    public AiSkillDetailResp detail(String name) {
+    public SkillDetail detail(String name) {
         Skill skill = registry.get(name);
         if (skill == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown skill: " + name);
@@ -97,7 +99,7 @@ public class SkillService {
         AiSkillEntity row = rows.findByNameIgnoreCase(skill.name()).orElse(null);
         Set<String> builtinNames = registry.builtinNames();
         boolean builtin = builtinNames.contains(skill.name());
-        return new AiSkillDetailResp(
+        return new SkillDetail(
                 row == null ? null : row.getId(),
                 skill.name(), skill.description(), skill.whenToUse(), skill.body(),
                 skill.source(),
@@ -109,14 +111,14 @@ public class SkillService {
     /**
      * Creates a managed skill. The name may shadow a built-in (that is the override path).
      *
-     * @param req payload
+     * @param draft payload
      * @param uid admin uid
      * @return the created skill
      * @throws ResponseStatusException 409 when a managed row with that name already exists
      */
     @Transactional
-    public AiSkillDetailResp create(AiSkillReq req, long uid) {
-        String name = requireName(req.name());
+    public SkillDetail create(SkillDraft draft, long uid) {
+        String name = requireName(draft.name());
         if (rows.existsByNameIgnoreCase(name)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Skill already exists: " + name);
         }
@@ -124,7 +126,7 @@ public class SkillService {
         row.setName(name);
         row.setOrigin(SkillOrigin.FORM);
         row.setCreatedAt(Instant.now());
-        apply(row, req, uid);
+        apply(row, draft, uid);
         return detail(rows.save(row).getName());
     }
 
@@ -133,17 +135,17 @@ public class SkillService {
      * {@code loadSkill(name)} must keep pointing at the same skill.
      *
      * @param name current name
-     * @param req payload; {@code req.name()} must match
+     * @param draft payload; {@code draft.name()} must match when present
      * @param uid admin uid
      * @return the updated skill
      */
     @Transactional
-    public AiSkillDetailResp update(String name, AiSkillReq req, long uid) {
+    public SkillDetail update(String name, SkillDraft draft, long uid) {
         AiSkillEntity row = requireManaged(name);
-        if (req.name() != null && !req.name().equalsIgnoreCase(row.getName())) {
+        if (draft.name() != null && !draft.name().equalsIgnoreCase(row.getName())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill name is immutable");
         }
-        apply(row, req, uid);
+        apply(row, draft, uid);
         return detail(rows.save(row).getName());
     }
 
@@ -161,22 +163,18 @@ public class SkillService {
      * Imports a {@code SKILL.md} (front matter + body) as a managed skill, overwriting a same-named
      * managed row. A built-in with the same name ends up overridden.
      *
-     * @param file uploaded markdown file
+     * @param content raw UTF-8 markdown (front matter + body)
+     * @param originalFilename uploaded file name, used as the fallback skill name
      * @param uid admin uid
      * @return the stored skill
      */
     @Transactional
-    public AiSkillDetailResp importMarkdown(MultipartFile file, long uid) {
-        if (file == null || file.isEmpty()) {
+    public SkillDetail importMarkdown(byte[] content, String originalFilename, long uid) {
+        if (content == null || content.length == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Empty upload");
         }
-        String raw;
-        try {
-            raw = new String(file.getBytes(), StandardCharsets.UTF_8);
-        } catch (IOException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read the uploaded file");
-        }
-        String fallback = fallbackName(file.getOriginalFilename());
+        String raw = new String(content, StandardCharsets.UTF_8);
+        String fallback = fallbackName(originalFilename);
         Skill parsed = SkillRegistry.parse(raw, fallback, SkillRegistry.SOURCE_MANAGED);
         String name = requireName(parsed.name());
         if (parsed.body() == null || parsed.body().isBlank()) {
@@ -192,7 +190,13 @@ public class SkillService {
             created.setCreatedAt(Instant.now());
             return created;
         });
-        row.setDescription(trimTo(parsed.description(), 255));
+        // A hand-written SKILL.md often has no description in its front matter. Fall back to the
+        // first meaningful body line so an imported skill still shows a one-line summary in the
+        // catalog, exactly like one created from the form.
+        String description = parsed.description() == null || parsed.description().isBlank()
+                ? fallbackDescription(parsed.body())
+                : parsed.description();
+        row.setDescription(trimTo(description, 255));
         row.setWhenToUse(trimTo(parsed.whenToUse(), 255));
         row.setBody(parsed.body().trim());
         row.setOrigin(SkillOrigin.IMPORT);
@@ -201,9 +205,30 @@ public class SkillService {
         return detail(rows.save(row).getName());
     }
 
-    private static AiSkillResp toRow(Skill skill, AiSkillEntity row, Set<String> builtinNames) {
+    /**
+     * Renders a skill back to a {@code SKILL.md} (front matter + body), the inverse of
+     * {@link #importMarkdown(byte[], String, long)}.
+     *
+     * @param name skill name (built-in or managed)
+     * @return the download file name and content
+     * @throws ResponseStatusException 404 when no built-in or managed row matches
+     */
+    @Transactional(readOnly = true)
+    public SkillExport exportMarkdown(String name) {
+        SkillDetail skill = detail(name);
+        String body = skill.body() == null ? "" : skill.body().trim();
+        String markdown = "---\n"
+                + "name: " + skill.name() + "\n"
+                + "description: " + yamlValue(skill.description()) + "\n"
+                + "when_to_use: " + yamlValue(skill.whenToUse()) + "\n"
+                + "---\n\n"
+                + body + "\n";
+        return new SkillExport(skill.name() + ".md", markdown);
+    }
+
+    private static SkillRow toRow(Skill skill, AiSkillEntity row, Set<String> builtinNames) {
         boolean builtin = builtinNames.contains(skill.name());
-        return new AiSkillResp(
+        return new SkillRow(
                 row == null ? null : row.getId(),
                 skill.name(), skill.description(), skill.whenToUse(), skill.source(),
                 builtin, builtin && row != null,
@@ -237,8 +262,8 @@ public class SkillService {
                         "No managed skill named " + name));
     }
 
-    private void apply(AiSkillEntity row, AiSkillReq req, long uid) {
-        String body = req.body() == null ? "" : req.body().trim();
+    private void apply(AiSkillEntity row, SkillDraft draft, long uid) {
+        String body = draft.body() == null ? "" : draft.body().trim();
         if (body.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill body is empty");
         }
@@ -246,8 +271,8 @@ public class SkillService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Skill body exceeds " + MAX_BODY_CHARS + " characters");
         }
-        row.setDescription(trimTo(req.description(), 255));
-        row.setWhenToUse(trimTo(req.whenToUse(), 255));
+        row.setDescription(trimTo(draft.description(), 255));
+        row.setWhenToUse(trimTo(draft.whenToUse(), 255));
         row.setBody(body);
         row.setUpdatedBy(uid);
         row.setUpdatedAt(Instant.now());
@@ -267,6 +292,36 @@ public class SkillService {
         return text.length() <= max ? text : text.substring(0, max);
     }
 
+    /** @return the first meaningful body line, used when the front matter has no description */
+    private static String fallbackDescription(String body) {
+        if (body == null) {
+            return "";
+        }
+        for (String line : body.split("\n")) {
+            String text = line.trim();
+            if (text.isEmpty() || text.startsWith("```")) {
+                continue;
+            }
+            text = text.replaceFirst("^#{1,6}\\s*", "")
+                    .replaceFirst("^>\\s*", "")
+                    .replaceFirst("^[-*+]\\s+", "")
+                    .trim();
+            if (!text.isEmpty()) {
+                return trimTo(text, 255);
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Quotes one front-matter value. The parser only strips a matching pair of surrounding quotes
+     * and does not unescape, so wrapping the raw text round-trips losslessly.
+     */
+    private static String yamlValue(String value) {
+        String text = value == null ? "" : value.replace('\r', ' ').replace('\n', ' ').trim();
+        return '"' + text + '"';
+    }
+
     /** @return the uploaded file name without extension, as a name candidate */
     private static String fallbackName(String originalFilename) {
         String name = originalFilename == null ? "skill" : originalFilename;
@@ -280,4 +335,5 @@ public class SkillService {
         }
         return name.trim().isEmpty() ? "skill" : name.trim();
     }
+
 }

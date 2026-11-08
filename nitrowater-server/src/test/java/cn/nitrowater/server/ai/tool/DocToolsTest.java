@@ -9,7 +9,8 @@ import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.service.ai.tool.DocTools;
 import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
-import cn.nitrowater.server.service.ai.model.WebSearchResult;
+import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
@@ -33,7 +34,7 @@ class DocToolsTest {
 
     @BeforeEach
     void enablesWebSearch() {
-        when(settings.get()).thenReturn(new AiAdminSettingsService.Settings(
+        when(settings.get()).thenReturn(new AiSettings(
                 50000, true, true, true, true, true, true, true, ModerationMode.LOG));
     }
 

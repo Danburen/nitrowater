@@ -24,6 +24,7 @@ import {
 } from '../../../api/ai'
 import AdminDangerRow from '../AdminDangerRow.vue'
 import AdminDangerZone from '../AdminDangerZone.vue'
+import AdminFilterCard from './AdminFilterCard.vue'
 
 const rows = ref<AiUserUsage[]>([])
 const summary = ref<AiUsageSummary | null>(null)
@@ -226,12 +227,12 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
       class="admin-card"
     >
       <template #header>
-        <div class="admin-toolbar">
+        <div class="admin-card-header">
           <div class="flex items-baseline gap-2">
             <span class="admin-card-title">全站用量</span>
             <span class="admin-card-meta">UTC {{ summary?.today ?? '—' }} · 近 31 天</span>
           </div>
-          <div class="admin-actions">
+          <div class="flex flex-wrap items-center gap-2">
             <el-tag
               v-if="summary && !summary.globalEnabled"
               type="info"
@@ -319,12 +320,55 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
       </el-table>
     </el-card>
 
+    <AdminFilterCard
+      :loading="loading"
+      @submit="search"
+      @reset="resetFilters"
+    >
+      <el-form-item label="用户">
+        <el-input
+          v-model.trim="query.keyword"
+          placeholder="用户名 / 昵称 / UID"
+          clearable
+          class="w-[220px]!"
+        />
+      </el-form-item>
+      <el-form-item label="范围">
+        <el-select
+          v-model="query.onlyExceeded"
+          class="w-[130px]!"
+        >
+          <el-option
+            :value="false"
+            label="全部用户"
+          />
+          <el-option
+            :value="true"
+            label="仅看超额"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="排序">
+        <el-select
+          v-model="query.sort"
+          class="w-[150px]!"
+        >
+          <el-option
+            v-for="option in SORT_OPTIONS"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </el-form-item>
+    </AdminFilterCard>
+
     <el-card
       shadow="never"
-      class="admin-card"
+      class="admin-card admin-card-flush"
     >
       <template #header>
-        <div class="admin-toolbar">
+        <div class="admin-card-header">
           <div class="flex items-baseline gap-2">
             <span class="admin-card-title">用户今日用量</span>
             <span class="admin-card-meta">UTC · {{ usageDate }} · 共 {{ total }} 位用户</span>
@@ -338,79 +382,15 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
             >
               重置所选{{ hasSelection ? `（${selected.length}）` : '' }}
             </el-button>
-            <el-button
-              :disabled="loading || resetting"
-              @click="load"
-            >
-              刷新
-            </el-button>
           </div>
         </div>
       </template>
-
-      <el-form
-        :inline="true"
-        class="admin-filter-form border-b border-line px-2 py-2"
-        @submit.prevent="search"
-      >
-        <el-form-item label="用户">
-          <el-input
-            v-model.trim="query.keyword"
-            placeholder="用户名 / 昵称 / UID"
-            clearable
-            class="w-[220px]!"
-          />
-        </el-form-item>
-        <el-form-item label="范围">
-          <el-select
-            v-model="query.onlyExceeded"
-            class="w-[130px]!"
-          >
-            <el-option
-              :value="false"
-              label="全部用户"
-            />
-            <el-option
-              :value="true"
-              label="仅看超额"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="排序">
-          <el-select
-            v-model="query.sort"
-            class="w-[150px]!"
-          >
-            <el-option
-              v-for="option in SORT_OPTIONS"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-        </el-form-item>
-        <div class="admin-filter-actions">
-          <el-button
-            type="primary"
-            native-type="submit"
-            :loading="loading"
-          >
-            查询
-          </el-button>
-          <el-button
-            :disabled="loading"
-            @click="resetFilters"
-          >
-            重置
-          </el-button>
-        </div>
-      </el-form>
 
       <el-skeleton
         v-if="!ready"
         :rows="5"
         animated
-        class="py-2"
+        class="p-4"
       />
       <el-table
         v-else
@@ -506,14 +486,14 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
         </el-table-column>
       </el-table>
 
-      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim">
-        <span>共 {{ total }} 条 · 第 {{ query.page + 1 }} / {{ totalPages }} 页</span>
+      <div class="admin-pager">
         <el-pagination
           :current-page="query.page + 1"
           :page-size="query.size"
           :page-sizes="[20, 50, 100]"
           :total="total"
-          layout="sizes, prev, pager, next"
+          background
+          layout="sizes, prev, pager, next, jumper"
           @current-change="pageTo"
           @size-change="onSizeChange"
         />
@@ -535,3 +515,24 @@ async function reset(uids: readonly number[], label: string, uid: number | null 
     </AdminDangerZone>
   </div>
 </template>
+
+<style scoped>
+/* Selection-bound batch action in the list card header; only this page needs the dense rhythm. */
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-actions .el-button {
+  margin: 0;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+
+.admin-actions .el-button + .el-button {
+  margin-left: 0;
+}
+</style>

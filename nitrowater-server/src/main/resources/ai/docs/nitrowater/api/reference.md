@@ -81,6 +81,8 @@ account 提供标准 OIDC 端点：`/oauth2/authorize`、`/oauth2/token`、`/oau
 | POST | `/api/ai/agent/chat` | 登录 | Agent 一次性回答（唯一问答路线） |
 | POST | `/api/ai/agent/chat/stream` | 登录 | Agent SSE |
 | GET | `/api/admin/ai/skills` | 管理员 | 技能清单（管理台） |
+| POST | `/api/admin/ai/skills/import` | 管理员 | 导入 `SKILL.md`（同名覆盖） |
+| GET | `/api/admin/ai/skills/{name}/export` | 管理员 | 导出为 `SKILL.md`（内置也可导出） |
 | GET | `/api/admin/ai/tools` | 管理员 | 工具清单（管理台） |
 | POST | `/api/admin/ai/reindex` | 管理员 | 重建文档索引 |
 

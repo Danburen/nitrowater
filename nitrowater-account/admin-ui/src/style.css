@@ -10,9 +10,9 @@
 }
 
 /*
- * Shared page chrome for the account admin screens. Form controls come from Element Plus, so the
- * only global classes are the ones every view repeats: the page header, the bordered panel and the
- * two button variants.
+ * Shared page chrome for the account admin screens. Form controls come from Element Plus; the
+ * global classes are the ones every view repeats (buttons and the list-card primitives). One-off
+ * shells live in the component's own `<style scoped>` instead.
  */
 @layer components {
   .btn {
@@ -31,13 +31,64 @@
     @apply bg-accent-strong;
   }
 
-  .section-head {
-    @apply mb-[22px] flex items-end justify-between gap-4;
+  /*
+   * Admin list primitives shared by the three lists (users / roles / applications). Every page
+   * composes the same shell: page header (AdminPage), a standalone query card (AdminFilterCard),
+   * then a flush card with a titled header, the table and the pager.
+   */
+  .admin-card-title {
+    @apply text-[13.5px] font-semibold text-ink;
   }
 
-  .panel {
-    @apply rounded-[14px] border border-line bg-card;
+  /* Muted caption next to a card title (counts, scope hints, ...). */
+  .admin-card-meta {
+    @apply text-[12px] text-faint;
   }
+
+  /* Card header row: title / counter on the left, batch actions on the right. */
+  .admin-card-header {
+    @apply flex flex-wrap items-center justify-between gap-3;
+  }
+
+  /*
+   * Bottom bar of a list card: the pager sits on the right, hairline above. Lives inside the flush
+   * card body so the card's rounded corners clip it exactly like the table.
+   */
+  .admin-pager {
+    @apply flex flex-wrap items-center justify-end gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim;
+  }
+}
+
+/*
+ * Card shell overrides, deliberately outside `@layer components`: Element Plus ships its own
+ * unlayered `.el-card` rules, and unlayered CSS outranks every cascade layer regardless of
+ * specificity. The `.el-card` prefix also breaks the specificity tie, because EP's per-component
+ * CSS chunks are injected after this file at runtime. Nothing layered lands on these elements, so
+ * the unlayered rules only ever win where they should.
+ */
+.el-card.admin-card {
+  @apply overflow-hidden rounded-[14px] border border-line bg-card shadow-none;
+}
+
+.admin-card > .el-card__header {
+  @apply border-b border-line px-4 py-3;
+}
+
+.admin-card > .el-card__body {
+  @apply p-4;
+}
+
+/*
+ * List-page shell: table in the middle, pager at the bottom (the query card lives above it).
+ * The card body drops its padding so the table can run edge to edge.
+ */
+.admin-card-flush > .el-card__body {
+  @apply p-0;
+}
+
+/* Tables inside a card should not paint their own outer frame/bottom rule. */
+.admin-card .el-table__inner-wrapper::before {
+  display: none;
 }
 
 @layer base {

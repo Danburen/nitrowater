@@ -3,8 +3,8 @@ package cn.nitrowater.server.service.sandbox;
 import cn.nitrowater.server.config.properties.SandboxProperties;
 import cn.nitrowater.server.infra.ratelimit.RedisRateLimiter;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
-import cn.nitrowater.server.web.dto.RunRequest;
-import cn.nitrowater.server.web.dto.RunResponse;
+import cn.nitrowater.server.service.sandbox.model.RunCommand;
+import cn.nitrowater.server.service.sandbox.model.RunResult;
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -21,7 +21,7 @@ import cn.nitrowater.lib.utils.StringUtil;
  * per-user quotas and the same global queue. Keeping that policy in one component prevents the
  * agent from becoming a quota bypass. Admission is deliberately split from execution: callers can
  * inspect {@link #snapshot()} first (the agent asks the user when the queue is long), then call
- * {@link #execute(String, RunRequest)} once they are ready to wait.</p>
+ * {@link #execute(String, RunCommand)} once they are ready to wait.</p>
  */
 @Component
 public class SandboxExecutionGuard {
@@ -88,28 +88,28 @@ public class SandboxExecutionGuard {
      * Admits one run, executes it, and always releases the slot.
      *
      * @param uid the authenticated user id
-     * @param request the validated run request
+     * @param command the validated run command
      * @return the normalised sandbox result
      * @throws GuardException when admission fails
      * @throws cn.nitrowater.server.infra.exception.SandboxException when execution fails
      */
-    public RunResponse execute(String uid, RunRequest request) {
-        return execute(uid, request, properties.queueWaitMs());
+    public RunResult execute(String uid, RunCommand command) {
+        return execute(uid, command, properties.queueWaitMs());
     }
 
     /**
      * Admits one run with an explicit wait budget, executes it, and always releases the slot.
      *
      * @param uid the authenticated user id
-     * @param request the validated run request
+     * @param command the validated run command
      * @param waitMs maximum time to wait for a slot
      * @return the normalised sandbox result
      * @throws GuardException when admission fails
      * @throws cn.nitrowater.server.infra.exception.SandboxException when execution fails
      */
-    public RunResponse execute(String uid, RunRequest request, long waitMs) {
+    public RunResult execute(String uid, RunCommand command, long waitMs) {
         try (SandboxGate.Lease ignored = admit(uid, waitMs)) {
-            return sandboxService.run(request);
+            return sandboxService.run(command);
         }
     }
 

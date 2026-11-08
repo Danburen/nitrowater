@@ -1,6 +1,6 @@
-# deploy/content — 运行时内容（词表 / 文档语料 / skills）
+# deploy/content — 运行时内容（词表 / 文档语料）
 
-本目录是**挂载用的内容产物**，不含代码，默认被 `.gitignore` 排除（仅保留 `README.md` 与 `.gitkeep`）。
+本目录是**挂载用的内容产物**，不含代码，默认被 `.gitignore` 排除（仅保留 `README.md` 与各子目录的 `.gitkeep`）。
 内容由运营/内容仓单独维护，容器只读挂载，因此改内容不需要重新构建镜像。
 
 ```
@@ -8,47 +8,35 @@ deploy/content/
 ├── moderation/
 │   ├── words.txt      # 生产违禁词（追加到镜像内基线词表之后）
 │   └── allow.txt      # 白名单（命中 allow 即不算违规）
-├── docs/
-│   └── nitrowater/    # 外置语料（仅当 AI_DOCS_LOCATION 指向它时生效）
-└── skills/
-    └── <name>/SKILL.md
+└── docs/
+    └── nitrowater/    # 外置语料（仅当 AI_DOCS_LOCATION 指向它时生效）
 ```
 
-## 启用方式
+## 挂载方式
 
-内容挂载是**可选叠加层**，默认部署（只 `-f docker-compose.app.yml`）行为完全不变：词表与文档仍从镜像
-`classpath` 读取。启用时叠加：
-
-```powershell
-.\deploy\bin\deploy.ps1 -Content          # Windows（-SkipCheck 可跳过预检）
-```
-```bash
-bash deploy/bin/deploy.sh --content       # Linux/macOS（--skip-check 可跳过预检）
-```
-
-单入口脚本在 `moderation/words.txt` 存在、或 `docs/` 下有任意 `.md` 时**自动开启**，也可用 `-Content`
-显式强制。等价的手工方式：
-
-```bash
-docker compose -f docker-compose.app.yml -f docker-compose.content.yml up -d
-```
-
-挂载点（容器内，只读）：
+`docker-compose.app.yml` **常驻**把两个子目录只读挂进 `server`：
 
 | 宿主机 | 容器内 | 消费方 |
 |---|---|---|
 | `${CONTENT_ROOT}/moderation` | `/etc/nitrowater/moderation` | 内容安全词表 |
 | `${CONTENT_ROOT}/docs` | `/etc/nitrowater/docs` | RAG 语料（`AI_DOCS_LOCATION`） |
-| `${CONTENT_ROOT}/skills` | `/etc/nitrowater/skills` | 外部技能（`AI_SKILLS_DIR`） |
 
-`CONTENT_ROOT` 未设置时回落到本目录（相对 compose 文件为 `../content`）。
+`CONTENT_ROOT` 未设置时回落到 `../content`（相对 `deploy/docker/`，即本目录）。
+目录为空不影响启动 —— 是否启用由 `.env` 里的 `AI_MODERATION_DICT` / `AI_DOCS_LOCATION` 决定。
+
+启动 / 更新：
+
+```bash
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d
+```
 
 ## 词表：双层叠加，不要单层
 
-叠加层里写的是：
+在 `.env` 里显式写两层：
 
 ```
 AI_MODERATION_DICT=classpath:ai/moderation/words.txt,file:/etc/nitrowater/moderation/words.txt
+AI_MODERATION_ALLOW=classpath:ai/moderation/allow.txt,file:/etc/nitrowater/moderation/allow.txt
 ```
 
 - **第一层 classpath**：随镜像发布的基线词表，保证"挂载丢了也不会裸奔"。

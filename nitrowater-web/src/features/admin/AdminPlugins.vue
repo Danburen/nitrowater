@@ -2,15 +2,17 @@
 /**
  * Admin — plugins: metadata list plus a create/edit drawer.
  *
- * <p>Uses the same chrome as every other admin page ({@link AdminPage} + {@code el-card.admin-card-flush}):
- * action strip on top, table in the middle, then the shared {@link AppDrawer} for the editor — the
- * popup chrome is Tailwind so it matches the portal, while the form controls stay Element Plus.</p>
+ * <p>Uses the same chrome as every other admin page ({@link AdminPage} + {@link AdminFilterCard} +
+ * {@code el-card.admin-card-flush}): page actions in the header, a standalone query card, then the
+ * table. The editor uses the shared {@link AppDrawer} — the popup chrome is Tailwind so it matches
+ * the portal, while the form controls stay Element Plus.</p>
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppDrawer from '../../shared/ui/AppDrawer.vue'
 import { confirm } from '../../shared/ui/confirm'
 import { toast } from '../../shared/ui/toast'
 import AdminPage from './components/AdminPage.vue'
+import AdminFilterCard from './components/AdminFilterCard.vue'
 import {
   createPlugin,
   deletePlugin,
@@ -251,12 +253,6 @@ onMounted(() => {
   >
     <template #actions>
       <el-button
-        :disabled="loading"
-        @click="load"
-      >
-        刷新
-      </el-button>
-      <el-button
         type="primary"
         @click="openCreate"
       >
@@ -272,86 +268,71 @@ onMounted(() => {
       :closable="false"
     />
 
+    <AdminFilterCard
+      :loading="loading"
+      @submit="search"
+      @reset="resetQuery"
+    >
+      <el-form-item label="关键词">
+        <el-input
+          v-model.trim="query.q"
+          placeholder="key / 名称 / 简介"
+          clearable
+          class="w-[220px]!"
+        />
+      </el-form-item>
+      <el-form-item label="状态">
+        <el-select
+          v-model="query.enabled"
+          class="w-[120px]!"
+        >
+          <el-option
+            value="all"
+            label="全部"
+          />
+          <el-option
+            value="true"
+            label="启用"
+          />
+          <el-option
+            value="false"
+            label="停用"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="排序">
+        <el-select
+          v-model="query.sort"
+          class="w-[150px]!"
+        >
+          <el-option
+            value="default"
+            label="默认排序"
+          />
+          <el-option
+            value="updated"
+            label="最近更新"
+          />
+          <el-option
+            value="name"
+            label="名称"
+          />
+        </el-select>
+      </el-form-item>
+    </AdminFilterCard>
+
     <el-card
       shadow="never"
       class="admin-card admin-card-flush"
     >
       <template #header>
-        <div class="admin-toolbar">
+        <div class="admin-card-header">
           <div class="flex items-baseline gap-2">
             <span class="admin-card-title">插件列表</span>
             <span class="admin-card-meta">共 {{ total }} 个</span>
           </div>
         </div>
       </template>
-
-      <el-form
-        :inline="true"
-        class="admin-filter-form border-b border-line px-2 py-2"
-        @submit.prevent="search"
-      >
-        <el-form-item label="关键词">
-          <el-input
-            v-model.trim="query.q"
-            placeholder="key / 名称 / 简介"
-            clearable
-            class="w-[220px]!"
-          />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select
-            v-model="query.enabled"
-            class="w-[120px]!"
-          >
-            <el-option
-              value="all"
-              label="全部"
-            />
-            <el-option
-              value="true"
-              label="启用"
-            />
-            <el-option
-              value="false"
-              label="停用"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="排序">
-          <el-select
-            v-model="query.sort"
-            class="w-[150px]!"
-          >
-            <el-option
-              value="default"
-              label="默认排序"
-            />
-            <el-option
-              value="updated"
-              label="最近更新"
-            />
-            <el-option
-              value="name"
-              label="名称"
-            />
-          </el-select>
-        </el-form-item>
-        <div class="admin-filter-actions">
-          <el-button
-            type="primary"
-            native-type="submit"
-            :loading="loading"
-          >
-            查询
-          </el-button>
-          <el-button
-            :disabled="loading"
-            @click="resetQuery"
-          >
-            重置
-          </el-button>
-        </div>
-      </el-form>
 
       <el-table
         v-loading="loading"
@@ -478,14 +459,14 @@ onMounted(() => {
         </el-table-column>
       </el-table>
 
-      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12.5px] text-dim">
-        <span>共 {{ total }} 条 · 第 {{ query.page + 1 }} / {{ totalPages }} 页</span>
+      <div class="admin-pager">
         <el-pagination
           :current-page="query.page + 1"
           :page-size="query.size"
           :page-sizes="[20, 50, 100]"
           :total="total"
-          layout="sizes, prev, pager, next"
+          background
+          layout="sizes, prev, pager, next, jumper"
           @current-change="pageTo"
           @size-change="onSizeChange"
         />

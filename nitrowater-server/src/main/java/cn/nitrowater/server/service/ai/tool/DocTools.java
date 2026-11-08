@@ -1,7 +1,7 @@
 package cn.nitrowater.server.service.ai.tool;
 
 import cn.nitrowater.server.service.ai.AiAdminSettingsService;
-import cn.nitrowater.server.service.ai.model.WebSearchResult;
+import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
 import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.service.ai.DocRetriever;
 import cn.nitrowater.server.service.ai.model.DocSource;

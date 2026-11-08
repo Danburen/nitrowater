@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 
 import { adminApi, type RoleForm, type RoleVO } from '@/api/admin'
+import AdminFilterCard from '@/components/AdminFilterCard.vue'
+import AdminPage from '@/components/AdminPage.vue'
 
 const loading = ref(false)
 const roles = ref<RoleVO[]>([])
+const total = ref(0)
+/** Tri-state: 'all' (no filter), 'true' / 'false' map to the server's optional boolean. */
+const query = reactive({ keyword: '', builtin: 'all', page: 0, size: 20 })
 
 const dialogVisible = ref(false)
 const saving = ref(false)
@@ -15,12 +20,46 @@ const form = ref<RoleForm>({ code: '', name: '', description: '' })
 async function load() {
   loading.value = true
   try {
-    roles.value = await adminApi.listRoles()
+    const page = await adminApi.listRoles(
+      query.keyword,
+      query.builtin === 'all' ? '' : query.builtin,
+      query.page,
+      query.size,
+    )
+    roles.value = page.content
+    total.value = page.page.totalElements
+    // Deleting the last row of a page would otherwise leave an empty table behind.
+    if (page.content.length === 0 && page.page.number > 0) {
+      query.page = Math.max(page.page.number - 1, 0)
+      return load()
+    }
   } catch (e) {
     ElMessage.error(errText(e))
   } finally {
     loading.value = false
   }
+}
+
+function search() {
+  query.page = 0
+  void load()
+}
+
+function resetQuery() {
+  query.keyword = ''
+  query.builtin = 'all'
+  search()
+}
+
+function pageTo(oneBased: number) {
+  query.page = Math.max(0, oneBased - 1)
+  void load()
+}
+
+function onSizeChange(size: number) {
+  query.size = size
+  query.page = 0
+  void load()
 }
 
 function openCreate() {
@@ -88,29 +127,80 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1120px] p-4 sm:p-6">
-    <div class="section-head">
-      <div>
-        <h1 class="text-lg font-semibold text-ink">
-          角色管理
-        </h1>
-        <p class="mt-1 text-[13px] text-dim">
-          共 {{ roles.length }} 个角色 · 内置角色不可删除。
-        </p>
-      </div>
-      <button
-        class="btn btn-primary"
+  <AdminPage
+    title="角色管理"
+    description="维护角色定义；内置角色不可删除。"
+  >
+    <template #actions>
+      <el-button
+        type="primary"
         @click="openCreate"
       >
         新建角色
-      </button>
-    </div>
+      </el-button>
+    </template>
 
-    <div class="panel overflow-hidden">
+    <AdminFilterCard
+      :loading="loading"
+      @submit="search"
+      @reset="resetQuery"
+    >
+      <el-form-item label="关键字">
+        <el-input
+          v-model="query.keyword"
+          placeholder="编码 / 名称 / 描述"
+          clearable
+          class="w-[220px]!"
+          @keyup.enter="search"
+        />
+      </el-form-item>
+      <el-form-item label="范围">
+        <el-select
+          v-model="query.builtin"
+          class="w-[130px]!"
+        >
+          <el-option
+            value="all"
+            label="全部"
+          />
+          <el-option
+            value="true"
+            label="内置"
+          />
+          <el-option
+            value="false"
+            label="自定义"
+          />
+        </el-select>
+      </el-form-item>
+    </AdminFilterCard>
+
+    <el-card
+      shadow="never"
+      class="admin-card admin-card-flush"
+    >
+      <template #header>
+        <div class="admin-card-header">
+          <div class="flex items-baseline gap-2">
+            <span class="admin-card-title">角色列表</span>
+            <span class="admin-card-meta">共 {{ total }} 个</span>
+          </div>
+        </div>
+      </template>
+
       <el-table
         v-loading="loading"
         :data="roles"
+        row-key="id"
+        size="small"
+        stripe
       >
+        <template #empty>
+          <el-empty
+            description="暂无角色"
+            :image-size="60"
+          />
+        </template>
         <el-table-column
           prop="code"
           label="编码"
@@ -177,7 +267,20 @@ onMounted(load)
           </template>
         </el-table-column>
       </el-table>
-    </div>
+
+      <div class="admin-pager">
+        <el-pagination
+          :current-page="query.page + 1"
+          :page-size="query.size"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="total"
+          background
+          layout="sizes, prev, pager, next, jumper"
+          @current-change="pageTo"
+          @size-change="onSizeChange"
+        />
+      </div>
+    </el-card>
 
     <el-dialog
       v-model="dialogVisible"
@@ -220,5 +323,5 @@ onMounted(load)
         </el-button>
       </template>
     </el-dialog>
-  </div>
+  </AdminPage>
 </template>

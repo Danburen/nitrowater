@@ -1,5 +1,6 @@
 package cn.nitrowater.server.web.dto;
 
+import cn.nitrowater.server.service.plugin.model.PluginDraft;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -41,4 +42,10 @@ public record PluginUpsertReq(
         String readme,
         Integer sortOrder,
         Boolean enabled) {
+
+    /** @return the service draft built from this validated body */
+    public PluginDraft toDraft() {
+        return new PluginDraft(key, name, tagline, summary, icon, tags, docsUrl, homepageUrl,
+                repoUrl, sponsorUrl, readme, sortOrder, enabled);
+    }
 }

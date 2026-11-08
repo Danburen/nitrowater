@@ -70,10 +70,15 @@ Agent 的 `runCode` 不经过 HTTP 拦截器，但经过同一个 `SandboxExecut
 
 | 方式 | 用途 | 端口映射 |
 |---|---|---|
-| `deploy/docker/docker-compose.piston.yml` | 与应用容器同网络 | 不映射宿主端口，容器内访问 `http://piston:2000` |
+| `deploy/docker/docker-compose.app.yml`（`piston` 服务，常驻） | 与应用容器同网络 | 不映射宿主端口，容器内访问 `http://piston:2000` |
 | `bin/start-infra.ps1` | 本机直接跑 server | 映射 `-p 2000:2000`，默认 `PISTON_BASE_URL=http://localhost:2000` |
 
-语言包需要预装（`bin/dev/install-piston-langs.ps1`）；未安装的语言会返回错误。当前已验证语言：Java、Python、JavaScript、TypeScript、C、C++、Lua。
+`piston` 只加入 `nitrowater-runner-net`（app compose 内创建），server 同时加入 `nitrowater-net` 与
+`nitrowater-runner-net`，因此沙箱与 mysql / redis / seaweedfs 不在同一网段。
+
+语言包需要预装（`bin/dev/install-piston-langs.ps1`，或首次部署后手工
+`docker exec nitrowater-piston cli/index.js ppman install <lang>`）；未安装的语言会返回错误。
+当前已验证语言：Java、Python、JavaScript、TypeScript、C、C++、Lua。
 
 ## 6. 安全与错误脱敏
 
@@ -98,4 +103,4 @@ Agent 的 `runCode` 不经过 HTTP 拦截器，但经过同一个 `SandboxExecut
 - `nitrowater-server/.../infra/ratelimit/SandboxExecutionGuard.java`
 - `nitrowater-server/.../infra/third/PistonClient.java`
 - `nitrowater-server/.../ai/tool/RunCodeTool.java`
-- `deploy/docker/docker-compose.piston.yml`
+- `deploy/docker/docker-compose.app.yml`（`piston` 服务）

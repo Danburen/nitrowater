@@ -63,7 +63,12 @@ public enum ToolCode implements ResponseCode {
     /** Per-day execution quota is exhausted; waiting will not help. */
     DAILY_QUOTA("tool.daily_quota", false, false),
     /** A downstream dependency failed; a later retry may succeed. */
-    UNAVAILABLE("tool.unavailable", false, true);
+    UNAVAILABLE("tool.unavailable", false, true),
+    /**
+     * The tool did not return within its per-call deadline. The server stopped waiting; the call may
+     * still be running, so this says nothing about whether it succeeded.
+     */
+    TIMEOUT("tool.timeout", false, true);
 
     /**
      * Statuses written before this enum existed. Only needed to read back tool traces persisted by

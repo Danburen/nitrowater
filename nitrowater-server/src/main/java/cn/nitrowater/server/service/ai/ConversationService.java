@@ -4,7 +4,10 @@ import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.service.ai.model.AiTokenUsage;
 import cn.nitrowater.server.service.ai.model.ChatTurn;
+import cn.nitrowater.server.service.ai.model.ContextReset;
+import cn.nitrowater.server.service.ai.model.ConversationTurn;
 import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.model.MessagePage;
 import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.entity.AiMessage;
@@ -198,7 +201,7 @@ public class ConversationService {
      * @return the conversation plus the history to feed the model
      */
     @Transactional
-    public StartedTurn start(long uid, String conversationUuid, String question) {
+    public ConversationTurn start(long uid, String conversationUuid, String question) {
         // The content gate runs before anything is written: a rejected question must not create a
         // conversation or an ai_message row that later has to be scrubbed by hand.
         moderation.guardQuestion(uid, conversationUuid, question);
@@ -207,7 +210,7 @@ public class ConversationService {
                 : require(conversationUuid, uid);
         List<ChatTurn> history = history(conversation);
         append(conversation, MessageRole.USER, question, 0, null, null, null, null, false);
-        return new StartedTurn(conversation, history);
+        return new ConversationTurn(conversation, history);
     }
 
     /**
@@ -278,9 +281,9 @@ public class ConversationService {
      * @return the conversation plus the history to feed the model
      */
     @Transactional(readOnly = true)
-    public StartedTurn resume(String uuid, long uid) {
+    public ConversationTurn resume(String uuid, long uid) {
         AiConversation conversation = require(uuid, uid);
-        return new StartedTurn(conversation, history(conversation));
+        return new ConversationTurn(conversation, history(conversation));
     }
 
     /**
@@ -301,7 +304,8 @@ public class ConversationService {
         }
         int boundary = Math.max(0, conversation.getSummaryUptoSeq());
         List<AiMessage> descending = messages.findByConversationIdAndSeqGreaterThanOrderBySeqDesc(
-                conversation.getId(), boundary, Limit.of(maxEntries));
+                conversation.getId(), boundary, Limit.of(maxEntries)
+        );
         List<ChatTurn> history = new ArrayList<>(descending.size() + 1);
         // Earlier turns may already be folded into a rolling summary (T12) or dropped by /clear; the
         // summary, when present, is fed as a synthetic turn so the model keeps continuity without
@@ -505,33 +509,5 @@ public class ConversationService {
             return DEFAULT_PAGE_SIZE;
         }
         return Math.min(limit, MAX_PAGE_SIZE);
-    }
-
-    /**
-     * Result of {@link #start}: the conversation plus the history captured before the question.
-     *
-     * @param conversation the conversation that owns the persisted question
-     * @param history previous turns to feed the model
-     */
-    public record StartedTurn(AiConversation conversation, List<ChatTurn> history) {
-    }
-
-    /**
-     * A page of messages in ascending sequence order.
-     *
-     * @param items messages
-     * @param hasMore whether older messages exist
-     */
-    public record MessagePage(List<AiMessage> items, boolean hasMore) {
-    }
-
-    /**
-     * Outcome of {@link #resetContext(String, long)}.
-     *
-     * @param cleared always {@code true} when the call returns
-     * @param droppedMessages how many turns were removed from the model's context
-     * @param boundarySeq highest seq excluded from the context ({@code 0} for an empty conversation)
-     */
-    public record ContextReset(boolean cleared, int droppedMessages, int boundarySeq) {
     }
 }

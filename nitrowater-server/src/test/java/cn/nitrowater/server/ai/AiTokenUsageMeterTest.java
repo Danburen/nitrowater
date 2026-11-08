@@ -1,6 +1,7 @@
 package cn.nitrowater.server.ai;
 
-import cn.nitrowater.server.service.ai.AiAdminSettingsService.Settings;
+import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.agent.ToolFeature;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.service.ai.model.AiTokenUsage;
 import cn.nitrowater.server.service.ai.model.AiTokenUsageMeter;
@@ -80,20 +81,19 @@ class AiTokenUsageMeterTest {
     }
 
     @Test
-    void adminSettingsGateOnlyTheToolsTheyOwn() {
-        Settings disabled = new Settings(1000, true, true, true, false, false, false, false,
+    void featureSwitchesGateOnlyTheToolsTheyOwn() {
+        AiSettings disabled = new AiSettings(1000, true, true, true, false, false, false, false,
                 ModerationMode.LOG);
 
-        assertThat(disabled.toolEnabled("searchDocs")).isFalse();
-        assertThat(disabled.toolEnabled("loadSkill")).isFalse();
-        assertThat(disabled.toolEnabled("runCode")).isFalse();
-        assertThat(disabled.toolEnabled("webSearch")).isFalse();
-        assertThat(disabled.toolEnabled("futureCoreTool")).isTrue();
-        assertThat(disabled.toolEnabled(" ")).isFalse();
+        assertThat(ToolFeature.DOCS.enabled(disabled)).isFalse();
+        assertThat(ToolFeature.SKILLS.enabled(disabled)).isFalse();
+        assertThat(ToolFeature.CODE.enabled(disabled)).isFalse();
+        assertThat(ToolFeature.WEB.enabled(disabled)).isFalse();
+        assertThat(ToolFeature.NONE.enabled(disabled)).isTrue();
 
-        Settings enabled = new Settings(1000, true, true, true, true, true, true, true,
+        AiSettings enabled = new AiSettings(1000, true, true, true, true, true, true, true,
                 ModerationMode.LOG);
-        assertThat(enabled.toolEnabled("searchDocs")).isTrue();
-        assertThat(enabled.toolEnabled("webSearch")).isTrue();
+        assertThat(ToolFeature.DOCS.enabled(enabled)).isTrue();
+        assertThat(ToolFeature.WEB.enabled(enabled)).isTrue();
     }
 }

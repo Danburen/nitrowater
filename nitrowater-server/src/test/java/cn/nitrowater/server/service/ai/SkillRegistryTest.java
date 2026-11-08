@@ -3,7 +3,7 @@ package cn.nitrowater.server.service.ai;
 import cn.nitrowater.server.infra.entity.AiSkillEntity;
 import cn.nitrowater.server.infra.enums.SkillOrigin;
 import cn.nitrowater.server.infra.repository.AiSkillRepository;
-import cn.nitrowater.server.service.ai.model.Skill;
+import cn.nitrowater.server.service.ai.model.skill.Skill;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

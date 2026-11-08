@@ -2,7 +2,7 @@ package cn.nitrowater.server.service.ai;
 
 import cn.nitrowater.server.infra.entity.AiSkillEntity;
 import cn.nitrowater.server.infra.repository.AiSkillRepository;
-import cn.nitrowater.server.service.ai.model.Skill;
+import cn.nitrowater.server.service.ai.model.skill.Skill;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;

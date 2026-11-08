@@ -11,7 +11,7 @@ function logout(): void {
 
 <template>
   <div class="flex min-h-[100dvh] items-center justify-center bg-bg p-6 text-ink">
-    <div class="panel max-w-[440px] p-8 text-center">
+    <div class="max-w-[440px] rounded-[14px] border border-line bg-card p-8 text-center">
       <div class="mx-auto mb-4 flex size-11 items-center justify-center rounded-full bg-warn/10 text-warn">
         <svg
           class="size-5"

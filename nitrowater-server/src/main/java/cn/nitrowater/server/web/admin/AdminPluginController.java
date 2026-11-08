@@ -2,8 +2,8 @@ package cn.nitrowater.server.web.admin;
 
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.service.plugin.PluginService;
-import cn.nitrowater.server.web.dto.PluginAdminResp;
 import cn.nitrowater.server.web.dto.PluginUpsertReq;
+import cn.nitrowater.server.web.vo.PluginAdminResp;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -51,20 +51,21 @@ public class AdminPluginController {
             @RequestParam(defaultValue = "default") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(pluginService.listAdmin(keyword, enabled, sort, page, size));
+        return ApiResponse.success(pluginService.listAdmin(keyword, enabled, sort, page, size)
+                .map(PluginAdminResp::from));
     }
 
     /** Admin: create a plugin. */
     @PostMapping("/api/plugins")
     @ResponseStatus(HttpStatus.CREATED)
     public PluginAdminResp create(@Valid @RequestBody PluginUpsertReq request) {
-        return pluginService.create(request);
+        return PluginAdminResp.from(pluginService.create(request.toDraft()));
     }
 
     /** Admin: update a plugin (key is immutable). */
     @PutMapping("/api/plugins/{id}")
     public PluginAdminResp update(@PathVariable Long id, @Valid @RequestBody PluginUpsertReq request) {
-        return pluginService.update(id, request);
+        return PluginAdminResp.from(pluginService.update(id, request.toDraft()));
     }
 
     /** Admin: delete a plugin. */

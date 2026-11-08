@@ -2,6 +2,7 @@ package cn.nitrowater.server.service.ai.model.agent;
 
 import cn.nitrowater.server.service.ai.AiAdminSettingsService;
 import cn.nitrowater.server.service.ai.model.AiInput;
+import cn.nitrowater.server.infra.exception.AiTurnTimeoutException;
 import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.service.ai.model.AiStreamChunk;
 import cn.nitrowater.server.service.ai.model.AiTokenUsageMeter;
@@ -11,9 +12,11 @@ import cn.nitrowater.server.service.ai.model.ChatTurn;
 import cn.nitrowater.server.service.ai.PromptBuilder;
 import cn.nitrowater.server.service.ai.AiMemoryService;
 import cn.nitrowater.server.service.ai.AiProfileService;
-import cn.nitrowater.server.service.ai.model.Skill;
+import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.MemoryView;
+import cn.nitrowater.server.service.ai.model.skill.Skill;
 import cn.nitrowater.server.service.ai.SkillRegistry;
-import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
+import cn.nitrowater.server.service.ai.tool.AgentToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClientMessageAggregator;
@@ -35,10 +38,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import cn.nitrowater.lib.utils.StringUtil;
 
@@ -65,11 +70,11 @@ public class AiAgentService {
 
     private static final ChatClientMessageAggregator AGGREGATOR = new ChatClientMessageAggregator();
     private static final Logger log = LoggerFactory.getLogger(AiAgentService.class);
+    private static final long NANOS_PER_MILLI = 1_000_000L;
 
     private final ChatModel chatModel;
     private final ToolCallingManager toolCallingManager;
-    private final AgentToolProviders tools;
-    private final WebSearchProvider webSearchProvider;
+    private final AgentToolRegistry tools;
     private final SkillRegistry skills;
     private final AiProperties properties;
     private final PromptBuilder promptBuilder;
@@ -78,16 +83,17 @@ public class AiAgentService {
     private final AiProfileService profiles;
     private final AiMemoryService memories;
     private final int maxToolRounds;
+    private final long turnTimeoutMs;
 
     public AiAgentService(ChatModel chatModel, ToolCallingManager toolCallingManager,
-            AgentToolProviders tools, WebSearchProvider webSearchProvider, SkillRegistry skills,
+            AgentToolRegistry tools, SkillRegistry skills,
             AiProperties properties, PromptBuilder promptBuilder, AiAdminSettingsService settings,
             AiUsageService usage, AiProfileService profiles, AiMemoryService memories,
-            @Value("${spring.ai.tools.limits.max-total-tool-calls:10}") int maxToolRounds) {
+            @Value("${spring.ai.tools.limits.max-total-tool-calls:10}") int maxToolRounds,
+            @Value("${app.ai.agent.turn-timeout-ms:150000}") long turnTimeoutMs) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
         this.tools = tools;
-        this.webSearchProvider = webSearchProvider;
         this.skills = skills;
         this.properties = properties;
         this.promptBuilder = promptBuilder;
@@ -96,10 +102,15 @@ public class AiAgentService {
         this.profiles = profiles;
         this.memories = memories;
         this.maxToolRounds = Math.max(1, maxToolRounds);
+        this.turnTimeoutMs = Math.max(1L, turnTimeoutMs);
     }
 
     /**
      * Runs one complete agent turn (no streaming).
+     *
+     * <p>The turn budget is checked between rounds only: a synchronous provider call cannot be
+     * interrupted, so this path can overshoot by at most one model call plus one tool batch. The
+     * streaming path bounds each round itself.</p>
      *
      * @param question user question
      * @param history previous turns
@@ -111,15 +122,18 @@ public class AiAgentService {
      */
     public AgentAnswer answer(String question, List<ChatTurn> history, String skillName,
             boolean allowWeb, long uid, String conversationUuid) {
-        AiAdminSettingsService.Settings runtime = requireEnabled();
+        AiSettings runtime = requireEnabled();
         String sanitized = AiInput.question(question, properties.maxQuestionChars());
         Skill skill = resolveSkill(skillName, runtime);
         AgentTrace trace = traceFor(skill, String.valueOf(uid), conversationUuid);
-        // No run: this path has no live channel, so the tools are invoked unwrapped.
+        // No run: this path has no live channel, so the tools publish no steps — but they still get
+        // their per-call deadline.
         AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime, uid, null);
         AiUsageTracker session = usage.start(uid, request.estimatedInputTokens());
+        long deadline = deadlineNanos();
         try {
             Prompt prompt = request.prompt();
+            requireTurnBudget(deadline);
             ChatResponse response = chatModel.call(prompt);
             int round = 0;
             while (hasToolCalls(response) && hasToolCallbacks(prompt.getOptions())) {
@@ -127,6 +141,9 @@ public class AiAgentService {
                 if (round >= maxToolRounds) {
                     prompt = new Prompt(prompt.getInstructions(), withoutTools(prompt.getOptions()));
                 } else {
+                    // Checked before the batch: a tool call started with no budget left would only
+                    // overshoot the whole-turn limit by its own deadline.
+                    requireTurnBudget(deadline);
                     ToolExecutionResult result = toolCallingManager.executeToolCalls(prompt, response);
                     if (result.returnDirect()) {
                         break;
@@ -134,6 +151,7 @@ public class AiAgentService {
                     prompt = new Prompt(result.conversationHistory(), prompt.getOptions());
                 }
                 round++;
+                requireTurnBudget(deadline);
                 response = chatModel.call(prompt);
             }
             session.record(usageOf(response));
@@ -170,17 +188,18 @@ public class AiAgentService {
             long uid,
             String conversationUuid
     ) {
-        AiAdminSettingsService.Settings runtime = requireEnabled();
+        AiSettings runtime = requireEnabled();
         String sanitized = AiInput.question(question, properties.maxQuestionChars());
         Skill skill = resolveSkill(skillName, runtime);
         AgentTrace trace = traceFor(skill, String.valueOf(uid), conversationUuid);
         AgentRun run = new AgentRun();
         AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime, uid, run);
         AiUsageTracker session = usage.start(uid, request.estimatedInputTokens());
+        long deadline = deadlineNanos();
         Flux<AiStreamChunk> chunks = run.events()
                 .doOnSubscribe(ignored -> {
                     run.step(AiStreamChunk.Step.thinking());
-                    driveRound(request.prompt(), 0, run);
+                    driveRound(request.prompt(), 0, deadline, run);
                 })
                 .doOnNext(chunk -> {
                     session.record(chunk.usage());
@@ -197,13 +216,22 @@ public class AiAgentService {
      *
      * @param prompt prompt of this round
      * @param round  zero-based round index
+     * @param deadline {@link System#nanoTime()} value at which the turn must stop
      * @param run    turn stream that receives tokens and steps
      */
-    private void driveRound(Prompt prompt, int round, AgentRun run) {
+    private void driveRound(Prompt prompt, int round, long deadline, AgentRun run) {
+        long remaining = remainingNanos(deadline);
+        if (remaining <= 0) {
+            run.fail(turnTimeout());
+            return;
+        }
         // Forward each raw chunk as it arrives; the aggregator is only used to inspect the round
         // once it completes. Note it emits a *running* aggregate per chunk (not one final element),
-        // so the decision is taken in onComplete with the last snapshot.
+        // so the decision is taken in onComplete with the last snapshot. The timeout is the turn
+        // budget that is left, so a stalled provider cannot hold the stream open.
         Flux<ChatResponse> raw = chatModel.stream(prompt)
+                .timeout(Duration.ofNanos(remaining))
+                .onErrorMap(TimeoutException.class, error -> turnTimeout())
                 .doOnNext(response -> emit(run, AiStreamChunk.from(response)));
         AtomicReference<ChatResponse> last = new AtomicReference<>();
         Flux<ChatClientResponse> aggregated = AGGREGATOR.aggregateChatClientResponse(
@@ -213,7 +241,7 @@ public class AiAgentService {
         run.track(aggregated.subscribe(
                 one -> last.set(one.chatResponse()),
                 run::fail,
-                () -> completeRound(last.get(), prompt, round, run)));
+                () -> completeRound(last.get(), prompt, round, deadline, run)));
     }
 
     /**
@@ -226,9 +254,11 @@ public class AiAgentService {
      * @param response aggregated round payload
      * @param prompt   prompt of the round that just finished
      * @param round    zero-based round index
+     * @param deadline {@link System#nanoTime()} value at which the turn must stop
      * @param run      turn stream
      */
-    private void completeRound(ChatResponse response, Prompt prompt, int round, AgentRun run) {
+    private void completeRound(ChatResponse response, Prompt prompt, int round, long deadline,
+            AgentRun run) {
         if (!hasToolCalls(response) || !hasToolCallbacks(prompt.getOptions())) {
             run.complete();
             return;
@@ -238,16 +268,20 @@ public class AiAgentService {
                 // Budget exhausted: one final round without tools so the turn still terminates.
                 run.step(AiStreamChunk.Step.thinking());
                 driveRound(new Prompt(prompt.getInstructions(), withoutTools(prompt.getOptions())),
-                        round + 1, run);
+                        round + 1, deadline, run);
                 return;
             }
+            // The batch is executed synchronously, so the turn budget is checked here: starting one
+            // more batch with no time left would only overshoot by that batch's own deadlines.
+            requireTurnBudget(deadline);
             ToolExecutionResult result = toolCallingManager.executeToolCalls(prompt, response);
             if (result.returnDirect()) {
                 run.complete();
                 return;
             }
             run.step(AiStreamChunk.Step.thinking());
-            driveRound(new Prompt(result.conversationHistory(), prompt.getOptions()), round + 1, run);
+            driveRound(new Prompt(result.conversationHistory(), prompt.getOptions()), round + 1,
+                    deadline, run);
         } catch (RuntimeException ex) {
             run.fail(ex);
         }
@@ -274,20 +308,15 @@ public class AiAgentService {
      * @return prompt plus the input-token estimate used for quota reservation
      */
     private AgentRequest request(String question, List<ChatTurn> history, Skill skill,
-            boolean allowWeb, AgentTrace trace, AiAdminSettingsService.Settings runtime, long uid,
+            boolean allowWeb, AgentTrace trace, AiSettings runtime, long uid,
             AgentRun run) {
+        // One settings read for the whole turn: the switches come from the snapshot already loaded
+        // by requireEnabled(), and the administrator's disable list is fetched once instead of once
+        // per tool. `allowWeb` is the user's consent only — whether the provider is configured is
+        // the tool's own business, so it must not be folded in here.
         List<ToolCallback> callbacks = new ArrayList<>();
-        for (ToolCallback callback : tools.core().getToolCallbacks()) {
-            if (settings.toolEnabled(callback.getToolDefinition().name())) {
-                callbacks.add(track(callback, run, trace));
-            }
-        }
-        if (allowWeb && webSearchProvider.enabled()) {
-            for (ToolCallback callback : tools.web().getToolCallbacks()) {
-                if (settings.toolEnabled(callback.getToolDefinition().name())) {
-                    callbacks.add(track(callback, run, trace));
-                }
-            }
+        for (AgentTool tool : tools.forTurn(runtime, settings.disabledTools(), allowWeb)) {
+            callbacks.add(track(tool, run, trace));
         }
         String context = userContext(uid, question);
         String system = promptBuilder.agentSystem(
@@ -300,13 +329,38 @@ public class AiAgentService {
     }
 
     /**
-     * @param callback tool to invoke
-     * @param run      turn stream, or {@code null} when there is no live channel
-     * @param trace    turn trace
-     * @return the callback wrapped so its invocations publish step markers
+     * @param tool  registered tool
+     * @param run   turn stream, or {@code null} when there is no live channel
+     * @param trace turn trace
+     * @return the callback wrapped so it enforces its deadline and publishes step markers
      */
-    private static ToolCallback track(ToolCallback callback, AgentRun run, AgentTrace trace) {
-        return run == null ? callback : new StepTrackingToolCallback(callback, run, trace);
+    private static ToolCallback track(AgentTool tool, AgentRun run, AgentTrace trace) {
+        return new StepTrackingToolCallback(tool.callback(), run, trace, tool.timeoutMs());
+    }
+
+    /**
+     * @return the deadline of a turn that starts now
+     */
+    private long deadlineNanos() {
+        return System.nanoTime() + this.turnTimeoutMs * NANOS_PER_MILLI;
+    }
+
+    private static long remainingNanos(long deadline) {
+        return deadline - System.nanoTime();
+    }
+
+    /**
+     * @param deadline turn deadline
+     * @throws AiTurnTimeoutException when the turn has no budget left
+     */
+    private void requireTurnBudget(long deadline) {
+        if (remainingNanos(deadline) <= 0) {
+            throw turnTimeout();
+        }
+    }
+
+    private AiTurnTimeoutException turnTimeout() {
+        return new AiTurnTimeoutException(this.turnTimeoutMs);
     }
 
     /**
@@ -318,7 +372,7 @@ public class AiAgentService {
     private String userContext(long uid, String question) {
         try {
             String profile = profiles.promptBlock(uid);
-            List<AiMemoryService.MemoryView> recalled = memories.recall(uid, question, 3);
+            List<MemoryView> recalled = memories.recall(uid, question, 3);
             return promptBuilder.agentContext(profile, recalled);
         } catch (RuntimeException ex) {
             log.warn("Failed to assemble user context for uid {}: {}", uid, ex.getMessage());
@@ -381,7 +435,7 @@ public class AiAgentService {
         return trace;
     }
 
-    private Skill resolveSkill(String skillName, AiAdminSettingsService.Settings runtime) {
+    private Skill resolveSkill(String skillName, AiSettings runtime) {
         if (StringUtil.isBlank(skillName)) {
             return null;
         }
@@ -395,8 +449,8 @@ public class AiAgentService {
         return skill;
     }
 
-    private AiAdminSettingsService.Settings requireEnabled() {
-        AiAdminSettingsService.Settings runtime = settings.get();
+    private AiSettings requireEnabled() {
+        AiSettings runtime = settings.get();
         if (!properties.enabled() || !runtime.aiEnabled()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI assistant is disabled");
         }

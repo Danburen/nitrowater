@@ -1,9 +1,12 @@
 package cn.nitrowater.server.web.dto;
 
+import cn.nitrowater.server.service.ai.model.AgentTurnCommand;
+import cn.nitrowater.server.service.ai.model.ChatTurn;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -26,5 +29,25 @@ public record AiAgentReq(
         List<@Valid AiChatTurn> history,
         String skill,
         boolean allowWeb,
-        boolean continueGeneration) {
+        boolean continueGeneration
+) {
+    /** @return the service command built from this validated body */
+    public AgentTurnCommand toCommand() {
+        List<ChatTurn> turns;
+        if(history == null){
+            turns = new ArrayList<>();
+        } else {
+            turns = history.stream()
+                    .map(turn -> new ChatTurn(turn.role(), turn.content()))
+                    .toList();
+        }
+        return new AgentTurnCommand(
+                question,
+                conversationUuid,
+                turns,
+                skill,
+                allowWeb,
+                continueGeneration
+        );
+    }
 }

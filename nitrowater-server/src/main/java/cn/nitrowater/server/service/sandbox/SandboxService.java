@@ -3,8 +3,8 @@ package cn.nitrowater.server.service.sandbox;
 import cn.nitrowater.server.config.properties.SandboxProperties;
 import cn.nitrowater.server.infra.third.PistonClient;
 import cn.nitrowater.server.infra.exception.SandboxException;
-import cn.nitrowater.server.web.dto.RunRequest;
-import cn.nitrowater.server.web.dto.RunResponse;
+import cn.nitrowater.server.service.sandbox.model.RunCommand;
+import cn.nitrowater.server.service.sandbox.model.RunResult;
 import cn.nitrowater.server.service.shared.CompileErrors;
 import cn.nitrowater.server.service.shared.ExecResult;
 import cn.nitrowater.server.service.shared.ExecSpec;
@@ -36,20 +36,20 @@ public class SandboxService {
     /**
      * Runs {@code request} once and returns its output.
      *
-     * @param request the front-end run request
+     * @param command the validated run command
      * @return the normalised run result
      * @throws SandboxException on invalid input or when the sandbox is unreachable/errored
      */
-    public RunResponse run(RunRequest request) {
-        LanguageMapper.Target target = LanguageMapper.resolve(request.language())
+    public RunResult run(RunCommand command) {
+        LanguageMapper.Target target = LanguageMapper.resolve(command.language())
                 .orElseThrow(() -> new SandboxException(
                         HttpStatus.BAD_REQUEST, "unsupported_language",
-                        "Unsupported language: " + request.language()));
+                        "Unsupported language: " + command.language()));
 
-        if (StringUtil.isBlank(request.code())) {
+        if (StringUtil.isBlank(command.code())) {
             throw new SandboxException(HttpStatus.BAD_REQUEST, "empty_code", "Code must not be empty");
         }
-        if (request.code().getBytes(StandardCharsets.UTF_8).length > properties.maxCodeBytes()) {
+        if (command.code().getBytes(StandardCharsets.UTF_8).length > properties.maxCodeBytes()) {
             throw new SandboxException(HttpStatus.BAD_REQUEST, "code_too_large",
                     "Code exceeds the maximum size of " + properties.maxCodeBytes() + " bytes");
         }
@@ -59,8 +59,8 @@ public class SandboxService {
                 target.pistonLanguage(),
                 target.version(),
                 target.fileName(),
-                LanguagePrelude.wrap(target.pistonLanguage(), request.code()),
-                request.stdin() == null ? "" : request.stdin(),
+                LanguagePrelude.wrap(target.pistonLanguage(), command.code()),
+                command.stdin() == null ? "" : command.stdin(),
                 properties.compileTimeoutMs(),
                 properties.runTimeoutMs(),
                 properties.memoryLimitBytes(),
@@ -87,22 +87,22 @@ public class SandboxService {
      * dedicated compile stage (Java, Python) still surface {@code CE} with the compiler output,
      * instead of masquerading as a runtime error.</p>
      */
-    private RunResponse toResponse(String pistonLanguage, ExecResult result) {
+    private RunResult toResponse(String pistonLanguage, ExecResult result) {
         String diagnostic = CompileErrors.diagnostic(pistonLanguage, result);
         if (diagnostic != null) {
             ExecResult.Stage compile = result.compile() != null ? result.compile() : result.run();
             Long wallTime = compile == null ? null : compile.wallTimeMs();
             Long memory = compile == null ? null : compile.memoryBytes();
             Integer exitCode = compile == null ? null : compile.code();
-            return new RunResponse(null, truncate(diagnostic), "CE", exitCode, wallTime, memory,
+            return new RunResult(null, truncate(diagnostic), "CE", exitCode, wallTime, memory,
                     "compilation failed");
         }
         ExecResult.Stage run = result.run() != null ? result.run() : result.compile();
         if (run == null) {
-            return new RunResponse(null, null, "SE", null, null, null, "No execution result returned");
+            return new RunResult(null, null, "SE", null, null, null, "No execution result returned");
         }
         String status = run.status() == null ? "OK" : run.status();
-        return new RunResponse(truncate(run.stdout()), truncate(run.stderr()), status, run.code(),
+        return new RunResult(truncate(run.stdout()), truncate(run.stderr()), status, run.code(),
                 run.wallTimeMs(), run.memoryBytes(), run.message());
     }
 

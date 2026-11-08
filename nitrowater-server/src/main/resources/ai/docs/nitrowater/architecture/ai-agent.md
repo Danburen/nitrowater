@@ -33,6 +33,7 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 | `app.ai.web-search.max-successes` | `3` | 单轮成功联网上限（失败/重试不计数） |
 | `app.ai.web-search.max-attempts` | `2` | 单次调用的 HTTP 尝试上限（首查 + 一次重试） |
 | `app.ai.web-search.retry-backoff-ms` | `300` | 可重试失败之间的间隔 |
+| `app.ai.agent.turn-timeout-ms` | `150000` | 单轮总预算（模型回合 + 工具），必须小于 SSE 的 180s |
 
 聊天、embedding、联网搜索**各自独立**：聊天与 embedding 都走智谱 GLM 的 OpenAI 兼容接口（`https://open.bigmodel.cn/api/paas/v4`，共用 `GLM_API_KEY`，embedding 只做向量化），联网搜索走 DeepSeek 搜索 API（`DEEPSEEK_API_KEY`）。密钥都从环境变量读取；缺失时服务仍可启动，但对应能力不可用（`/api/ai/status` 的 `webSearchEnabled` 反映真实状态）。注意 Spring AI 2.x 的请求 URL = base-url + 固定路径（`/chat/completions`、`/embeddings`），base-url 必须带版本段。
 
@@ -75,16 +76,44 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 
 ### 5.1 技能
 
-- 内置技能在 `resources/ai/skills/<name>/SKILL.md`，外部技能在 `deploy/ai-skills/<name>/SKILL.md`，同名时外部覆盖内置。
+- 内置技能在 `resources/ai/skills/<name>/SKILL.md`（随 jar 发布）；管理台新增 / 导入的技能存 `ai_skill`，同名时数据库行覆盖内置，删除行即恢复内置。
 - 当前内置：`command-reference`、`config-walkthrough`、`troubleshooting`。
+- **热加载**：`SkillRegistry` 每轮都从数据库读管理行，没有缓存、没有 reload 按钮；保存 / 导入 / 删除即对下一轮对话生效，多副本天然一致。
+- 管理台支持导入 `SKILL.md`（front matter + 正文）与导出（内置也可导出，改完再导入即成为覆盖行）；导入时若 front matter 没有 `description`，取正文第一行作为目录摘要。
 - 系统提示词列出全部技能与适用场景，模型按需 `loadSkill`；未显式选择的技能不会内联进提示词。
 
-### 5.2 工具调用限额
+### 5.2 工具注册与门禁
+
+工具在 `AgentToolRegistry` 一处登记，四个事实互相独立，**不得合并成一个布尔**：
+
+| 事实 | 来源 | 含义 |
+|---|---|---|
+| `available` | 注册时的 `probe`（目前只有 `webSearch` 用它探 API key） | 运行时依赖是否就绪，与权限无关 |
+| `feature` | `ToolFeature`（DOCS/SKILLS/CODE/WEB/NONE） | 管理员功能开关；同时是控制台「来源」列的取值（`ToolFeature.bucket()` → `docs/skills/code/web/core`） |
+| `disabledTools` | `ai_admin_setting.disabled_tools` | 管理员对单个工具的隐藏 |
+| `optIn` | 请求里的 `allowWeb` | 用户本回合是否同意 |
+
+- 组合规则只有 `AgentTool.advertised(...)` 一处；新增门禁改这里，不要在每个调用点重算。
+- 控制台 `AiToolInfo` 分别上报 `enabled`（配置）/ `optIn`（需用户同意）/ `available`（运行时可用），所以「管理员关了」与「用户没勾选」不会被压成同一个 false。
+- 新增工具：在注册表加一行 `scan(...)`；新增分类：给 `ToolFeature` 加一个枚举值并补 `bucket()`，控制台会自动多一个来源标签（前端未映射时回落显示原始值）。
+
+### 5.2.1 工具调用限额
 
 - `max-total-tool-calls: 10`：单轮所有工具调用总数。
 - `max-calls-per-tool-default: 3`：单个工具默认上限。
 - `runCode: 4`：第 4 次必须放行，让工具自己返回 `retry_exhausted`；若这里回退成默认 3，模型永远看不到该状态（`ToolLimitBindingTest` 守住这条）。
 - 超限策略：`on-limit-exceeded: RETURN_ERROR_RESPONSE`，把错误回给模型而不是抛异常。
+
+### 5.2.2 两级时限（不重试）
+
+| 层级 | 位置 | 行为 |
+|---|---|---|
+| 单轮 | `AiAgentService`（`app.ai.agent.turn-timeout-ms`） | 到期即结束本轮：下一轮不启动，工具批次不再执行；流式发 `error{code=turn_timeout}`，非流式回 504 |
+| 单次工具 | `StepTrackingToolCallback`（注册表里的 `AgentTool.timeoutMs`：检索 25s / DB 10s / 沙箱与联网 0 = 工具自负） | 到期返回**可重试结果** `tool.timeout`（`success=false, retryable=true`），模型可换参数再试一次；卡片以 `tool.timeout` 收尾 |
+
+- 超时只是"不再等"，不是取消：JDBC/HTTP 调用可能仍在跑，其结果被丢弃。因此不能承诺副作用没发生。
+- 不设通用重试层：`saveMemory` 是写、`runCode` 花钱、`searchDocs` 只是慢。是否重试由模型看到 `retryable` 后决定。
+- 用户想接着来时走新一轮（`continueGeneration` 语义），历史里保留那条 `tool.timeout`，模型自然知道上次卡在哪。
 
 ### 5.3 联网触发策略
 
@@ -153,7 +182,7 @@ searchDocs(query)
 | 位置 | 触发点 | LOG | ENFORCE |
 |---|---|---|---|
 | 用户输入 | `ConversationService.start()`，落库与调用模型之前 | 记录 | 400 `content_blocked`，不产生 `ai_message` 行 |
-| 模型回答 | `AiAgentController`（同步与流式各 1 处） | 记录 | 落库存**遮蔽后**文本；流式再发 SSE `moderation{text}` 让前端替换气泡 |
+| 模型回答 | `AgentTurnService`（同步与流式各 1 处） | 记录 | 落库存**遮蔽后**文本；流式再发 SSE `moderation{text}` 让前端替换气泡 |
 | 长期记忆 | `AiMemoryService.save()` | 记录 | 拒绝写入 |
 | 画像偏好 | `AiProfileService` 写入时逐条校验；`promptBlock()` 读取时再过滤历史脏数据 | 记录 | 400 `content_blocked` |
 
@@ -190,9 +219,12 @@ searchDocs(query)
 ## 10. 相关源码
 
 - `service/ai/DocChunkBuilder.java`、`DocCollection.java`、`DocsIndexService.java`、`DocRetriever.java`、`PromptBuilder.java`
-- `service/ai/model/agent/AiAgentService.java`、`AgentTrace.java`、`AgentRun.java`、`PreparedAgent.java`、`StepTrackingToolCallback.java`、`ToolCall.java`
+- `service/ai/model/agent/AiAgentService.java`、`AgentTrace.java`、`AgentRun.java`、`PreparedAgent.java`、`StepTrackingToolCallback.java`、`ToolCall.java`、`AgentTool.java`、`ToolFeature.java`
 - `service/ai/model/tool/ToolResponse.java`、`ToolCode.java`
-- `service/ai/tool/DocTools.java`、`SkillTools.java`、`RunCodeTool.java`、`WebSearchTool.java`、`MemoryTools.java`
+- `service/ai/tool/AgentToolRegistry.java`（唯一注册表：扫描 `@Tool`、按开关 + 停用列表 + 本轮 opt-in 过滤）、`DocTools.java`、`SkillTools.java`、`RunCodeTool.java`、`WebSearchTool.java`、`MemoryTools.java`
 - `service/ai/SkillRegistry.java`
-- `web/AiAgentController.java`、`web/AiController.java`、`web/admin/AdminAiController.java`
+- `service/ai/AgentTurnService.java`（一轮对话的编排：落库 / 模型 / 风控 / SSE 协议）、`AiStatusService.java`、`AiToolCatalogService.java`、`AiAdminReportService.java`
+- `web/AiAgentController.java`（仅传输层）、`web/AiController.java`、`web/admin/AdminAiController.java`
+- `web/dto/`（请求体）、`web/vo/`（响应体，`from(...)` 把 service model 转成线形状）
+- `service/ai/model/`（`AgentTurnCommand`、`AgentTurnResult`、`AiStatusSnapshot`、`SkillRow`/`SkillDetail`/`SkillDraft` 等与 HTTP 无关的 service model）
 - `nitrowater-bff/.../web/AiStreamProxyController.java`

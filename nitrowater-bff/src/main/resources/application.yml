@@ -25,6 +25,19 @@ spring:
   application:
     name: nitrowater-bff
 
+  # -------- Multipart: deliberately OFF --------
+  # This service is a pure streaming proxy: /api/** is copied byte-for-byte to a downstream
+  # service. With the resolver enabled, Spring MVC's DispatcherServlet wraps every multipart/*
+  # request in a StandardMultipartHttpServletRequest BEFORE the handler runs, which parses (and
+  # drains) the request body. The proxy then streams an already-consumed input stream while still
+  # declaring the original Content-Length, so the downstream receives a truncated body and dies
+  # with "Failed to parse multipart servlet request" (skill import, jar upload, ...).
+  # Multipart parsing belongs to the service that owns the upload endpoint; the BFF must not touch
+  # the body.
+  servlet:
+    multipart:
+      enabled: false
+
   # -------- Redis（会话存储；无数据库）--------
   data:
     redis:

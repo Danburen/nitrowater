@@ -67,7 +67,6 @@
 | `AI_COLLECTION` | Qdrant 集合名 | `nitrowater_velochatx_docs` |
 | `AI_INGEST_ON_STARTUP` | 启动时若集合为空则自动索引 | `true` |
 | `AI_PER_USER_PER_MINUTE` | 每用户每分钟提问配额（Redis） | `20` |
-| `AI_SKILLS_DIR` | 外部技能目录（`<name>/SKILL.md`，覆盖同名内置） | `deploy/ai-skills` |
 | `AI_MEMORY_RETENTION_DAYS` | 长期记忆未使用/未更新的保留天数；超过后自动置为 `EXPIRED` | `180` |
 | `AI_MEMORY_PURGE_DAYS` | `USER_DELETED` / `EXPIRED` 记忆的审计保留天数；超过后物理删除 | `30` |
 | `AI_MEMORY_CLEANUP_CRON` | 记忆生命周期清理任务 cron（6 段） | `0 15 3 * * *` |
@@ -115,7 +114,7 @@
 - JWT 私钥改由环境变量 `JWT_PRIVATE_KEY` 指向挂载路径（`file:/etc/nitrowater/keys/private.key`）；
 - `NITROWATER_KEK` 由密钥管理系统注入；
 - JPA `ddl-auto` 由 `update` 改为 `validate` + Flyway 基线；
-- docker 部署：`deploy/docker/`（`docker-compose.{infra,app,piston}.yml` + 模板 `.env.example`；根单文件多目标 `Dockerfile`），已对齐 waterfun 约定（infra=中间件、external `nitrowater-net`、服务=app）。
+- docker 部署：`deploy/docker/`（`docker-compose.infra.yml` / `docker-compose.account.yml` / `docker-compose.app.yml` + 唯一模板 `.env.prod.example`；根单文件多目标 `Dockerfile`），已对齐 waterfun 约定（infra=中间件 + edge profile、account 独立发布、external `nitrowater-net`、业务=app）。
 
 ## 8. 账号验证码发送（account）
 
@@ -136,41 +135,39 @@
 >
 > 生产必须设置 `COMMUNICATION_MODE=real` 并补齐 SMTP / 阿里云短信配置（`deploy/bin/check-env.*` 会校验）；降级/mock 模式会泄露验证码到日志，禁止用于生产。
 
-## 9. 内容解耦与挂载（词表 / 文档语料 / 外部 skills）
+## 9. 内容解耦与挂载（词表 / 文档语料）
 
 代码走镜像、策略走数据库、内容走卷：三者发布节奏不同，混在一起就会出现"改一个词要发一次版"。
 
+app compose 把 `deploy/content/{moderation,docs}` **常驻只读挂载**到
+`/etc/nitrowater/{moderation,docs}`；目录为空不影响启动，是否启用由下面两个变量决定。
+
 | 变量 | 用途 | 默认 | 说明 |
 |------|------|------|------|
-| `CONTENT_ROOT` | 宿主机内容根目录 | `deploy/content`（叠加层内为 `../content`） | 其下 `moderation/` `docs/` `skills/` 三个子目录 |
-| `AI_MODERATION_DICT` | 违禁词位置，**逗号分隔多层** | `classpath:ai/moderation/words.txt` | 生产写法：`classpath:...,file:/etc/nitrowater/moderation/words.txt` |
+| `CONTENT_ROOT` | 宿主机内容根目录（相对 `deploy/docker/`） | `../content`（= `deploy/content`） | 其下 `moderation/` `docs/` 两个子目录 |
+| `AI_MODERATION_DICT` | 违禁词位置，**逗号分隔多层** | `classpath:ai/moderation/words.txt` | 启用外置词表：`classpath:...,file:/etc/nitrowater/moderation/words.txt` |
 | `AI_MODERATION_ALLOW` | 白名单位置，多层语义同上 | `classpath:ai/moderation/allow.txt` | 命中 allow 即判为不违规 |
 | `AI_DOCS_LOCATION` | 覆盖 `nitrowater` 语料位置 | `classpath:ai/docs/nitrowater` | 纯路径（`/etc/nitrowater/docs/nitrowater`）或 `file:` 前缀均可；**目录必须含 `.md`** |
-| `AI_SKILLS_DIR` | 外部技能目录（`<name>/SKILL.md`） | `deploy/ai-skills`（容器内不存在） | 外部同名技能覆盖内置 |
 | `AI_COLLECTION` | Qdrant 集合名 | `nitrowater_velochatx_docs` | 换 embedding 模型/维度时**换集合**，别原地重建 |
 
 ### 9.1 启用方式
 
-推荐走单入口（自动带 `check-env` 预检）：
-
-```powershell
-.\deploy\bin\deploy.ps1 -Content          # Windows；-SkipCheck 可跳过预检
-```
-```bash
-bash deploy/bin/deploy.sh --content       # Linux/macOS；--skip-check 可跳过预检
-```
-
-`deploy.{ps1,sh}` 在 `deploy/content/moderation/words.txt` 存在、或 `deploy/content/docs`
-下有任意 `.md` 时会**自动开启**叠加层；不加 `--content` 也可显式强制。
-
-等价的手工方式：
+内容挂载是 app compose 的一部分，不需要额外的 overlay 文件，也不需要额外开关：
 
 ```bash
-docker compose -f docker-compose.app.yml -f docker-compose.content.yml up -d
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d
 ```
 
-不叠加该文件时，行为与之前完全一致（词表与文档仍取镜像 `classpath`）。内容目录契约见
-`deploy/content/README.md`；该目录被 `.gitignore` 排除，仅保留 `README.md` / `.gitkeep`。
+要让外置文件真正**生效**，在 `.env` 里显式打开对应变量（默认只用镜像内 classpath）：
+
+```bash
+AI_MODERATION_DICT=classpath:ai/moderation/words.txt,file:/etc/nitrowater/moderation/words.txt
+AI_MODERATION_ALLOW=classpath:ai/moderation/allow.txt,file:/etc/nitrowater/moderation/allow.txt
+AI_DOCS_LOCATION=/etc/nitrowater/docs/nitrowater
+```
+
+`deploy/content/` 被 `.gitignore` 排除，仅保留 `README.md` / `.gitkeep`；契约见
+`deploy/content/README.md`。
 
 ### 9.2 三条硬规则
 
@@ -186,7 +183,6 @@ docker compose -f docker-compose.app.yml -f docker-compose.content.yml up -d
 |------|----------|----------|
 | 词表 `words.txt` / `allow.txt` | `POST /api/admin/ai/moderation/reload` | 否 |
 | 文档语料 | `POST /api/admin/ai/reindex`（全量重建，建议低峰） | 否 |
-| 外部 skills | 下次 `loadSkill` 读取 | 否（技能注册在启动时，改动后如未生效则重启） |
 | 模式 off/log/enforce | 管理端 › AI › 运行设置 | 否 |
 
 ### 9.4 上线前核对（`deploy/bin/check-env.ps1` / `check-env.sh` 覆盖）
@@ -194,6 +190,9 @@ docker compose -f docker-compose.app.yml -f docker-compose.content.yml up -d
 - 词表文件存在且去注释后非空；`AI_MODERATION_DICT` 含 classpath 基线；
 - `AI_DOCS_LOCATION` 指向路径（纯路径或 `file:`）时目录存在且含 `.md`；
 - 必需变量非占位值（`123456` / `change-me` / `nitrowater-bff-secret` / dev 默认 salt）；
+  `.env` 里残留的 `YOUR_*_HERE` 模板占位值会汇总成一条 FAIL（复制模板后不填跑不过门禁）；
+- 生产（非 `--local`）下 `REDIS_PASSWORD` 必须非空（Redis 存 BFF 会话，且与 Piston 同网段）；
+- 生产（非 `--local`）下 `APP_SESSION_EPOCH` 必须存在且不是 `dev`（否则发布不会失效旧会话）；
 - `COMMUNICATION_MODE=real` 时 SMTP + 阿里云短信齐全；`RESOURCE_BACKEND=cos` 时 COS 齐全；
 - chat / embedding key 至少一条可用来源；`JWT_ISSUER` 是 URL；`deploy/keys/*.key` 存在。
 
@@ -205,13 +204,12 @@ docker compose -f docker-compose.app.yml -f docker-compose.content.yml up -d
 ```powershell
 $env:AI_MODERATION_DICT='classpath:ai/moderation/words.txt,file:deploy/content/moderation/words.txt'
 $env:AI_DOCS_LOCATION='deploy/content/docs/nitrowater'   # 纯路径即可，不需要 file:
-$env:AI_SKILLS_DIR='deploy/content/skills'
 .\gradlew.bat :nitrowater-server:bootRun
 ```
 
 | 产物 | 本地位置 | 生产位置 | 差异 |
 |------|----------|----------|------|
-| 词表 / 语料 / 外部技能 | `deploy/content/*`（相对路径） | 同目录 → 挂进 `/etc/nitrowater/*:ro` | 路径前缀与只读挂载 |
+| 词表 / 语料 | `deploy/content/*`（相对路径） | 同目录 → 挂进 `/etc/nitrowater/*:ro` | 路径前缀与只读挂载 |
 | 站点文档（HTML） | `deploy/plugin-docs/` | 同一 compose 的 `docs` 服务 | 本地 `sync-docs.ps1` 填、prod 由 CI 发布 |
 | 统一资源二进制（插件 Jar / 上传） | `deploy/resource-storage/`（`RESOURCE_BACKEND=local`） | SeaweedFS / COS | 本地才用文件系统后端 |
 | JWT 密钥 | `deploy/keys/` | 同目录挂进容器 | 无 |
@@ -237,7 +235,7 @@ $env:AI_SKILLS_DIR='deploy/content/skills'
 | `WEB_DOMAIN` | edge 必填 | 业务站点域名，可写逗号列表（`a.cn,www.a.cn`） |
 | `AUTH_DOMAIN` | edge 必填 | SSO 子域（`auth.a.cn`），`JWT_ISSUER` 必须与之一致 |
 | `SSL_EMAIL` | edge 必填 | Let's Encrypt 联系邮箱 |
-| `SESSION_COOKIE_SECURE` | `false` | HTTPS 下必须 `true`；edge 叠加层自动注入 |
+| `SESSION_COOKIE_SECURE` | `false` | HTTPS 下必须 `true` |
 
 ### 10.1 拓扑
 
@@ -252,18 +250,20 @@ $env:AI_SKILLS_DIR='deploy/content/skills'
 
 ### 10.2 启用
 
-```powershell
-.\deploy\bin\deploy.ps1 -Edge      # Windows
-```
 ```bash
-bash deploy/bin/deploy.sh --edge   # Linux/macOS
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml \
+  --profile edge up -d
 ```
 
-等价手工：`docker compose -f docker-compose.app.yml -f docker-compose.edge.yml up -d`
-（可再叠加 `-f docker-compose.content.yml`）。不叠加 edge 时行为不变，只是没有公网入口。
+不带 `--profile edge` 时行为不变，只是没有公网入口。
 
-回滚：去掉 `-f docker-compose.edge.yml` 重新 `up -d`，旧容器会被移除；证书卷保留，
-下次启用即复用，不会重复申请。
+回滚（关闭公网入口，业务回落到 `PUBLISH_BIND` 回环）：
+
+```bash
+docker compose -f deploy/docker/docker-compose.infra.yml --profile edge stop nginx-proxy acme-companion
+```
+
+证书卷保留，下次启用即复用，不会重复申请。
 
 ### 10.3 证书
 
@@ -296,8 +296,9 @@ bash deploy/bin/ops-tunnel.sh --host ops.example.com
 
 1. 接受降级（只影响内联图片）；
 2. `RESOURCE_BACKEND=local`：全部走 `resource` 流式，代价是流量过服务；
-3. 在 `docker-compose.edge.yml` 里打开注释掉的 `s3` vhost，并设
-   `S3_PUBLIC_ENDPOINT=https://<S3_DOMAIN>`（presigned URL 由签名+有效期保护）。
+3. 给 `seaweedfs` 容器加 `VIRTUAL_HOST=<S3_DOMAIN>` / `VIRTUAL_PORT=8333` / `LETSENCRYPT_HOST=<S3_DOMAIN>`
+   （edge profile 下由 nginx-proxy 反代），并设 `S3_PUBLIC_ENDPOINT=https://<S3_DOMAIN>`
+   （presigned URL 由签名+有效期保护）。
 
 ## 11. 资源（对象存储）与三个更新入口
 
@@ -305,7 +306,7 @@ bash deploy/bin/ops-tunnel.sh --host ops.example.com
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `RESOURCE_USER_UPLOAD` | `true`（edge 叠加层默认 `false`） | `false` 时 `/api/resource/upload/**` 仍映射，但返回 `503 uploads_disabled` |
+| `RESOURCE_USER_UPLOAD` | `false`（app compose 默认） | `false` 时 `/api/resource/upload/**` 仍映射，但返回 `503 uploads_disabled` |
 
 "保留接口、不暴露"：改环境变量即可，代码/前端都不用动。
 

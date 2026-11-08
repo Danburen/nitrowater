@@ -12,12 +12,39 @@ import AiAdminTextCell from '../components/AiAdminTextCell.vue'
 import { toast } from '../../../shared/ui/toast'
 import { fetchAdminTools, setAdminToolEnabled, type AiTool } from '../../../api/ai'
 
+/**
+ * Display names of the catalog buckets. A bucket the backend adds later still renders (the raw
+ * value is the fallback), so a server-side feature never requires a frontend release to be useful.
+ */
+const SOURCE_LABELS: Readonly<Record<string, string>> = {
+  core: '内置',
+  docs: '文档',
+  skills: '技能',
+  code: '代码',
+  web: '联网',
+}
+
 const tools = ref<AiTool[]>([])
 const loading = ref(false)
 const error = ref('')
 const drawer = reactive({ visible: false, tool: null as AiTool | null })
 
 const enabledCount = computed(() => tools.value.filter((tool) => tool.enabled).length)
+
+/** @param tool catalog row @return the bucket label, or the raw bucket when it is not mapped yet */
+function sourceLabel(tool: AiTool): string {
+  return SOURCE_LABELS[tool.source] ?? tool.source
+}
+
+/** Drawer subtitle: bucket, switch state, and the gates that explain why a tool may not run. */
+const detailLine = computed(() => {
+  const tool = drawer.tool
+  if (!tool) return ''
+  const state = tool.enabled ? '启用' : '停用'
+  const consent = tool.optIn ? ' · 需用户同意' : ''
+  const usable = tool.available ? '' : ' · 运行时不可用'
+  return `来源：${sourceLabel(tool)} · 状态：${state}${consent}${usable}`
+})
 
 /** Pretty-printed schema; the wire value is a JSON string produced by Spring AI. */
 const schema = computed(() => {
@@ -73,23 +100,27 @@ async function copySchema(): Promise<void> {
     title="工具"
     description="工具由代码注册，只能在后续对话中启用或停用；此处展示模型实际看到的输入结构。"
   >
-    <template #actions>
-      <span class="text-[13px] text-dim">{{ enabledCount }} / {{ tools.length }} 启用</span>
-    </template>
-
     <el-alert
       v-if="error"
       :title="error"
       type="error"
       show-icon
       :closable="false"
-      class="mb-3"
     />
 
     <el-card
       shadow="never"
-      class="admin-card"
+      class="admin-card admin-card-flush"
     >
+      <template #header>
+        <div class="admin-card-header">
+          <div class="flex items-baseline gap-2">
+            <span class="admin-card-title">工具列表</span>
+            <span class="admin-card-meta">{{ enabledCount }} / {{ tools.length }} 启用</span>
+          </div>
+        </div>
+      </template>
+
       <el-table
         v-loading="loading"
         :data="tools"
@@ -113,8 +144,11 @@ async function copySchema(): Promise<void> {
         <el-table-column
           label="来源"
           width="90"
-          prop="source"
-        />
+        >
+          <template #default="{ row }">
+            <span>{{ sourceLabel(row as AiTool) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column
           label="描述"
           min-width="200"
@@ -125,15 +159,24 @@ async function copySchema(): Promise<void> {
         </el-table-column>
         <el-table-column
           label="状态"
-          width="90"
+          width="150"
         >
           <template #default="{ row }">
-            <el-switch
-              :model-value="row.enabled"
-              size="small"
-              :disabled="loading"
-              @change="(value: unknown) => toggle(row as AiTool, value === true)"
-            />
+            <div class="flex items-center gap-2">
+              <el-switch
+                :model-value="row.enabled"
+                size="small"
+                :disabled="loading"
+                @change="(value: unknown) => toggle(row as AiTool, value === true)"
+              />
+              <el-tag
+                v-if="!(row as AiTool).available"
+                size="small"
+                type="warning"
+              >
+                不可用
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column
@@ -167,7 +210,7 @@ async function copySchema(): Promise<void> {
                 {{ drawer.tool.name }}
               </p>
               <p class="mt-1 text-[12.5px] text-dim">
-                来源：{{ drawer.tool.source }} · 状态：{{ drawer.tool.enabled ? '启用' : '停用' }}
+                {{ detailLine }}
               </p>
             </div>
             <el-switch

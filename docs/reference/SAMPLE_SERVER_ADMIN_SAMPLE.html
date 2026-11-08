@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NitroWater · 管理后台列表页</title>
+
+<!-- Element Plus + Icons -->
+<link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+<link rel="stylesheet" href="https://unpkg.com/@element-plus/icons-vue/dist/index.css" />
+
+<style>
+/* ============ 1. 设计 token（对齐 nitroWater 现有 token） ============ */
+:root {
+  --nw-radius-card: 14px;
+  --nw-radius-control: 9px;
+  --nw-topbar-h: 56px;
+  --nw-sidebar-w: 232px;
+  --nw-sidebar-w-collapsed: 64px;
+  --nw-content-max: 1120px;
+  --nw-gap-block: 16px;
+
+  /* 暗色默认 */
+  --nw-bg: #0f1115;
+  --nw-soft: #171a21;
+  --nw-card: #1c2029;
+  --nw-line: #2a2f3a;
+  --nw-ink: #e6e8ec;
+  --nw-dim: #9aa1ad;
+  --nw-faint: #737b8a;
+  --nw-accent: #5b8cff;
+  --nw-accent-2: #9b6bff;
+  --nw-ok: #6fcf8f;
+  --nw-warn: #f0b45b;
+  --nw-danger: #d97b7b;
+
+  /* Element Plus 变量映射到同一套 token */
+  --el-border-radius-base: 9px;
+  --el-border-radius-small: 8px;
+  --el-font-size-base: 13px;
+  --el-component-size: 34px;
+  --el-component-size-small: 28px;
+  --el-color-primary: var(--nw-accent);
+  --el-bg-color: var(--nw-card);
+  --el-bg-color-overlay: var(--nw-card);
+  --el-fill-color-blank: var(--nw-card);
+  --el-fill-color-light: var(--nw-soft);
+  --el-border-color: var(--nw-line);
+  --el-border-color-light: var(--nw-line);
+  --el-border-color-lighter: var(--nw-line);
+  --el-text-color-primary: var(--nw-ink);
+  --el-text-color-regular: var(--nw-ink);
+  --el-text-color-secondary: var(--nw-dim);
+  --el-text-color-placeholder: var(--nw-faint);
+  --el-danger-color: var(--nw-danger);
+  --el-success-color: var(--nw-ok);
+  --el-warning-color: var(--nw-warn);
+}
+:root[data-theme='light'] {
+  --nw-bg: #f6f7f9;
+  --nw-soft: #eef1f5;
+  --nw-card: #ffffff;
+  --nw-line: #e3e7ed;
+  --nw-ink: #1b1e24;
+  --nw-dim: #5a616c;
+  --nw-faint: #8b929d;
+  --nw-accent: #3b6fe0;
+  --nw-accent-2: #7c4dff;
+}
+
+/* ============ 2. 基础 ============ */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--nw-bg);
+  color: var(--nw-ink);
+  font: 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============ 3. 壳：侧栏 + 顶栏 ============ */
+.nw-shell { display: flex; min-height: 100vh; }
+
+.nw-sidebar {
+  width: var(--nw-sidebar-w);
+  flex: 0 0 var(--nw-sidebar-w);
+  background: var(--nw-soft);
+  border-right: 1px solid var(--nw-line);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh;
+  transition: width .18s ease, flex-basis .18s ease;
+}
+.nw-sidebar.collapsed { width: var(--nw-sidebar-w-collapsed); flex-basis: var(--nw-sidebar-w-collapsed); }
+
+.nw-brand {
+  height: var(--nw-topbar-h);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 14px; border-bottom: 1px solid var(--nw-line);
+}
+.nw-brand .logo {
+  width: 26px; height: 26px; border-radius: 8px; flex: 0 0 26px;
+  background: linear-gradient(135deg, var(--nw-accent), var(--nw-accent-2));
+}
+.nw-brand .name { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.nw-sidebar.collapsed .name { display: none; }
+
+.nw-nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow: auto; flex: 1; }
+.nw-nav-group { font-size: 11.5px; color: var(--nw-faint); padding: 12px 10px 6px; letter-spacing: .04em; }
+.nw-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 9px; color: var(--nw-dim);
+  cursor: pointer; white-space: nowrap; font-size: 13px; text-decoration: none;
+}
+.nw-nav-item:hover { background: color-mix(in srgb, var(--nw-accent) 10%, transparent); color: var(--nw-ink); }
+.nw-nav-item.active { background: color-mix(in srgb, var(--nw-accent) 16%, transparent); color: var(--nw-ink); }
+.nw-nav-item .ico { width: 16px; height: 16px; flex: 0 0 16px; display: grid; place-items: center; }
+.nw-sidebar.collapsed .nw-nav-item span { display: none; }
+
+.nw-sidebar-footer {
+  border-top: 1px solid var(--nw-line);
+  padding: 10px 8px; display: flex; align-items: center; gap: 8px;
+}
+.nw-avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex: 0 0 26px;
+  display: grid; place-items: center; font-size: 11px; font-weight: 600;
+  background: linear-gradient(135deg, var(--nw-accent), var(--nw-accent-2)); color: #fff;
+}
+.nw-sidebar.collapsed .nw-user-meta { display: none; }
+.nw-user-meta { font-size: 12.5px; }
+.nw-user-meta b { display: block; font-weight: 600; }
+.nw-user-meta small { color: var(--nw-faint); }
+
+/* 主区 */
+.nw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.nw-topbar {
+  height: var(--nw-topbar-h);
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--nw-line);
+  background: var(--nw-bg);
+  position: sticky; top: 0; z-index: 10;
+}
+.nw-topbar .crumb { font-size: 12.5px; color: var(--nw-faint); }
+.nw-topbar .crumb b { color: var(--nw-ink); font-weight: 500; }
+.nw-topbar .spacer { flex: 1; }
+
+.icon-btn {
+  width: 28px; height: 28px; border-radius: 9px; border: 1px solid var(--nw-line);
+  background: transparent; color: var(--nw-dim); cursor: pointer;
+  display: grid; place-items: center;
+}
+.icon-btn:hover { color: var(--nw-ink); border-color: var(--nw-accent); }
+
+/* ============ 4. 页面 ============ */
+.nw-page {
+  max-width: var(--nw-content-max);
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex; flex-direction: column; gap: var(--nw-gap-block);
+}
+@media (max-width: 991px) { .nw-page { padding: 16px; } }
+
+/* 页头：只留 H1 + 描述（主操作下沉到操作条） */
+.nw-page-header { display: flex; flex-direction: column; gap: 4px; }
+.nw-page-header h1 { font-size: 20px; font-weight: 600; margin: 0; }
+.nw-page-header p { margin: 0; font-size: 13px; color: var(--nw-dim); }
+
+/* 操作条：表格左上；左动作 / 右批量 */
+.nw-action-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.nw-action-bar .spacer { flex: 1; }
+
+/* 筛选栏 */
+.nw-filter-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 12px; background: var(--nw-soft);
+  border: 1px solid var(--nw-line); border-radius: var(--nw-radius-card);
+}
+.nw-filter-bar .filter-item { display: flex; align-items: center; gap: 6px; }
+.nw-filter-bar .filter-item label { font-size: 12.5px; color: var(--nw-dim); white-space: nowrap; }
+.nw-filter-bar .filter-actions { margin-left: auto; display: flex; gap: 8px; }
+@media (max-width: 991px) {
+  .nw-filter-bar { flex-direction: column; align-items: stretch; }
+  .nw-filter-bar .filter-item { justify-content: space-between; }
+  .nw-filter-bar .filter-item .el-input,
+  .nw-filter-bar .filter-item .el-select { width: 100% !important; }
+  .nw-filter-bar .filter-actions { margin-left: 0; }
+}
+
+/* 卡片壳 */
+.nw-card {
+  background: var(--nw-card); border: 1px solid var(--nw-line);
+  border-radius: var(--nw-radius-card); overflow: hidden;
+}
+
+/* Danger zone */
+.nw-danger-zone {
+  border: 1px solid color-mix(in srgb, var(--nw-danger) 40%, transparent);
+  border-radius: var(--nw-radius-card); padding: 16px;
+}
+.nw-danger-zone h3 { margin: 0 0 4px; font-size: 14px; color: var(--nw-danger); }
+.nw-danger-zone p { margin: 0 0 12px; font-size: 12.5px; color: var(--nw-dim); }
+
+/* 行内链接按钮 */
+.nw-link {
+  border: none; background: none; padding: 0; cursor: pointer;
+  color: var(--nw-accent); font-size: 13px;
+}
+.nw-link:hover { text-decoration: underline; }
+.nw-link.danger { color: var(--nw-danger); }
+.nw-link + .nw-link { margin-left: 12px; }
+
+/* 状态 badge */
+.nw-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--nw-line); color: var(--nw-dim);
+}
+.nw-badge.ok { color: var(--nw-ok); border-color: color-mix(in srgb, var(--nw-ok) 45%, transparent); }
+.nw-badge.warn { color: var(--nw-warn); border-color: color-mix(in srgb, var(--nw-warn) 45%, transparent); }
+.nw-badge.danger { color: var(--nw-danger); border-color: color-mix(in srgb, var(--nw-danger) 45%, transparent); }
+.nw-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* 表格微调 */
+.el-table { --el-table-bg-color: var(--nw-card); --el-table-tr-bg-color: var(--nw-card);
+  --el-table-header-bg-color: var(--nw-soft); --el-table-border-color: var(--nw-line);
+  --el-table-row-hover-bg-color: color-mix(in srgb, var(--nw-accent) 8%, transparent); }
+
+/* 分页 */
+.nw-pager { display: flex; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--nw-line); }
+
+/* 移动端折叠的“更多” */
+@media (max-width: 768px) {
+  .nw-sidebar { display: none; }
+  .nw-action-bar .hide-sm { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/element-plus"></script>
+<script src="https://unpkg.com/element-plus/dist/locale/zh-cn.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue"></script>
+
+<script>
+const { createApp, ref, reactive, computed, h } = Vue;
+
+const App = {
+  setup() {
+    /* 主题 */
+    const theme = ref(document.documentElement.getAttribute('data-theme') || 'dark');
+    const toggleTheme = () => {
+      theme.value = theme.value === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', theme.value);
+    };
+
+    /* 侧栏折叠 */
+    const collapsed = ref(false);
+
+    /* 页面切换：plugins / resources / skills / usage */
+    const activePage = ref('plugins');
+    const pages = [
+      { key: 'plugins',   label: '插件管理',   group: '内容' },
+      { key: 'resources', label: '资源管理',   group: '内容' },
+      { key: 'skills',    label: '技能',       group: 'AI' },
+      { key: 'usage',     label: '用户用量',   group: 'AI' },
+    ];
+    const groups = computed(() => {
+      const map = {};
+      pages.forEach(p => (map[p.group] ||= []).push(p));
+      return map;
+    });
+
+    /* ---------- 各页数据 ---------- */
+    // 插件
+    const plugins = ref([
+      { id: 1, name: 'EssentialsX', desc: '基础指令与家园系统', enabled: true, updated: '2026-11-02 10:22' },
+      { id: 2, name: 'WorldEdit',   desc: '地图编辑工具',       enabled: true, updated: '2026-10-30 18:05' },
+      { id: 3, name: 'Vault',       desc: '经济与权限桥接',     enabled: false, updated: '2026-10-21 09:40' },
+    ]);
+    // 资源
+    const resources = ref([
+      { id: 1, name: 'server-icon.png', type: 'PNG', size: '8.2 KB', app: '网站', status: 'ok', createdAt: '2026-11-01 12:00' },
+      { id: 2, name: 'motd-preview.json', type: 'JSON', size: '1.4 KB', app: '插件', status: 'ok', createdAt: '2026-10-28 15:30' },
+      { id: 3, name: 'backup-20261025.zip', type: 'ZIP', size: '124 MB', app: '其他', status: 'warn', createdAt: '2026-10-25 03:10' },
+    ]);
+    // 技能
+    const skills = ref([
+      { id: 1, name: 'minecraft-helper', desc: '解答 MC 常见问题', builtin: true,  enabled: true },
+      { id: 2, name: 'doc-search',      desc: '检索站内文档',     builtin: false, enabled: true },
+      { id: 3, name: 'code-review',     desc: 'Java 代码审查',    builtin: false, enabled: false },
+    ]);
+    // 用户用量
+    const usages = ref([
+      { id: 1, user: 'alice', today: 12000, limit: 50000 },
+      { id: 2, user: 'bob',   today: 49800, limit: 50000 },
+      { id: 3, user: 'carol', today: 3000,  limit: 50000 },
+    ]);
+
+    /* 选择态（批量） */
+    const selectedPlugins = ref([]);
+    const selectedResources = ref([]);
+    const selectedSkills = ref([]);
+    const selectedUsages = ref([]);
+
+    /* 操作反馈 */
+    const toast = (msg) => ElementPlus.ElMessage({ message: msg, type: 'success', duration: 1600 });
+    const confirmDanger = (title, msg) =>
+      ElementPlus.ElMessageBox.confirm(msg, title, {
+        type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+      });
+
+    /* ---------- 顶部操作条动作（演示） ---------- */
+    const onCreate   = () => toast('打开「新建」表单');
+    const onImport   = () => toast('打开导入文件选择');
+    const onExport   = () => toast('导出当前筛选结果');
+    const onBatchDel = async (rows, refArr) => {
+      if (!refArr.value.length) return;
+      try {
+        await confirmDanger('批量删除', `确认删除选中的 ${refArr.value.length} 项？`);
+        const ids = new Set(refArr.value.map(r => r.id));
+        rows.value = rows.value.filter(r => !ids.has(r.id));
+        refArr.value = [];
+        toast('已删除');
+      } catch (e) {}
+    };
+
+    /* ---------- 行内 ---------- */
+    const onRowDelete = async (rows, row) => {
+      try {
+        await confirmDanger('删除', `确认删除「${row.name || row.user}」？`);
+        rows.value = rows.value.filter(r => r.id !== row.id);
+        toast('已删除');
+      } catch (e) {}
+    };
+
+    /* 筛选（演示用） */
+    const pluginQuery = reactive({ keyword: '', status: 'all', sort: 'default' });
+    const filteredPlugins = computed(() =>
+      plugins.value
+        .filter(p => !pluginQuery.keyword || p.name.includes(pluginQuery.keyword) || p.desc.includes(pluginQuery.keyword))
+        .filter(p => pluginQuery.status === 'all' || (pluginQuery.status === 'on' ? p.enabled : !p.enabled))
+    );
+    const resetPluginQuery = () => Object.assign(pluginQuery, { keyword: '', status: 'all', sort: 'default' });
+
+    /* 多选变化 */
+    const onSel = (refArr) => (rows) => (refArr.value = rows);
+
+    return {
+      theme, toggleTheme, collapsed,
+      activePage, groups,
+      plugins, resources, skills, usages,
+      selectedPlugins, selectedResources, selectedSkills, selectedUsages,
+      onCreate, onImport, onExport, onBatchDel, onRowDelete,
+      pluginQuery, filteredPlugins, resetPluginQuery,
+      onSel,
+    };
+  },
+  template: `
+  <div class="nw-shell">
+    <!-- 侧栏 -->
+    <aside class="nw-sidebar" :class="{ collapsed }">
+      <div class="nw-brand">
+        <div class="logo"></div>
+        <div class="name">NitroWater</div>
+      </div>
+      <nav class="nw-nav">
+        <template v-for="(items, g) in groups" :key="g">
+          <div class="nw-nav-group">{{ g }}</div>
+          <a v-for="p in items" :key="p.key"
+             class="nw-nav-item" :class="{ active: activePage === p.key }"
+             @click="activePage = p.key">
+            <span class="ico">•</span><span>{{ p.label }}</span>
+          </a>
+        </template>
+      </nav>
+      <div class="nw-sidebar-footer">
+        <div class="nw-avatar">N</div>
+        <div class="nw-user-meta"><b>NitroUser</b><small>ADMIN</small></div>
+      </div>
+    </aside>
+
+    <!-- 主区 -->
+    <div class="nw-main">
+      <header class="nw-topbar">
+        <button class="icon-btn" @click="collapsed = !collapsed" title="折叠侧栏">☰</button>
+        <div class="crumb">管理后台 / <b>{{ ({plugins:'插件管理',resources:'资源管理',skills:'技能',usage:'用户用量'})[activePage] }}</b></div>
+        <div class="spacer"></div>
+        <button class="icon-btn" @click="toggleTheme" :title="theme === 'dark' ? '切换亮色' : '切换暗色'">
+          {{ theme === 'dark' ? '☀' : '☾' }}
+        </button>
+      </header>
+
+      <main class="nw-page">
+        <!-- ================= 插件管理 ================= -->
+        <template v-if="activePage === 'plugins'">
+          <div class="nw-page-header">
+            <h1>插件管理</h1>
+            <p>维护插件元信息、版本与启用状态；列表进入即加载，查询/重置/成功后自动重查。</p>
+          </div>
+
+          <!-- 操作条：左动作 / 右批量 -->
+          <div class="nw-action-bar">
+            <el-button type="primary" @click="onCreate">+ 新建插件</el-button>
+            <el-button @click="onImport">导入</el-button>
+            <el-button class="hide-sm" @click="onExport">导出</el-button>
+            <div class="spacer"></div>
+            <el-button type="danger" plain :disabled="!selectedPlugins.length"
+                       @click="onBatchDel(plugins, selectedPlugins)">
+              批量删除{{ selectedPlugins.length ? '(' + selectedPlugins.length + ')' : '' }}
+            </el-button>
+          </div>
+
+          <!-- 筛选栏 -->
+          <div class="nw-filter-bar">
+            <div class="filter-item">
+              <label>关键词</label>
+              <el-input v-model="pluginQuery.keyword" placeholder="名称 / 简介" clearable style="width:220px" />
+            </div>
+            <div class="filter-item">
+              <label>状态</label>
+              <el-select v-model="pluginQuery.status" style="width:140px">
+                <el-option label="全部" value="all" />
+                <el-option label="启用" value="on" />
+                <el-option label="停用" value="off" />
+              </el-select>
+            </div>
+            <div class="filter-item">
+              <label>排序</label>
+              <el-select v-model="pluginQuery.sort" style="width:140px">
+                <el-option label="默认" value="default" />
+                <el-option label="最近更新" value="updated" />
+                <el-option label="名称" value="name" />
+              </el-select>
+            </div>
+            <div class="filter-actions">
+              <el-button type="primary" @click="() => {}">查询</el-button>
+              <el-button @click="resetPluginQuery">重置</el-button>
+            </div>
+          </div>
+
+          <!-- 表格 -->
+          <div class="nw-card">
+            <el-table :data="filteredPlugins" @selection-change="onSel(selectedPlugins)" style="width:100%">
+              <el-table-column type="selection" width="44" />
+              <el-table-column label="插件" min-width="220">
+                <template #default="{ row }">
+                  <div style="font-weight:600">{{ row.name }}</div>
+                  <div style="font-size:12px;color:var(--nw-dim)">{{ row.desc }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="120">
+                <template #default="{ row }">
+                  <span class="nw-badge" :class="row.enabled ? 'ok' : ''">
+                    <span class="dot"></span>{{ row.enabled ? '启用' : '停用' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="updated" label="更新时间" width="170" />
+              <el-table-column label="操作" width="150" fixed="right">
+                <template #default="{ row }">
+                  <button class="nw-link">编辑</button>
+                  <button class="nw-link danger" @click="onRowDelete(plugins, row)">删除</button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="nw-pager">
+              <el-pagination background layout="sizes, prev, pager, next, jumper"
+                             :page-sizes="[20,50,100]" :total="plugins.length" />
+            </div>
+          </div>
+        </template>
+
+        <!-- ================= 资源管理 ================= -->
+        <template v-else-if="activePage === 'resources'">
+          <div class="nw-page-header">
+            <h1>资源管理</h1>
+            <p>默认只展示 7 列，其余字段（来源、归属 UID、分组、可见性等）进入详情抽屉。</p>
+          </div>
+
+          <div class="nw-action-bar">
+            <el-button @click="onImport">导入</el-button>
+            <el-button class="hide-sm" @click="onExport">导出</el-button>
+            <div class="spacer"></div>
+            <el-button type="danger" plain :disabled="!selectedResources.length"
+                       @click="onBatchDel(resources, selectedResources)">
+              批量删除{{ selectedResources.length ? '(' + selectedResources.length + ')' : '' }}
+            </el-button>
+          </div>
+
+          <div class="nw-filter-bar">
+            <div class="filter-item"><label>文件名</label><el-input placeholder="模糊匹配" style="width:200px" /></div>
+            <div class="filter-item"><label>应用</label>
+              <el-select style="width:140px" placeholder="全部">
+                <el-option label="全部" value="" /><el-option label="网站" value="web" />
+                <el-option label="插件" value="plugin" /><el-option label="其他…" value="other" />
+              </el-select>
+            </div>
+            <div class="filter-item"><label>状态</label>
+              <el-select style="width:140px" placeholder="全部">
+                <el-option label="全部" value="" /><el-option label="正常" value="ok" />
+                <el-option label="异常" value="warn" />
+              </el-select>
+            </div>
+            <div class="filter-actions">
+              <el-button type="primary">查询</el-button>
+              <el-button>重置</el-button>
+            </div>
+          </div>
+
+          <div class="nw-card">
+            <el-table :data="resources" @selection-change="onSel(selectedResources)" style="width:100%">
+              <el-table-column type="selection" width="44" />
+              <el-table-column prop="name" label="文件名" min-width="200" />
+              <el-table-column prop="type" label="类型" width="90" />
+              <el-table-column prop="size" label="大小" width="110" />
+              <el-table-column prop="app" label="应用" width="110" />
+              <el-table-column label="状态" width="110">
+                <template #default="{ row }">
+                  <span class="nw-badge" :class="row.status === 'ok' ? 'ok' : 'warn'">
+                    <span class="dot"></span>{{ row.status === 'ok' ? '正常' : '异常' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="createdAt" label="创建时间" width="170" />
+              <el-table-column label="操作" width="170" fixed="right">
+                <template #default="{ row }">
+                  <button class="nw-link">详情</button>
+                  <button class="nw-link">下载</button>
+                  <button class="nw-link danger" @click="onRowDelete(resources, row)">删除</button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="nw-pager">
+              <el-pagination background layout="sizes, prev, pager, next, jumper"
+                             :page-sizes="[20,50,100]" :total="resources.length" />
+            </div>
+          </div>
+        </template>
+
+        <!-- ================= 技能 ================= -->
+        <template v-else-if="activePage === 'skills'">
+          <div class="nw-page-header">
+            <h1>技能</h1>
+            <p>内置技能不可编辑/删除，但可导出；导入 SKILL.md 后自动打开编辑抽屉。</p>
+          </div>
+
+          <div class="nw-action-bar">
+            <el-button type="primary" @click="onCreate">+ 新增技能</el-button>
+            <el-button @click="onImport">导入 SKILL.md</el-button>
+            <el-button class="hide-sm" @click="onExport">导出全部</el-button>
+            <div class="spacer"></div>
+            <el-button type="danger" plain :disabled="!selectedSkills.length"
+                       @click="onBatchDel(skills, selectedSkills)">
+              批量删除{{ selectedSkills.length ? '(' + selectedSkills.length + ')' : '' }}
+            </el-button>
+          </div>
+
+          <div class="nw-card">
+            <el-table :data="skills" @selection-change="onSel(selectedSkills)" style="width:100%">
+              <el-table-column type="selection" width="44" :selectable="r => !r.builtin" />
+              <el-table-column label="技能" min-width="220">
+                <template #default="{ row }">
+                  <div style="font-weight:600">
+                    {{ row.name }}
+                    <span v-if="row.builtin" class="nw-badge" style="margin-left:6px">内置</span>
+                  </div>
+                  <div style="font-size:12px;color:var(--nw-dim)">{{ row.desc }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="启用" width="100">
+                <template #default="{ row }"><el-switch v-model="row.enabled" /></template>
+              </el-table-column>
+              <el-table-column label="操作" width="200" fixed="right">
+                <template #default="{ row }">
+                  <button class="nw-link">查看</button>
+                  <button class="nw-link" :disabled="row.builtin" :style="row.builtin ? 'opacity:.4;cursor:not-allowed' : ''">编辑</button>
+                  <button class="nw-link">导出</button>
+                  <button class="nw-link danger" v-if="!row.builtin" @click="onRowDelete(skills, row)">删除</button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="nw-pager">
+              <el-pagination background layout="sizes, prev, pager, next, jumper"
+                             :page-sizes="[20,50,100]" :total="skills.length" />
+            </div>
+          </div>
+        </template>
+
+        <!-- ================= 用户用量 ================= -->
+        <template v-else-if="activePage === 'usage'">
+          <div class="nw-page-header">
+            <h1>用户用量</h1>
+            <p>今日 token 用量与上限；批量重置在操作条右端，行内单用户重置保留。</p>
+          </div>
+
+          <div class="nw-action-bar">
+            <div class="spacer"></div>
+            <el-button :disabled="!selectedUsages.length"
+                       @click="selectedUsages = []; plugins && toast('已重置所选用户今日用量')">
+              重置所选{{ selectedUsages.length ? '(' + selectedUsages.length + ')' : '' }}
+            </el-button>
+          </div>
+
+          <div class="nw-filter-bar">
+            <div class="filter-item"><label>用户</label><el-input placeholder="用户名" style="width:200px" /></div>
+            <div class="filter-item"><label>范围</label>
+              <el-select style="width:140px" placeholder="全部">
+                <el-option label="全部" value="" /><el-option label="仅超额" value="over" />
+              </el-select>
+            </div>
+            <div class="filter-actions">
+              <el-button type="primary">查询</el-button>
+              <el-button>重置</el-button>
+            </div>
+          </div>
+
+          <div class="nw-card">
+            <el-table :data="usages" @selection-change="onSel(selectedUsages)" style="width:100%">
+              <el-table-column type="selection" width="44" />
+              <el-table-column prop="user" label="用户" min-width="140" />
+              <el-table-column label="今日用量" min-width="260">
+                <template #default="{ row }">
+                  <el-progress :percentage="Math.min(100, Math.round(row.today / row.limit * 100))"
+                               :status="row.today >= row.limit ? 'exception' : ''" />
+                  <div style="font-size:12px;color:var(--nw-dim)">{{ row.today }} / {{ row.limit }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="120" fixed="right">
+                <template #default="{ row }">
+                  <button class="nw-link" @click="toast('已重置 ' + row.user)">重置</button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="nw-pager">
+              <el-pagination background layout="sizes, prev, pager, next, jumper"
+                             :page-sizes="[20,50,100]" :total="usages.length" />
+            </div>
+          </div>
+
+          <div class="nw-danger-zone">
+            <h3>Danger zone</h3>
+            <p>清空今日全站用量并解除熔断。此操作影响所有用户，请谨慎执行。</p>
+            <el-button type="danger" plain>解除熔断</el-button>
+          </div>
+        </template>
+      </main>
+    </div>
+  </div>
+  `
+};
+
+const app = createApp(App);
+app.use(ElementPlus, { locale: ElementPlusLocaleZhCn });
+for (const [k, v] of Object.entries(ElementPlusIconsVue)) app.component(k, v);
+app.mount('#app');
+</script>
+</body>
+</html>

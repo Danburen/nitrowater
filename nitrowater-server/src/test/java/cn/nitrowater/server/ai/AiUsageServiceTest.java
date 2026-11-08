@@ -1,7 +1,7 @@
 package cn.nitrowater.server.ai;
 
 import cn.nitrowater.server.service.ai.AiAdminSettingsService;
-import cn.nitrowater.server.service.ai.AiAdminSettingsService.Settings;
+import cn.nitrowater.server.service.ai.model.AiSettings;
 import cn.nitrowater.server.infra.entity.AiDailyUsageEntity;
 import cn.nitrowater.server.infra.entity.AiDailyUsageId;
 import cn.nitrowater.server.infra.enums.ModerationMode;
@@ -9,6 +9,9 @@ import cn.nitrowater.server.infra.repository.AiDailyUsageRepository;
 import cn.nitrowater.server.infra.specification.AiUsageSpec;
 import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
 import cn.nitrowater.server.service.ai.AiUsageService;
+import cn.nitrowater.server.service.ai.model.AiGlobalUsage;
+import cn.nitrowater.server.service.ai.model.AiUsageReservation;
+import cn.nitrowater.server.service.ai.model.AiUserUsage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -69,7 +72,7 @@ class AiUsageServiceTest {
         when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY)))
                 .thenReturn(Optional.of(row(7L, 0L, 0L, 0L)));
 
-        AiUsageService.Reservation reservation = service.reserve(7L, 100);
+        AiUsageReservation reservation = service.reserve(7L, 100);
 
         assertThat(reservation.global()).isFalse();
         verify(repository, never()).findByIdUidAndIdUsageDate(eq(AiUsageSpec.GLOBAL_UID), any());
@@ -83,7 +86,7 @@ class AiUsageServiceTest {
         when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY)))
                 .thenReturn(Optional.of(row(7L, 0L, 0L, 0L)));
 
-        AiUsageService.Reservation reservation = service.reserve(7L, 100);
+        AiUsageReservation reservation = service.reserve(7L, 100);
 
         assertThat(reservation.global()).isTrue();
         assertThat(reservation.reservedTokens()).isEqualTo(200L);
@@ -96,9 +99,9 @@ class AiUsageServiceTest {
                 row(AiUsageSpec.GLOBAL_UID, 500L, 500L, 0L),
                 row(7L, 10L, 20L, 0L)));
 
-        List<AiUsageService.UserUsage> rows = service.allUsersToday();
+        List<AiUserUsage> rows = service.allUsersToday();
 
-        assertThat(rows).extracting(AiUsageService.UserUsage::uid).containsExactly(7L);
+        assertThat(rows).extracting(AiUserUsage::uid).containsExactly(7L);
     }
 
     @Test
@@ -107,14 +110,14 @@ class AiUsageServiceTest {
         when(repository.findById(new AiDailyUsageId(AiUsageSpec.GLOBAL_UID, TODAY)))
                 .thenReturn(Optional.of(row(AiUsageSpec.GLOBAL_UID, 700L, 200L, 100L)));
 
-        AiUsageService.GlobalUsage global = service.globalToday();
+        AiGlobalUsage global = service.globalToday();
 
         assertThat(global.totalTokens()).isEqualTo(900L);
         assertThat(global.tripped()).isTrue();
     }
 
-    private static Settings runtime(boolean globalEnabled, long globalLimit) {
-        return new Settings(50_000L, true, true, true, true, true, true, true, ModerationMode.LOG,
+    private static AiSettings runtime(boolean globalEnabled, long globalLimit) {
+        return new AiSettings(50_000L, true, true, true, true, true, true, true, ModerationMode.LOG,
                 globalLimit, globalEnabled);
     }
 

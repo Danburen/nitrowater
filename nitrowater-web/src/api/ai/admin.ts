@@ -163,6 +163,19 @@ export async function importAdminSkill(file: File): Promise<AiSkillDetail> {
   return readJson<AiSkillDetail>(response)
 }
 
+/**
+ * Admin: download one skill as a SKILL.md (front matter + body). Built-ins export too, so a
+ * built-in can be exported, tweaked and re-imported as an override.
+ *
+ * @param name skill name
+ * @returns the markdown file as a blob
+ */
+export async function exportAdminSkill(name: string): Promise<Blob> {
+  const response = await apiFetch(`/api/admin/ai/skills/${encodeURIComponent(name)}/export`)
+  if (!response.ok) throw new Error(await readErrorMessage(response))
+  return response.blob()
+}
+
 /** Admin: the tool catalog advertised to the agent. */
 export async function fetchAdminTools(): Promise<AiTool[]> {
   return getJson<AiTool[]>('/api/admin/ai/tools')

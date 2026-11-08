@@ -51,7 +51,7 @@ openssl rand -hex 24                     # S3_SECRET_KEY
 ## 2. 写 `.env`
 
 ```bash
-cp deploy/docker/.env.example deploy/docker/.env
+cp deploy/docker/.env.prod.example deploy/docker/.env
 chmod 600 deploy/docker/.env
 ```
 
@@ -69,7 +69,7 @@ chmod 600 deploy/docker/.env
 | `AI_EMBEDDING_API_KEY` | SiliconFlow key | 或 `SILICONFLOW_API_KEY` |
 | `deploy/keys/{private,public}.key` | 第 1 步产物 | 文件存在即可 |
 
-### 2.2 边缘（叠加 `-Edge` 时必填）
+### 2.2 边缘（启用 infra 的 `edge` profile 时必填）
 
 | 变量 | 示例 | 说明 |
 |---|---|---|
@@ -92,7 +92,7 @@ chmod 600 deploy/docker/.env
 | `PUBLISH_BIND` | `127.0.0.1` | 业务端口只给本机/隧道 |
 | `OPS_BIND` | `127.0.0.1` | Qdrant / SeaweedFS UI 无认证 |
 | `RESOURCE_USER_UPLOAD` | `false` | 图片等需审核的内容暂不开放（接口保留，返回 503） |
-| `SESSION_COOKIE_SECURE` | `true` | edge 叠加层会自动注入；手工部署需自设 |
+| `SESSION_COOKIE_SECURE` | `true` | 走 HTTPS（启用 `edge` profile）时必须；否则会话 cookie 仍可走 http |
 | `COMMUNICATION_MODE` | `real`（推荐） | `mock` 时验证码只写日志 |
 | `RESOURCE_INTERNAL_TOKEN` | 随机串 | `bin/dev/sync-res.ps1` 发布插件 Jar 用；不设则该入口关闭 |
 
@@ -104,10 +104,9 @@ chmod 600 deploy/docker/.env
 | 变量 | 用途 |
 |---|---|
 | `AI_DOCS_LOCATION` | 指向 `/etc/nitrowater/docs/nitrowater` 时改用外置语料，**目录必须含 `.md`** |
-| `AI_SKILLS_DIR` | 外部技能目录（edge/content 叠加层已设为 `/etc/nitrowater/skills`） |
-| `AI_MODERATION_DICT` / `AI_MODERATION_ALLOW` | 保持双层：`classpath:...,file:...`（叠加层已写好，不要改成单层） |
+| `AI_MODERATION_DICT` / `AI_MODERATION_ALLOW` | 启用外置词表时保持双层：`classpath:...,file:...`（**必须保留 classpath 基线**） |
 | `AI_COLLECTION` | 换 embedding 模型/维度时**换集合名**，不要原地重建 |
-| `CONTENT_ROOT` | 内容目录（默认 `deploy/content`） |
+| `CONTENT_ROOT` | 内容目录（默认 `deploy/content`，相对 `deploy/docker/`） |
 
 ---
 
@@ -124,8 +123,10 @@ bash deploy/bin/check-env.sh        # 先跑一次，它会指出缺什么
 | `deploy/content/moderation/words.txt` | 生产违禁词，**去注释后 ≥1 条** | 想用 ENFORCE / 有增量词 |
 | `deploy/content/moderation/allow.txt` | 白名单（可选） | 需要放行误伤词 |
 | `deploy/content/docs/nitrowater/*.md` | 外置语料 | 设了 `AI_DOCS_LOCATION` 时 |
-| `deploy/content/skills/<name>/SKILL.md` | 外部技能 | 需要 |
 | `deploy/plugin-docs/<plugin>/docs/` | 站点文档产物 | 插件文档站 |
+
+> app compose 已把 `deploy/content/{moderation,docs}` 常驻只读挂载到 `/etc/nitrowater/{moderation,docs}`；
+> 目录为空不影响启动，是否启用取决于 `AI_MODERATION_DICT` / `AI_DOCS_LOCATION`。
 
 ---
 
@@ -140,31 +141,45 @@ bash deploy/bin/check-env.sh --local  # 额外检查本机端口（在服务器�
 
 ---
 
-## 5. 起中间件 + Piston 语言包
+## 5. 起中间件 + account
 
 ```bash
-bash deploy/bin/deploy.sh --infra-only
+# 共享网络（只需一次）
+docker network create nitrowater-net
 
-# 代码运行器需要语言包（一次即可；容器名固定）
+# 中间件（要公网入口时加 --profile edge）
+docker compose --env-file deploy/docker/.env --profile edge \
+  -f deploy/docker/docker-compose.infra.yml up -d --wait
+
+# 身份服务
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-deps
+curl -fsS http://127.0.0.1:8090/.well-known/openid-configuration >/dev/null && echo account is ready
+```
+
+只想起中间件就停在第 1 条。
+
+---
+
+## 6. 起应用 + Piston 语言包 + 边缘
+
+```bash
+# 首次或本地构建；CI 出镜像时去掉 --build
+docker compose --env-file deploy/docker/.env \
+  -f deploy/docker/docker-compose.app.yml up -d --wait --build
+
+# 只更新 app 时重复上面这条（带 --build 或不带）
+
+# Piston 随 app 常驻启动，语言包一次装好后落在 nitrowater-piston 卷里
 docker exec nitrowater-piston cli/index.js ppman install java
 docker exec nitrowater-piston cli/index.js ppman install c
 docker exec nitrowater-piston cli/index.js ppman install c++
 docker exec nitrowater-piston cli/index.js ppman list
+
+docker compose -f deploy/docker/docker-compose.app.yml --env-file deploy/docker/.env ps
 ```
 
----
-
-## 6. 起应用 + 边缘
-
-```bash
-# 首次建议本地构建镜像；CI 出镜像时去掉 --build
-bash deploy/bin/deploy.sh --edge --content --build
-
-docker compose -f deploy/docker/docker-compose.app.yml -f deploy/docker/docker-compose.edge.yml \
-  --env-file deploy/docker/.env ps
-```
-
-期望：`nginx-proxy` 监听 80/443；`bff/account/server/resource/docs` 只与容器网络相连。
+期望：`nginx-proxy` 监听 80/443；`bff/account/server/resource/docs` 只与容器网络相连；
+`piston` 只连 `nitrowater-runner-net`（与 mysql/redis 隔离）。
 
 ---
 
@@ -218,7 +233,7 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 | 内容 | 放哪 | 更新动作 |
 |---|---|---|
-| AI 词表/语料/技能 | `deploy/content/**` | 覆盖文件 → `POST /api/admin/ai/moderation/reload` / `reindex` |
+| AI 词表/语料 | `deploy/content/**` | 覆盖文件 → `POST /api/admin/ai/moderation/reload` / `reindex` |
 | 插件站点文档 | `deploy/plugin-docs/<plugin>/docs/` | 覆盖产物（必要时 `docker restart nitrowater-docs`） |
 | 插件 Jar | resource + SeaweedFS | `RESOURCE_INTERNAL_TOKEN=...` 后 `pwsh bin/dev/sync-res.ps1` 或 CI 调 `/internal/resource/publish` |
 
@@ -230,7 +245,9 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 | 场景 | 动作 |
 |---|---|
-| 应用异常 | 换回上一镜像 tag 后 `up -d`；或去掉 `-f docker-compose.edge.yml` 回到"仅回环" |
+| 应用异常 | 换回上一 `APP_IMAGE_TAG` 后 `docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d` |
+| account 异常 | 换回上一 `ACCOUNT_IMAGE_TAG` 后 `up -d --no-deps account`（**不要**带需要新列/business 的迁移；迁移必须 expand/contract，旧镜像可读新列） |
+| 关闭公网入口 | `docker compose -f deploy/docker/docker-compose.infra.yml --profile edge stop nginx-proxy acme-companion`，业务回落到 `PUBLISH_BIND` 回环 |
 | 拦截误伤 | 管理端把模式切回 `LOG`；或 `POST /api/admin/ai/moderation/reload` 后修词表 |
 | 索引坏了 | `POST /api/admin/ai/reindex`；换 embedding 维度则改 `AI_COLLECTION` 再重建 |
 | 证书问题 | 保留 `nginx_certs` 卷；修 DNS/端口后重启 `acme-companion` |

@@ -1,7 +1,11 @@
 package cn.nitrowater.server.service.ai;
 
 import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
-import cn.nitrowater.server.service.ai.AiAdminSettingsService.Settings;
+import cn.nitrowater.server.service.ai.model.AiDailyTotal;
+import cn.nitrowater.server.service.ai.model.AiGlobalUsage;
+import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.AiUsageReservation;
+import cn.nitrowater.server.service.ai.model.AiUserUsage;
 
 import cn.nitrowater.server.infra.entity.AiDailyUsageEntity;
 import cn.nitrowater.server.infra.entity.AiDailyUsageId;
@@ -47,25 +51,25 @@ public class AiUsageService {
     private final AiDailyUsageRepository usageRepository;
     private final AiAdminSettingsService settings;
     private final TransactionTemplate transactions;
-    private final long maxOutputReservation;
+    private final long maxOutputAiUsageReservation;
 
     public AiUsageService(AiDailyUsageRepository usageRepository, AiAdminSettingsService settings,
             PlatformTransactionManager transactionManager,
-            @Value("${spring.ai.openai.chat.max-tokens:1200}") long maxOutputReservation) {
+            @Value("${spring.ai.openai.chat.max-tokens:1200}") long maxOutputAiUsageReservation) {
         this.usageRepository = usageRepository;
         this.settings = settings;
         this.transactions = new TransactionTemplate(transactionManager);
-        this.maxOutputReservation = maxOutputReservation > 0 ? maxOutputReservation : 1200L;
+        this.maxOutputAiUsageReservation = maxOutputAiUsageReservation > 0 ? maxOutputAiUsageReservation : 1200L;
     }
 
     /** Reserves the estimated prompt plus maximum configured answer before calling the provider. */
     @Transactional
-    public Reservation reserve(long uid, int estimatedInputTokens) {
+    public AiUsageReservation reserve(long uid, int estimatedInputTokens) {
         LocalDate date = LocalDate.now(ZoneOffset.UTC);
-        Settings runtime = settings.get();
+        AiSettings runtime = settings.get();
         long limit = runtime.dailyTokenLimit();
         long estimate = Math.max(1, estimatedInputTokens);
-        long reservation = Math.addExact(estimate, maxOutputReservation);
+        long reservation = Math.addExact(estimate, maxOutputAiUsageReservation);
 
         // Lock order is always global-then-user, matching resetToday()'s uid-ascending order, so a
         // concurrent reset and a concurrent turn can never close a lock cycle.
@@ -94,7 +98,7 @@ public class AiUsageService {
             globalRow.setRequestCount(globalRow.getRequestCount() + 1);
             usageRepository.save(globalRow);
         }
-        return new Reservation(uid, date, reservation, estimate, global);
+        return new AiUsageReservation(uid, date, reservation, estimate, global);
     }
 
     /** Starts accounting for a model call after its prompt has been assembled. */
@@ -104,13 +108,13 @@ public class AiUsageService {
     }
 
     /** Settles a reservation with provider usage or a marked character-based estimate. */
-    public void settle(Reservation reservation, AiTokenUsage usage) {
+    public void settle(AiUsageReservation reservation, AiTokenUsage usage) {
         transactions.executeWithoutResult(status -> settleInTransaction(reservation, usage));
     }
 
     /** Releases a reservation when no model request completed. */
     @Transactional
-    public void release(Reservation reservation) {
+    public void release(AiUsageReservation reservation) {
         settle(reservation, new AiTokenUsage(0, 0, false));
     }
 
@@ -119,15 +123,14 @@ public class AiUsageService {
     public AiDailyUsage forUser(long uid) {
         LocalDate date = LocalDate.now(ZoneOffset.UTC);
         AiDailyUsageEntity row = usageRepository.findById(new AiDailyUsageId(uid, date)).orElse(null);
-        AiDailyUsage usage = row == null
+        return row == null
                 ? new AiDailyUsage(date, 0, 0, 0, 0, 0, settings.get().dailyTokenLimit(), 0)
                 : withLimit(toUsage(row), settings.get().dailyTokenLimit());
-        return usage;
     }
 
     /** @return all recorded users' UTC-day usage, largest consumers first */
     @Transactional(readOnly = true)
-    public List<UserUsage> allUsersToday() {
+    public List<AiUserUsage> allUsersToday() {
         LocalDate date = LocalDate.now(ZoneOffset.UTC);
         long limit = settings.get().dailyTokenLimit();
         return usageRepository.findByIdUsageDate(date).stream()
@@ -135,7 +138,7 @@ public class AiUsageService {
                 .sorted(Comparator.comparingLong((AiDailyUsageEntity row) ->
                                 row.getInputTokens() + row.getOutputTokens()).reversed()
                         .thenComparing(row -> row.getId().getUid()))
-                .map(row -> toUserUsage(row, date, limit))
+                .map(row -> toAiUserUsage(row, date, limit))
                 .toList();
     }
 
@@ -155,13 +158,13 @@ public class AiUsageService {
      * @return one page of usage rows
      */
     @Transactional(readOnly = true)
-    public Page<UserUsage> pageUsersToday(String keyword, boolean onlyExceeded, String sort, int page, int size) {
+    public Page<AiUserUsage> pageUsersToday(String keyword, boolean onlyExceeded, String sort, int page, int size) {
         LocalDate date = LocalDate.now(ZoneOffset.UTC);
         long limit = settings.get().dailyTokenLimit();
         Pageable pageable = PageRequest.of(Math.max(0, page),
                 Math.min(MAX_PAGE_SIZE, Math.max(1, size)), usageSort(sort));
         return usageRepository.findAll(AiUsageSpec.of(date, keyword, onlyExceeded, limit), pageable)
-                .map(row -> toUserUsage(row, date, limit));
+                .map(row -> toAiUserUsage(row, date, limit));
     }
 
     /** @return the requested ordering, always falling back to uid for a deterministic page */
@@ -174,8 +177,8 @@ public class AiUsageService {
         };
     }
 
-    private static UserUsage toUserUsage(AiDailyUsageEntity row, LocalDate date, long limit) {
-        return new UserUsage(row.getId().getUid(), date, row.getInputTokens(), row.getOutputTokens(),
+    private static AiUserUsage toAiUserUsage(AiDailyUsageEntity row, LocalDate date, long limit) {
+        return new AiUserUsage(row.getId().getUid(), date, row.getInputTokens(), row.getOutputTokens(),
                 row.getReservedTokens(), row.getRequestCount(), row.getEstimatedRequests(), limit,
                 row.getInputTokens() + row.getOutputTokens());
     }
@@ -213,9 +216,9 @@ public class AiUsageService {
      *         in-flight reservations so a pending turn cannot slip past the ceiling
      */
     @Transactional(readOnly = true)
-    public GlobalUsage globalToday() {
+    public AiGlobalUsage globalToday() {
         LocalDate date = LocalDate.now(ZoneOffset.UTC);
-        Settings runtime = settings.get();
+        AiSettings runtime = settings.get();
         AiDailyUsageEntity row = usageRepository.findById(new AiDailyUsageId(GLOBAL_UID, date)).orElse(null);
         long input = row == null ? 0L : row.getInputTokens();
         long output = row == null ? 0L : row.getOutputTokens();
@@ -224,7 +227,7 @@ public class AiUsageService {
         long limit = runtime.globalLimit();
         boolean enabled = runtime.globalQuotaActive();
         boolean tripped = enabled && input + output + reserved >= limit;
-        return new GlobalUsage(date, input, output, reserved, requests, limit, enabled, tripped);
+        return new AiGlobalUsage(date, input, output, reserved, requests, limit, enabled, tripped);
     }
 
     /**
@@ -232,13 +235,13 @@ public class AiUsageService {
      * @return platform-wide totals per UTC day, oldest first; days without traffic are omitted
      */
     @Transactional(readOnly = true)
-    public List<DailyTotal> dailyTotals(int days) {
+    public List<AiDailyTotal> dailyTotals(int days) {
         LocalDate to = LocalDate.now(ZoneOffset.UTC);
         LocalDate from = to.minusDays(Math.max(1, Math.min(366, days)) - 1L);
         return usageRepository.findByIdUidAndIdUsageDateBetween(GLOBAL_UID, from, to).stream()
-                .map(row -> new DailyTotal(row.getId().getUsageDate(), row.getInputTokens(),
+                .map(row -> new AiDailyTotal(row.getId().getUsageDate(), row.getInputTokens(),
                         row.getOutputTokens(), row.getRequestCount(), row.getEstimatedRequests()))
-                .sorted(Comparator.comparing(DailyTotal::date))
+                .sorted(Comparator.comparing(AiDailyTotal::date))
                 .toList();
     }
 
@@ -290,7 +293,7 @@ public class AiUsageService {
                 () -> usageRepository.saveAndFlush(new AiDailyUsageEntity(id)));
     }
 
-    private void settleInTransaction(Reservation reservation, AiTokenUsage usage) {
+    private void settleInTransaction(AiUsageReservation reservation, AiTokenUsage usage) {
         // Global first, then the user row: same lock order as reserve().
         if (reservation.global()) {
             applySettlement(new AiDailyUsageId(GLOBAL_UID, reservation.date()),
@@ -322,49 +325,18 @@ public class AiUsageService {
                 usage.requestCount(), usage.estimatedRequests(), limit, usage.totalTokens());
     }
 
-    /** A quota hold pinned to the UTC date on which the request was admitted. */
-    public record Reservation(long uid, LocalDate date, long reservedTokens, long estimatedInputTokens,
-            boolean global) {
-    }
-
-    /** All-users view of one UTC day, including the breaker state. */
-    public record GlobalUsage(LocalDate date, long inputTokens, long outputTokens, long reservedTokens,
-            int requestCount, long dailyTokenLimit, boolean enabled, boolean tripped) {
-
-        /** @return tokens actually consumed today (reservations excluded) */
-        public long totalTokens() {
-            return inputTokens + outputTokens;
-        }
-    }
-
-    /** One day's platform-wide totals, used by the 31-day admin summary. */
-    public record DailyTotal(LocalDate date, long inputTokens, long outputTokens, int requestCount,
-            int estimatedRequests) {
-
-        /** @return tokens actually consumed that day */
-        public long totalTokens() {
-            return inputTokens + outputTokens;
-        }
-    }
-
-    /** Administrator view of one user's UTC-day usage. */
-    public record UserUsage(long uid, LocalDate date, long inputTokens, long outputTokens,
-            long reservedTokens, int requestCount, int estimatedRequests, long dailyTokenLimit,
-            long totalTokens) {
-    }
-
     /** One AI call's mutable accumulator; mutation is limited to its streaming lifecycle. */
     public static final class Session implements AiUsageTracker {
 
         private final AiUsageService owner;
-        private final Reservation reservation;
+        private final AiUsageReservation reservation;
         private final int estimatedInputTokens;
         private final AiTokenUsageMeter meter = new AiTokenUsageMeter();
         private final StringBuilder output = new StringBuilder();
         private boolean settled;
         private AiTokenUsage result;
 
-        private Session(AiUsageService owner, Reservation reservation, int estimatedInputTokens) {
+        private Session(AiUsageService owner, AiUsageReservation reservation, int estimatedInputTokens) {
             this.owner = owner;
             this.reservation = reservation;
             this.estimatedInputTokens = estimatedInputTokens;

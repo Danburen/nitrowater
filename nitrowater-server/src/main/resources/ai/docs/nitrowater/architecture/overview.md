@@ -64,7 +64,7 @@ SPA -> BFF /api/plugins
 ```text
 SPA -> BFF POST /api/ai/agent/chat/stream
      -> AiStreamProxyController（保留 SSE、逐块透传）
-     -> server AiAgentController -> AiAgentService -> ChatClient(tools)
+     -> server AiAgentController（传输层）-> AgentTurnService（编排/落库/风控）-> AiAgentService -> ChatModel(tools)
      -> 事件：start / delta* / sources / tools / skills / done
 ```
 

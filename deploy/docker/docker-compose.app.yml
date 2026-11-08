@@ -1,52 +1,87 @@
 # ============================================================
-# NitroWater 服务编排（account + resource + server + bff）
-# 依赖 infra 已启动并共享 external 网络 nitrowater-net。
+# NitroWater 业务面（app）
+#   seaweedfs / qdrant : 只服务 resource / server 的存储组件
+#   piston             : 代码运行沙箱（常驻，privileged）
+#   docs               : 插件文档静态站
+#   resource / server / bff : 业务后端
 #
-# 本地构建运行：
-#   docker compose -f deploy/docker/docker-compose.app.yml up -d --build
-# CI 部署：把各服务 build 换成 image（见各行注释），用 --env-file 注入 .env。
-#
-# 注意：issuer(JWT_ISSUER) 需“浏览器与服务都可达”。生产填对外域名；
-#       本机纯 dev 建议用 bin/start-all.ps1 (java -jar)（yml 默认指向 localhost）。
+# 前置（只需一次）：docker network create nitrowater-net
+# 启动：docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d
 # ============================================================
 name: nitrowater-app
 
 services:
-  account:
-    build:
-      context: ../..
-      dockerfile: Dockerfile
-      target: account
-    # image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/account:${IMAGE_TAG:-latest}
-    container_name: nitrowater-account
+  seaweedfs:
+    image: chrislusf/seaweedfs
+    container_name: nitrowater-seaweedfs
     ports:
-      - "${PUBLISH_BIND:-127.0.0.1}:8090:8090"
-    environment:
-      JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
-      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_account?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      NITROWATER_KEK: ${NITROWATER_KEK:?set NITROWATER_KEK in .env}
-      DEVICE_SALT: ${DEVICE_SALT:-device-salt-dev}
-      BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:?BFF_CLIENT_SECRET must be set in deploy/docker/.env}
-      COMMUNICATION_MODE: ${COMMUNICATION_MODE:-mock}
-      MAIL_HOST: ${MAIL_HOST:-}
-      MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USERNAME: ${MAIL_USERNAME:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      MAIL_FROM: ${MAIL_FROM:-}
-      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
-      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
-      ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID:-}
-      ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:-}
-      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
-      ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE:-}
-      ALIYUN_SMS_ENDPOINT: ${ALIYUN_SMS_ENDPOINT:-dysmsapi.aliyuncs.com}
+      # S3 供浏览器访问 presigned URL；filer/master UI 无认证，只绑回环。
+      - "${OPS_BIND:-127.0.0.1}:8333:8333"
+      - "${OPS_BIND:-127.0.0.1}:8888:8888"
+      - "${OPS_BIND:-127.0.0.1}:9333:9333"
     volumes:
-      - ../keys:/app/deploy/keys:ro
-    mem_limit: 640m
+      - nitrowater-seaweedfs:/data
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-nitrowater}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-change-me}
+      S3_BUCKET: ${S3_BUCKET:-nitrowater}
+    mem_limit: 512m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.3
+    container_name: nitrowater-qdrant
+    ports:
+      # Dashboard 无认证，只绑回环；gRPC 6334 不发布。
+      - "${OPS_BIND:-127.0.0.1}:6333:6333"
+    volumes:
+      - nitrowater-qdrant:/qdrant/storage
+    mem_limit: 384m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+  # 代码运行沙箱：常驻能力。需要 Linux + cgroup v2 + privileged。
+  # 只连 runner-net，与 mysql/redis/seaweedfs 隔离；server 同时连两边。
+  piston:
+    image: ghcr.io/engineer-man/piston
+    container_name: nitrowater-piston
+    privileged: true
+    volumes:
+      - "/tmp"
+      - nitrowater-piston:/piston
+    environment:
+      LANG: "en_US.UTF-8"
+      LC_ALL: "en_US.UTF-8"
+      PISTON_RUN_TIMEOUT: "10000"
+      PISTON_COMPILE_TIMEOUT: "20000"
+      PISTON_RUN_MEMORY_LIMIT: "268435456"
+      PISTON_COMPILE_MEMORY_LIMIT: "536870912"
+      PISTON_OUTPUT_MAX_SIZE: "1048576"
+      PISTON_MAX_CONCURRENT_JOBS: "8"
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://127.0.0.1:2000/api/v2/runtimes',x=>process.exit(x.statusCode===200?0:1));r.on('error',()=>process.exit(1));"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 1024m
+    restart: unless-stopped
+    networks:
+      - runner-net
+
+  docs:
+    image: nginx:alpine
+    container_name: nitrowater-docs
+    ports:
+      # 本地 bootRun 的 BFF 默认从这里取 /plugin/**；生产 BFF 走容器内 http://docs:80。
+      - "127.0.0.1:8085:80"
+    volumes:
+      - ../plugin-docs:/usr/share/nginx/html/plugin:ro
+      - ./docs-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    mem_limit: 64m
     restart: unless-stopped
     networks:
       - nitrowater-net
@@ -56,28 +91,37 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: resource
-    # image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/resource:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/resource:${APP_IMAGE_TAG:-latest}
     container_name: nitrowater-resource
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8093:8093"
     environment:
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_resource?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
-      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-root}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       RESOURCE_BACKEND: ${RESOURCE_BACKEND:-s3}
-      S3_ENDPOINT: http://seaweedfs:8333
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:8333}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-nitrowater}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY must be set in deploy/docker/.env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-change-me}
       S3_BUCKET: ${S3_BUCKET:-nitrowater}
-      # ---- 腾讯 COS（可选：留空则只用 s3/local）----
       COS_SECRET_ID: ${COS_SECRET_ID:-}
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
       COS_REGION: ${COS_REGION:-ap-shanghai}
       COS_BUCKET: ${COS_BUCKET:-}
+      # 内部发布通道；留空 = 端点返回 503（fail-closed）。
+      RESOURCE_INTERNAL_TOKEN: ${RESOURCE_INTERNAL_TOKEN:-}
+      # 用户上传默认关闭（保留接口，返回 503）；审核上线后再设 true。
+      RESOURCE_USER_UPLOAD: ${RESOURCE_USER_UPLOAD:-false}
+      RESOURCE_MAX_SIZE: ${RESOURCE_MAX_SIZE:-10485760}
+      RESOURCE_PLUGIN_MAX_SIZE: ${RESOURCE_PLUGIN_MAX_SIZE:-67108864}
+      RESOURCE_CACHE_MARGIN: ${RESOURCE_CACHE_MARGIN:-60}
+      RESOURCE_JWT_AUDIENCES: ${RESOURCE_JWT_AUDIENCES:-nitrowater-resource,nitrowater-server}
+    depends_on:
+      - seaweedfs
     mem_limit: 512m
     restart: unless-stopped
     networks:
@@ -88,20 +132,18 @@ services:
       context: ../..
       dockerfile: Dockerfile
       target: server
-    # image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/server:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/server:${APP_IMAGE_TAG:-latest}
     container_name: nitrowater-server
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8081:8081"
     environment:
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_biz?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
-      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-root}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      PISTON_BASE_URL: http://piston:2000
-      # ---- Documentation assistant (Spring AI) ----
-      # Qdrant runs in docker-compose.infra.yml on the shared network.
+      PISTON_BASE_URL: ${PISTON_BASE_URL:-http://piston:2000}
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6334"
       AI_CHAT_API_KEY: ${AI_CHAT_API_KEY:-${DEEPSEEK_API_KEY:-not-configured}}
@@ -111,77 +153,67 @@ services:
       AI_EMBEDDING_BASE_URL: ${AI_EMBEDDING_BASE_URL:-https://api.siliconflow.cn/v1}
       AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-Qwen/Qwen3-Embedding-0.6B}
       AI_EMBEDDING_DIMENSIONS: ${AI_EMBEDDING_DIMENSIONS:-1024}
+      AI_COLLECTION: ${AI_COLLECTION:-nitrowater_velochatx_docs}
       AI_MEMORY_RETENTION_DAYS: ${AI_MEMORY_RETENTION_DAYS:-180}
       AI_MEMORY_PURGE_DAYS: ${AI_MEMORY_PURGE_DAYS:-30}
       AI_MEMORY_CLEANUP_CRON: "${AI_MEMORY_CLEANUP_CRON:-0 15 3 * * *}"
-      # Web search uses DeepSeek's search API (`DEEPSEEK_API_KEY`); inactive when the key is absent.
+      AI_USAGE_RETENTION_DAYS: ${AI_USAGE_RETENTION_DAYS:-31}
+      AI_USAGE_GLOBAL_RETENTION_DAYS: ${AI_USAGE_GLOBAL_RETENTION_DAYS:-366}
+      AI_USAGE_CLEANUP_CRON: "${AI_USAGE_CLEANUP_CRON:-0 45 4 * * *}"
       AI_WEB_SEARCH_ENABLED: ${AI_WEB_SEARCH_ENABLED:-true}
       AI_WEB_SEARCH_API_KEY: ${AI_WEB_SEARCH_API_KEY:-${DEEPSEEK_API_KEY:-}}
       AI_WEB_SEARCH_ENDPOINT: ${AI_WEB_SEARCH_ENDPOINT:-https://api.deepseek.com/v1/tools/search}
       AI_WEB_SEARCH_TIMEOUT_MS: ${AI_WEB_SEARCH_TIMEOUT_MS:-20000}
-      # Content moderation: the posture (off/log/enforce) is a DATABASE setting edited at /admin/ai.
-      # Only the dictionary locations and the risk-control thresholds come from the environment;
-      # compose loads .env, so these must be listed here to reach the container.
+      # 词表默认只用镜像内基线；启用外置词表时在 .env 里加 file: 层（见 .env.prod.example）。
       AI_MODERATION_DICT: ${AI_MODERATION_DICT:-classpath:ai/moderation/words.txt}
       AI_MODERATION_ALLOW: ${AI_MODERATION_ALLOW:-classpath:ai/moderation/allow.txt}
       AI_MODERATION_STRIKE_LIMIT: ${AI_MODERATION_STRIKE_LIMIT:-5}
       AI_MODERATION_STRIKE_WINDOW_MINUTES: ${AI_MODERATION_STRIKE_WINDOW_MINUTES:-10}
       AI_MODERATION_COOLDOWN_MINUTES: ${AI_MODERATION_COOLDOWN_MINUTES:-15}
-      # Documentation corpora come from the classpath (ai/docs/<corpus>) and are configured under
-      # app.ai.collections; published sites (deploy/plugin-docs) are served by the docs container,
-      # so the server needs neither the mount nor the legacy AI_DOCS_* variables.
+      APP_AI_COLLECTIONS_1_LOCATION: ${AI_DOCS_LOCATION:-classpath:ai/docs/nitrowater}
+    volumes:
+      # 内容目录常驻只读挂载；是否启用由 AI_MODERATION_DICT / AI_DOCS_LOCATION 控制。
+      - ${CONTENT_ROOT:-../content}/moderation:/etc/nitrowater/moderation:ro
+      - ${CONTENT_ROOT:-../content}/docs:/etc/nitrowater/docs:ro
+    depends_on:
+      - qdrant
     mem_limit: 768m
     restart: unless-stopped
     networks:
       - nitrowater-net
+      - runner-net
 
   bff:
     build:
       context: ../..
       dockerfile: Dockerfile
       target: bff
-    # image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/bff:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/bff:${APP_IMAGE_TAG:-latest}
     container_name: nitrowater-bff
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8080:8080"
     environment:
+      VIRTUAL_HOST: ${WEB_DOMAIN:-}
+      VIRTUAL_PORT: 8080
+      LETSENCRYPT_HOST: ${WEB_DOMAIN:-}
+      LETSENCRYPT_EMAIL: ${SSL_EMAIL:-}
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
       RS_BASE_URL: http://server:8081
       RESOURCE_BASE_URL: http://resource:8093
       ACCOUNT_BASE_URL: http://account:8090
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:?BFF_CLIENT_SECRET must be set in deploy/docker/.env}
-      # The BFF only forwards /plugin/** to the docs container (no static files of its own).
+      BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:-nitrowater-bff-secret}
+      # 每次发布换新值：epoch 不同的旧会话会被丢弃。
+      APP_SESSION_EPOCH: ${APP_SESSION_EPOCH:-dev}
+      POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI:-http://localhost:5173}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       PLUGIN_DOCS_UPSTREAM: http://docs:80
     depends_on:
-      - account
+      - server
+      - resource
       - docs
     mem_limit: 512m
-    restart: unless-stopped
-    networks:
-      - nitrowater-net
-
-  # Plugin docs: ONE container (nginx) hosting ALL plugin docs + downloads as static files.
-  # Docs artifacts are independently built & published into ../plugin-docs
-  # (see deploy/plugin-docs/README.md). The BFF forwards /plugin/<name>/** here.
-  # Publishing a new plugin/version = rsync/scp the files (optionally `docker restart
-  # nitrowater-docs` for immediate cache bust); no BFF restart and no image rebuild needed.
-  docs:
-    # image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/docs:${IMAGE_TAG:-latest}
-    image: nginx:alpine
-    container_name: nitrowater-docs
-    ports:
-      # dev: BFF runs on the host (gradle bootRun) and reaches http://localhost:8085
-      # (the app.plugin-docs.upstream default). Loopback-only, so prod is not exposed.
-      # prod: the in-network BFF uses PLUGIN_DOCS_UPSTREAM=http://docs:80 instead.
-      - "127.0.0.1:8085:80"
-    volumes:
-      # Mounted at .../html/plugin so a URL /plugin/<name>/... maps to <host plugin-docs>/<name>/...
-      # (matches the BFF's /plugin/** namespace and the old WebConfig resource handler).
-      - ../plugin-docs:/usr/share/nginx/html/plugin:ro
-      - ./docs-nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    mem_limit: 64m
     restart: unless-stopped
     networks:
       - nitrowater-net
@@ -189,3 +221,11 @@ services:
 networks:
   nitrowater-net:
     external: true
+  # 沙箱隔离网络：只有 piston 和 server 加入。
+  runner-net:
+    name: nitrowater-runner-net
+
+volumes:
+  nitrowater-seaweedfs:
+  nitrowater-qdrant:
+  nitrowater-piston:

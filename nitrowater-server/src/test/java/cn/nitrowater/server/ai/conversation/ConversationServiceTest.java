@@ -5,6 +5,7 @@ import cn.nitrowater.server.service.ai.ConversationService;
 import cn.nitrowater.server.service.ai.properties.AiProperties;
 import cn.nitrowater.server.service.ai.model.AiTokenUsage;
 import cn.nitrowater.server.service.ai.model.ChatTurn;
+import cn.nitrowater.server.service.ai.model.ContextReset;
 import cn.nitrowater.server.service.ai.model.DocSource;
 import cn.nitrowater.server.service.ai.AiModerationService;
 import cn.nitrowater.server.infra.entity.AiConversation;
@@ -73,7 +74,7 @@ class ConversationServiceTest {
         when(messages.findFirstByConversationIdOrderBySeqDesc(1L)).thenReturn(Optional.of(last));
         when(messages.countByConversationIdAndSeqGreaterThan(1L, 2)).thenReturn(7L);
 
-        ConversationService.ContextReset reset = service.resetContext("c-1", 7L);
+        ContextReset reset = service.resetContext("c-1", 7L);
 
         assertThat(reset.cleared()).isTrue();
         assertThat(reset.boundarySeq()).isEqualTo(9);

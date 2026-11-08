@@ -31,6 +31,11 @@ spring:
       database: 0
       username: default
       password: "${REDIS_PASSWORD:}"
+      # Redis is used as a plain key-value store (rate limiting), not through the repository
+      # abstraction. Without this, Spring Data Redis scans every JPA repository and logs
+      # "Could not safely identify store assignment for repository candidate ...".
+      repositories:
+        enabled: false
 
   # -------- 业务表迁移（业务库 nitrowater_biz；V1 baseline）--------
   flyway:
@@ -164,6 +169,11 @@ app:
     # no further SSE frames are written after the disconnect either way.
     agent:
       interrupt-on-disconnect: ${AI_AGENT_INTERRUPT_ON_DISCONNECT:false}
+      # Wall-clock budget of one turn (model rounds + tool calls together). It must stay below the
+      # SSE timeout (180s in AiAgentController); when it expires the turn ends with an error instead
+      # of hanging. Per-tool deadlines are separate and much smaller: a tool that misses its own
+      # deadline answers with a retryable `tool.timeout` and the model decides whether to retry.
+      turn-timeout-ms: ${AI_AGENT_TURN_TIMEOUT_MS:150000}
     # ---- Content moderation (violation words) ----
     # The active posture lives in the database (ai_admin_setting.moderation_mode, editable from
     # 管理端 › AI › 运行设置) so it can be switched without a redeploy. It defaults to LOG (record

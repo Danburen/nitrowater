@@ -3,9 +3,9 @@
 #
 # 检查：
 #   1) 读取 deploy/docker/.env（进程内已有变量优先，与 compose 语义一致）
-#   2) 必需变量 / 占位值（123456、change-me、dev salt ...）
+#   2) 必需变量 / 占位值（YOUR_*_HERE、123456、change-me、dev salt ...）
 #   3) 条件变量（COMMUNICATION_MODE=real、RESOURCE_BACKEND=cos）
-#   4) 内容资产：词表（必须双层且非空）、文档语料、外部 skills
+#   4) 内容资产：词表（必须双层且非空）、文档语料
 #   5) 密钥文件与 JWT issuer
 #   6) 本地端口（-Local）
 #
@@ -64,18 +64,39 @@ function Count-Entries {
         }).Count
 }
 
+# Template placeholders (YOUR_*_HERE) mean "not configured yet". Uppercase-only on purpose:
+# a real value such as `your_name@corp.com` must not trip the check.
+function Test-Placeholder {
+    param([string]$Value)
+    if ([string]::IsNullOrEmpty($Value)) { return $false }
+    return $Value -cmatch 'YOUR_[A-Z0-9_]*|_HERE$'
+}
+
+function Get-PlaceholderKeys {
+    param([string]$Path)
+    $keys = New-Object System.Collections.ArrayList
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        if ($line.Trim() -eq '' -or $line.Trim().StartsWith('#')) { continue }
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
+            $key = $matches[1]
+            if (Test-Placeholder (Get-EnvValue $key)) { [void]$keys.Add($key) }
+        }
+    }
+    return @($keys)
+}
+
 $contentRoot = Get-EnvValue 'CONTENT_ROOT'
 if ([string]::IsNullOrWhiteSpace($contentRoot)) { $contentRoot = Join-Path $root 'content' }
 
-# Maps a container mount path (docker-compose.content.yml) back to the host dir, so the check
+# Maps a container mount path (docker-compose.app.yml) back to the host dir, so the check
 # validates the very file the operator is going to mount.
 function Resolve-HostPath {
     param([string]$ContainerPath)
     $path = $ContainerPath -replace '^file:', ''
     $map = @(
         @{ Prefix = '/etc/nitrowater/moderation'; Host = (Join-Path $contentRoot 'moderation') },
-        @{ Prefix = '/etc/nitrowater/docs'; Host = (Join-Path $contentRoot 'docs') },
-        @{ Prefix = '/etc/nitrowater/skills'; Host = (Join-Path $contentRoot 'skills') }
+        @{ Prefix = '/etc/nitrowater/docs'; Host = (Join-Path $contentRoot 'docs') }
     )
     foreach ($entry in $map) {
         if ($path.StartsWith($entry.Prefix)) {
@@ -101,6 +122,16 @@ if (Import-DotEnv $resolvedEnv) {
 }
 
 # ---------- 2. 必需变量 / 占位值 ----------
+# Template placeholders (YOUR_*_HERE) must block: copying .env.prod.example verbatim used to
+# yield "Fail: 0" because the per-variable rules only knew about empty values and known weak
+# defaults (assessment M3).
+$placeholders = @(Get-PlaceholderKeys $resolvedEnv)
+if ($placeholders.Count -gt 0) {
+    Add-Result 'FAIL' 'placeholders' ('仍是模板占位值，需换成真实值：' + ($placeholders -join ', '))
+} else {
+    Add-Result 'PASS' 'placeholders' '未发现 YOUR_*_HERE 占位值'
+}
+
 $kek = Get-EnvValue 'NITROWATER_KEK'
 if ([string]::IsNullOrEmpty($kek)) {
     Add-Result 'FAIL' 'NITROWATER_KEK' '未设置（account 启动失败）'
@@ -152,6 +183,36 @@ if ([string]::IsNullOrEmpty($bffSecret)) {
     Add-Result 'FAIL' 'BFF_CLIENT_SECRET' '仍是 dev 默认值'
 } else {
     Add-Result 'PASS' 'BFF_CLIENT_SECRET' '已设置'
+}
+
+# Redis holds BFF sessions (access + refresh tokens) and the account sessions, and it shares
+# the compose network with Piston. Running it without AUTH in production is not acceptable.
+$redisPassword = Get-EnvValue 'REDIS_PASSWORD'
+if ([string]::IsNullOrEmpty($redisPassword)) {
+    if ($Local) {
+        Add-Result 'INFO' 'REDIS_PASSWORD' '未设置（本地 dev 允许无密码 Redis）'
+    } else {
+        Add-Result 'FAIL' 'REDIS_PASSWORD' '未设置：会话/令牌无认证，且与 Piston 同网段（评估 M4）'
+    }
+} elseif (Test-Placeholder $redisPassword) {
+    Add-Result 'FAIL' 'REDIS_PASSWORD' '仍是模板占位值'
+} else {
+    Add-Result 'PASS' 'REDIS_PASSWORD' '已设置'
+}
+
+# SessionEpochFilter drops sessions whose epoch differs from the current one; a constant
+# "dev" means redeploys never invalidate old sessions (assessment H5).
+$sessionEpoch = Get-EnvValue 'APP_SESSION_EPOCH'
+if ($Local) {
+    Add-Result 'INFO' 'APP_SESSION_EPOCH' ("本地 dev 使用默认 epoch={0}" -f $(if ($sessionEpoch) { $sessionEpoch } else { 'dev' }))
+} elseif ([string]::IsNullOrEmpty($sessionEpoch)) {
+    Add-Result 'FAIL' 'APP_SESSION_EPOCH' '未设置：恒为 dev，发布不会失效旧会话'
+} elseif ($sessionEpoch -eq 'dev') {
+    Add-Result 'FAIL' 'APP_SESSION_EPOCH' '仍是 dev 默认值，每次发布应写入新值'
+} elseif (Test-Placeholder $sessionEpoch) {
+    Add-Result 'FAIL' 'APP_SESSION_EPOCH' '仍是模板占位值'
+} else {
+    Add-Result 'PASS' 'APP_SESSION_EPOCH' $sessionEpoch
 }
 
 $backend = Get-EnvValue 'RESOURCE_BACKEND'
@@ -301,13 +362,7 @@ if ([string]::IsNullOrEmpty($docsLocation)) {
 
 $skillsDir = Get-EnvValue 'AI_SKILLS_DIR'
 if ($skillsDir) {
-    $hostPath = Resolve-HostPath $skillsDir
-    if ($hostPath -and (Test-Path -LiteralPath $hostPath -PathType Container)) {
-        $skills = @(Get-ChildItem -LiteralPath $hostPath -Recurse -Filter 'SKILL.md' -File -ErrorAction SilentlyContinue)
-        Add-Result 'INFO' 'AI_SKILLS_DIR' "$($skills.Count) 个外部技能（$hostPath）"
-    } elseif ($hostPath) {
-        Add-Result 'WARN' 'AI_SKILLS_DIR' "目录不存在：$hostPath（内置技能仍可用）"
-    }
+    Add-Result 'INFO' 'AI_SKILLS_DIR' '已废弃（服务不再读取），可从 .env 删除'
 }
 
 # ---------- 6. 密钥 ----------

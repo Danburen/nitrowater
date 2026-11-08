@@ -31,6 +31,10 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
+      # Redis is a plain cache here; keep Spring Data Redis from scanning the JPA repositories
+      # (it logs "Could not safely identify store assignment" for every one of them otherwise).
+      repositories:
+        enabled: false
 
   # -------- 迁移（限业务自定义库）--------
   flyway:

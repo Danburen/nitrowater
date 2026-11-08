@@ -29,7 +29,10 @@ defineProps<{
           {{ description }}
         </p>
       </div>
-      <div class="admin-page-actions">
+      <div
+        v-if="$slots.actions"
+        class="admin-page-actions"
+      >
         <slot name="actions" />
       </div>
     </div>

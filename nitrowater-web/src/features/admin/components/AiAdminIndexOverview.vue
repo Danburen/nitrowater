@@ -40,7 +40,7 @@ function formatDate(value: string | null): string {
     class="admin-card"
   >
     <template #header>
-      <div class="admin-toolbar">
+      <div class="admin-card-header">
         <div class="flex items-baseline gap-2">
           <span class="admin-card-title">索引概览</span>
           <span class="admin-card-meta">

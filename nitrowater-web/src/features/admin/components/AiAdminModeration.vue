@@ -20,6 +20,7 @@ import {
   type AiModerationQuery,
   type AiModerationReport,
 } from '../../../api/ai'
+import AdminFilterCard from './AdminFilterCard.vue'
 
 const PAGE_SIZE = 50
 
@@ -157,59 +158,18 @@ function formatTime(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
 }
+
+// The page header owns the action cluster, so the reload button is rendered there and drives this
+// panel through its exposed state.
+defineExpose({ reload, reloading })
 </script>
 
 <template>
-  <el-card
-    shadow="never"
-    class="admin-card"
-  >
-    <template #header>
-      <div class="admin-toolbar">
-        <div class="flex flex-wrap items-baseline gap-2">
-          <span class="admin-card-title">内容安全审核</span>
-          <el-tag
-            :type="report?.mode === 'ENFORCE' ? 'danger' : report?.mode === 'LOG' ? 'warning' : 'info'"
-            size="small"
-            effect="plain"
-          >
-            {{ modeLabel }}
-          </el-tag>
-          <span class="admin-card-meta">
-            词表 {{ report?.dictionarySize ?? 0 }} 条 · 近 24h 命中 {{ report?.hitsLast24Hours ?? 0 }} ·
-            {{ filtering ? `筛选命中 ${report?.hits.page.totalElements ?? 0} 条` : `命中合计 ${report?.hits.page.totalElements ?? 0} 条` }}
-          </span>
-        </div>
-        <div class="admin-actions">
-          <el-button
-            :loading="loading"
-            @click="load"
-          >
-            刷新
-          </el-button>
-          <el-button
-            :loading="reloading"
-            @click="reload"
-          >
-            重载词表
-          </el-button>
-        </div>
-      </div>
-    </template>
-
-    <el-alert
-      v-if="error"
-      :title="error"
-      type="error"
-      show-icon
-      :closable="false"
-      class="mb-4"
-    />
-
-    <el-form
-      :inline="true"
-      class="admin-filter-form mb-3"
-      @submit.prevent="search"
+  <div class="space-y-4">
+    <AdminFilterCard
+      :loading="loading"
+      @submit="search"
+      @reset="resetFilters"
     >
       <el-form-item label="用户">
         <el-input
@@ -249,103 +209,118 @@ function formatTime(value: string): string {
           />
         </el-select>
       </el-form-item>
-      <div class="admin-filter-actions">
-        <el-button
-          type="primary"
-          native-type="submit"
-          :loading="loading"
-        >
-          查询
-        </el-button>
-        <el-button
-          size="small"
-          text
-          @click="resetFilters"
-        >
-          清除筛选
-        </el-button>
-      </div>
-    </el-form>
+    </AdminFilterCard>
 
-    <p class="mb-3 text-xs text-faint">
-      只有「用户输入」的命中会计入冷却（连续命中会短暂停用 AI 接口）；回答、记忆与画像偏好的命中只用于
-      调词——误判时把该词加到 <code>ai/moderation/allow.txt</code> 再点「重载词表」。
-    </p>
-
-    <el-skeleton
-      v-if="!ready"
-      :rows="5"
-      animated
-    />
-    <template v-else>
-      <el-table
-        v-loading="loading"
-        :data="hits"
-        size="small"
-        stripe
-        :empty-text="filtering ? '没有符合条件的命中记录' : '暂无命中记录'"
-      >
-        <el-table-column
-          label="时间"
-          width="180"
-        >
-          <template #default="{ row }">
-            {{ formatTime(asHit(row).createdAt) }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="用户"
-          min-width="140"
-        >
-          <template #default="{ row }">
-            {{ displayName(row) }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="来源"
-          width="110"
-        >
-          <template #default="{ row }">
-            {{ directionLabel(row) }}
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="处置"
-          width="100"
-        >
-          <template #default="{ row }">
+    <el-card
+      shadow="never"
+      class="admin-card admin-card-flush"
+    >
+      <template #header>
+        <div class="admin-card-header">
+          <div class="flex flex-wrap items-baseline gap-2">
+            <span class="admin-card-title">内容安全审核</span>
             <el-tag
-              :type="actionType(row)"
+              :type="report?.mode === 'ENFORCE' ? 'danger' : report?.mode === 'LOG' ? 'warning' : 'info'"
               size="small"
+              effect="plain"
             >
-              {{ actionLabel(row) }}
+              {{ modeLabel }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="命中词"
-          min-width="200"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            {{ asHit(row).words }}
-          </template>
-        </el-table-column>
-      </el-table>
+            <span class="admin-card-meta">
+              词表 {{ report?.dictionarySize ?? 0 }} 条 · 近 24h 命中 {{ report?.hitsLast24Hours ?? 0 }} ·
+              {{ filtering ? `筛选命中 ${report?.hits.page.totalElements ?? 0} 条` : `命中合计 ${report?.hits.page.totalElements ?? 0} 条` }}
+            </span>
+          </div>
+        </div>
+      </template>
 
-      <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-[12.5px] text-dim">
-        <span>
-          共 {{ report?.hits.page.totalElements ?? 0 }} 条 ·
-          第 {{ page + 1 }} / {{ Math.max(report?.hits.page.totalPages ?? 1, 1) }} 页
-        </span>
-        <el-pagination
-          :current-page="page + 1"
-          :page-size="PAGE_SIZE"
-          :total="report?.hits.page.totalElements ?? 0"
-          layout="prev, pager, next"
-          @current-change="pageTo"
+      <div class="space-y-3 px-4 py-3">
+        <el-alert
+          v-if="error"
+          :title="error"
+          type="error"
+          show-icon
+          :closable="false"
         />
+        <p class="text-xs text-faint">
+          只有「用户输入」的命中会计入冷却（连续命中会短暂停用 AI 接口）；回答、记忆与画像偏好的命中只用于
+          调词——误判时把该词加到 <code>ai/moderation/allow.txt</code> 再点「重载词表」。
+        </p>
       </div>
-    </template>
-  </el-card>
+
+      <el-skeleton
+        v-if="!ready"
+        :rows="5"
+        animated
+        class="p-4"
+      />
+      <template v-else>
+        <el-table
+          v-loading="loading"
+          :data="hits"
+          size="small"
+          stripe
+          :empty-text="filtering ? '没有符合条件的命中记录' : '暂无命中记录'"
+        >
+          <el-table-column
+            label="时间"
+            width="180"
+          >
+            <template #default="{ row }">
+              {{ formatTime(asHit(row).createdAt) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="用户"
+            min-width="140"
+          >
+            <template #default="{ row }">
+              {{ displayName(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="来源"
+            width="110"
+          >
+            <template #default="{ row }">
+              {{ directionLabel(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="处置"
+            width="100"
+          >
+            <template #default="{ row }">
+              <el-tag
+                :type="actionType(row)"
+                size="small"
+              >
+                {{ actionLabel(row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="命中词"
+            min-width="200"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              {{ asHit(row).words }}
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="admin-pager">
+          <el-pagination
+            :current-page="page + 1"
+            :page-size="PAGE_SIZE"
+            :total="report?.hits.page.totalElements ?? 0"
+            background
+            layout="prev, pager, next"
+            @current-change="pageTo"
+          />
+        </div>
+      </template>
+    </el-card>
+  </div>
 </template>

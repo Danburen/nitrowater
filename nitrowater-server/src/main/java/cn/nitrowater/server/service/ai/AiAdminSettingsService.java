@@ -3,6 +3,7 @@ package cn.nitrowater.server.service.ai;
 import cn.nitrowater.server.infra.entity.AiAdminSetting;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.infra.repository.AiAdminSettingRepository;
+import cn.nitrowater.server.service.ai.model.AiSettings;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import cn.nitrowater.lib.utils.JsonUtil;
@@ -27,7 +28,7 @@ public class AiAdminSettingsService {
     }
 
     /** @return persisted administrative controls */
-    public Settings get() {
+    public AiSettings get() {
         return toSettings(repository.findById(AiAdminSetting.SINGLETON_ID)
                 .orElseThrow(() -> new IllegalStateException("AI admin settings are not initialized")));
     }
@@ -41,7 +42,7 @@ public class AiAdminSettingsService {
 
     /** Saves the administrator's complete settings snapshot. */
     @Transactional
-    public Settings update(Settings settings, long adminUid) {
+    public AiSettings update(AiSettings settings, long adminUid) {
         AiAdminSetting setting = repository.findForUpdate(AiAdminSetting.SINGLETON_ID)
                 .orElseThrow(() -> new IllegalStateException("AI admin settings are not initialized"));
         setting.setDailyTokenLimit(settings.dailyTokenLimit());
@@ -68,28 +69,11 @@ public class AiAdminSettingsService {
         return toSettings(repository.save(setting));
     }
 
-    private static Settings toSettings(AiAdminSetting setting) {
-        return new Settings(setting.getDailyTokenLimit(), setting.getAiEnabled(), setting.getChatEnabled(),
+    private static AiSettings toSettings(AiAdminSetting setting) {
+        return new AiSettings(setting.getDailyTokenLimit(), setting.getAiEnabled(), setting.getChatEnabled(),
                 setting.getAgentEnabled(), setting.getDocumentSearchEnabled(), setting.getWebSearchEnabled(),
                 setting.getCodeRunnerEnabled(), setting.getSkillsEnabled(), setting.getModerationMode(),
                 setting.getGlobalDailyTokenLimit(), setting.getGlobalQuotaEnabled());
-    }
-
-    /**
-     * Runtime tool gate: the feature switch from {@link Settings#toolEnabled(String)} plus the
-     * per-tool disable list. A disabled tool stays registered in Spring AI; it is simply not
-     * advertised to the model for the next turn, so toggling takes effect without a restart.
-     *
-     * @param toolName registered tool name
-     * @return whether the tool may be advertised
-     */
-    public boolean toolEnabled(String toolName) {
-        if (StringUtil.isBlank(toolName)) {
-            return false;
-        }
-        AiAdminSetting setting = requireSetting();
-        return toSettings(setting).toolEnabled(toolName)
-                && !disabledTools(setting).contains(toolName);
     }
 
     /** @return tool names currently hidden from the model */
@@ -105,7 +89,7 @@ public class AiAdminSettingsService {
      * @return the persisted settings snapshot
      */
     @Transactional
-    public Settings setToolEnabled(String toolName, boolean enabled) {
+    public AiSettings setToolEnabled(String toolName, boolean enabled) {
         if (StringUtil.isBlank(toolName)) {
             throw new IllegalArgumentException("tool name is required");
         }
@@ -131,62 +115,4 @@ public class AiAdminSettingsService {
         return parsed == null || parsed.isEmpty() ? Set.of() : Set.copyOf(parsed);
     }
 
-    /**
-     * Persisted model capabilities, the per-user daily ceiling and the global breaker.
-     *
-     * <p>The two global fields are nullable so a client that predates them can still save the rest
-     * of the snapshot without silently zeroing the configured budget.</p>
-     */
-    public record Settings(
-            long dailyTokenLimit,
-            boolean aiEnabled,
-            boolean chatEnabled,
-            boolean agentEnabled,
-            boolean documentSearchEnabled,
-            boolean webSearchEnabled,
-            boolean codeRunnerEnabled,
-            boolean skillsEnabled,
-            ModerationMode moderationMode,
-            Long globalDailyTokenLimit,
-            Boolean globalQuotaEnabled) {
-
-        /** Compatibility constructor for callers (mostly tests) that predate the global breaker. */
-        public Settings(long dailyTokenLimit, boolean aiEnabled, boolean chatEnabled, boolean agentEnabled,
-                boolean documentSearchEnabled, boolean webSearchEnabled, boolean codeRunnerEnabled,
-                boolean skillsEnabled, ModerationMode moderationMode) {
-            this(dailyTokenLimit, aiEnabled, chatEnabled, agentEnabled, documentSearchEnabled,
-                    webSearchEnabled, codeRunnerEnabled, skillsEnabled, moderationMode, null, null);
-        }
-
-        /** @return the configured global ceiling, or {@code 0} when unlimited/unset */
-        public long globalLimit() {
-            return globalDailyTokenLimit == null ? 0L : globalDailyTokenLimit;
-        }
-
-        /** @return whether the global breaker is switched on AND has a positive ceiling */
-        public boolean globalQuotaActive() {
-            return Boolean.TRUE.equals(globalQuotaEnabled) && globalLimit() > 0;
-        }
-
-        /**
-         * Single source of truth for tool gating; acknowledged by both the agent request builder and
-         * the admin catalog so the console never shows a state the runtime ignores.
-         *
-         * @param toolName registered tool name
-         * @return whether the tool may be advertised for this turn
-         */
-        public boolean toolEnabled(String toolName) {
-            if (StringUtil.isBlank(toolName)) {
-                return false;
-            }
-            return switch (toolName) {
-                case "searchDocs" -> documentSearchEnabled;
-                case "loadSkill" -> skillsEnabled;
-                case "runCode" -> codeRunnerEnabled;
-                case "webSearch" -> webSearchEnabled;
-                // Core tools are code-registered; a tool without an admin switch stays available.
-                default -> true;
-            };
-        }
-    }
 }

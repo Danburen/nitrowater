@@ -2,7 +2,7 @@ package cn.nitrowater.server.ai;
 
 import cn.nitrowater.server.service.ai.model.ChatTurn;
 import cn.nitrowater.server.service.ai.model.DocCollection;
-import cn.nitrowater.server.service.ai.model.Skill;
+import cn.nitrowater.server.service.ai.model.skill.Skill;
 import cn.nitrowater.server.service.ai.PromptBuilder;
 import org.junit.jupiter.api.Test;
 

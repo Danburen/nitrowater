@@ -2,6 +2,8 @@ package cn.nitrowater.server.ai.tool;
 
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.AiMemoryService;
+import cn.nitrowater.server.service.ai.model.MemorySaveResult;
+import cn.nitrowater.server.service.ai.model.MemoryView;
 import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.service.ai.tool.MemoryTools;
 import org.junit.jupiter.api.Test;
@@ -28,10 +30,10 @@ class MemoryToolsTest {
     @Test
     void saveUsesTraceOwnerAndConversation() {
         AgentTrace trace = new AgentTrace("7", "conversation-1");
-        AiMemoryService.MemoryView view = new AiMemoryService.MemoryView(
+        MemoryView view = new MemoryView(
                 "m-1", "PREFERENCE", "Use Java 25", (short) 100, Instant.now(), null);
         when(memories.save(7L, "conversation-1", MemoryKind.PREFERENCE, "Use Java 25"))
-                .thenReturn(new AiMemoryService.SaveResult("saved", view, null));
+                .thenReturn(new MemorySaveResult("saved", view, null));
 
         String json = tools.saveMemory("preference", "Use Java 25", context(trace));
 
@@ -48,10 +50,10 @@ class MemoryToolsTest {
     @Test
     void updatingAnExistingMemoryIsReportedAsSuccessNotFailure() {
         AgentTrace trace = new AgentTrace("7", "conversation-1");
-        AiMemoryService.MemoryView view = new AiMemoryService.MemoryView(
+        MemoryView view = new MemoryView(
                 "m-2", "FACT", "Use Java 25", (short) 100, Instant.now(), null);
         when(memories.save(7L, "conversation-1", MemoryKind.FACT, "Use Java 25"))
-                .thenReturn(new AiMemoryService.SaveResult("updated", view, null));
+                .thenReturn(new MemorySaveResult("updated", view, null));
 
         String json = tools.saveMemory("FACT", "Use Java 25", context(trace));
 

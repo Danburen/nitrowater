@@ -8,8 +8,8 @@ import cn.nitrowater.server.config.properties.SandboxProperties;
 import cn.nitrowater.server.infra.exception.SandboxException;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
 import cn.nitrowater.server.service.sandbox.SandboxExecutionGuard;
-import cn.nitrowater.server.web.dto.RunRequest;
-import cn.nitrowater.server.web.dto.RunResponse;
+import cn.nitrowater.server.service.sandbox.model.RunCommand;
+import cn.nitrowater.server.service.sandbox.model.RunResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;
@@ -101,7 +101,7 @@ public class RunCodeTool {
         }
 
         try {
-            RunResponse response = guard.execute(uid, new RunRequest(language, code, stdin),
+            RunResult response = guard.execute(uid, new RunCommand(language, code, stdin),
                     properties.agentQueueWaitMs());
             ToolCode outcome = getOutcome(response);
 
@@ -207,7 +207,7 @@ public class RunCodeTool {
     }
 
     /** @return the outcome code for a completed run */
-    private static ToolCode getOutcome(RunResponse response) {
+    private static ToolCode getOutcome(RunResult response) {
         String status = response.status();
         if (status == null) {
             return ToolCode.RUNTIME_ERROR;

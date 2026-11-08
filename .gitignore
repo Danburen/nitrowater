@@ -80,7 +80,7 @@ go.work.sum
 **/src/main/resources/keys/*.key
 **/keys/*.key
 deploy/config/common-dev-secrets.yml
-# Production values kept outside deploy/docker/.env; passed via `deploy.ps1 -EnvFile <path>`.
+# Production values kept outside deploy/docker/.env; pass them with `docker compose --env-file <path>`.
 .env.prod.secrets
 
 # Scripts tracked: root bin/ (launch start-* + bin/test smoke) and deploy/bin/ (ops/deploy).
@@ -121,9 +121,13 @@ demo/__pycache__/
 # local build - never commit it. See deploy/plugin-docs/ + bin/dev/sync-docs.ps1.
 /nitrowater-server/src/main/resources/static/docs/
 
-# Decoupled deploy content: violation word lists, external doc corpora and external skills are
-# mounted at runtime (docker-compose.content.yml), maintained outside this public repo. Only the
-# contract (README) and the folder placeholder stay tracked. See deploy/content/README.md.
+# Decoupled deploy content: violation word lists and external doc corpora are mounted at runtime
+# (docker-compose.app.yml), maintained outside this public repo. Only the contract (README) and
+# the folder placeholders stay tracked. See deploy/content/README.md.
 /deploy/content/*
 !/deploy/content/README.md
 !/deploy/content/.gitkeep
+!/deploy/content/moderation/
+!/deploy/content/moderation/.gitkeep
+!/deploy/content/docs/
+!/deploy/content/docs/.gitkeep

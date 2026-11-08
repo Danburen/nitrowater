@@ -3,7 +3,7 @@ package cn.nitrowater.server.ai.tool;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
 import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
-import cn.nitrowater.server.service.ai.model.WebSearchResult;
+import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
 import cn.nitrowater.server.service.ai.tool.WebSearchTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;

@@ -49,8 +49,8 @@ deploy/plugin-docs/
   （直连 `:8093` 的 `POST /internal/resource/publish`，需服务端 `app.resource.internal.token`；bootRun 已注入 dev 默认）。
 - docker 容器：compose（`deploy/docker/docker-compose.app.yml`）把本目录 **只读挂进 docs 容器**
   `../plugin-docs:/usr/share/nginx/html/plugin:ro`，nginx 配置为 `deploy/docker/docs-nginx.conf`。
-  本地 dev：`docker compose -f deploy/docker/docker-compose.app.yml up -d docs`（或直接跑
-  `bin/start-infra.ps1`，已内置 docs 容器启动），容器监听 `127.0.0.1:8085`（= BFF 的 `app.plugin-docs.upstream` 默认）。
+  本地 dev：`docker network create nitrowater-net`（一次）+ `docker compose -f deploy/docker/docker-compose.app.yml up -d docs`
+  （或直接跑 `bin/start-infra.ps1`，已内置 docs 容器启动），容器监听 `127.0.0.1:8085`（= BFF 的 `app.plugin-docs.upstream` 默认）。
   发布新文档后无需重启 BFF，可选 `docker restart nitrowater-docs` 立即生效。
 
 ## 为什么不用 `nitrowater-web/public/`？

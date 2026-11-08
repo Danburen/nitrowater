@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web.dto;
 
-import cn.nitrowater.server.service.ai.AiAdminSettingsService.Settings;
 import cn.nitrowater.server.infra.enums.ModerationMode;
+import cn.nitrowater.server.service.ai.model.AiSettings;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -27,8 +27,8 @@ public record AiAdminSettingsReq(
         Boolean globalQuotaEnabled) {
 
     /** @return the validated settings value object */
-    public Settings toSettings() {
-        return new Settings(dailyTokenLimit, aiEnabled, chatEnabled, agentEnabled,
+    public AiSettings toSettings() {
+        return new AiSettings(dailyTokenLimit, aiEnabled, chatEnabled, agentEnabled,
                 documentSearchEnabled, webSearchEnabled, codeRunnerEnabled, skillsEnabled, moderationMode,
                 globalDailyTokenLimit, globalQuotaEnabled);
     }

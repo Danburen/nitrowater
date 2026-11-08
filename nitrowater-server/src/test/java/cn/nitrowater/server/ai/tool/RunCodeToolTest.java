@@ -7,8 +7,8 @@ import cn.nitrowater.server.infra.exception.SandboxException;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
 import cn.nitrowater.server.service.ai.tool.RunCodeTool;
 import cn.nitrowater.server.service.sandbox.SandboxExecutionGuard;
-import cn.nitrowater.server.web.dto.RunRequest;
-import cn.nitrowater.server.web.dto.RunResponse;
+import cn.nitrowater.server.service.sandbox.model.RunCommand;
+import cn.nitrowater.server.service.sandbox.model.RunResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.http.HttpStatus;
@@ -38,8 +38,8 @@ class RunCodeToolTest {
     void runsCodeAndRecordsAnOkToolCall() {
         SandboxExecutionGuard guard = mock(SandboxExecutionGuard.class);
         when(guard.snapshot()).thenReturn(new SandboxGate.Snapshot(0, 1, 20, WAIT_MS));
-        when(guard.execute(eq("u1"), any(RunRequest.class), eq(WAIT_MS)))
-                .thenReturn(new RunResponse("hello", "", "OK", 0, 5L, 1024L, null));
+        when(guard.execute(eq("u1"), any(RunCommand.class), eq(WAIT_MS)))
+                .thenReturn(new RunResult("hello", "", "OK", 0, 5L, 1024L, null));
         AgentTrace trace = new AgentTrace("u1");
 
         String json = new RunCodeTool(guard, properties())
@@ -81,8 +81,8 @@ class RunCodeToolTest {
     void mapsCompileErrorsAndStopsAfterThreeAttempts() {
         SandboxExecutionGuard guard = mock(SandboxExecutionGuard.class);
         when(guard.snapshot()).thenReturn(new SandboxGate.Snapshot(0, 1, 20, WAIT_MS));
-        when(guard.execute(eq("u1"), any(RunRequest.class), eq(WAIT_MS)))
-                .thenReturn(new RunResponse(null, "cannot find symbol", "CE", 1, 4L, 1024L,
+        when(guard.execute(eq("u1"), any(RunCommand.class), eq(WAIT_MS)))
+                .thenReturn(new RunResult(null, "cannot find symbol", "CE", 1, 4L, 1024L,
                         "compilation failed"));
         AgentTrace trace = new AgentTrace("u1");
         RunCodeTool tool = new RunCodeTool(guard, properties());
@@ -98,14 +98,14 @@ class RunCodeToolTest {
                 .containsExactly("tool.compile_error", "tool.compile_error", "tool.compile_error",
                         "tool.retry_exhausted");
         assertThat(trace.runCodeAttempts()).isEqualTo(4);
-        verify(guard, times(3)).execute(eq("u1"), any(RunRequest.class), eq(WAIT_MS));
+        verify(guard, times(3)).execute(eq("u1"), any(RunCommand.class), eq(WAIT_MS));
     }
 
     @Test
     void mapsQuotaAndServerFailuresWithoutLeakingInternals() {
         SandboxExecutionGuard guard = mock(SandboxExecutionGuard.class);
         when(guard.snapshot()).thenReturn(new SandboxGate.Snapshot(0, 1, 20, WAIT_MS));
-        when(guard.execute(eq("u1"), any(RunRequest.class), eq(WAIT_MS)))
+        when(guard.execute(eq("u1"), any(RunCommand.class), eq(WAIT_MS)))
                 .thenThrow(new SandboxExecutionGuard.GuardException(
                         HttpStatus.TOO_MANY_REQUESTS, "rate_limited", "internal quota detail"));
         AgentTrace trace = new AgentTrace("u1");
@@ -115,7 +115,7 @@ class RunCodeToolTest {
         assertThat(limited).contains("\"code\":\"tool.rate_limited\"")
                 .doesNotContain("internal quota detail");
 
-        when(guard.execute(eq("u1"), any(RunRequest.class), eq(WAIT_MS)))
+        when(guard.execute(eq("u1"), any(RunCommand.class), eq(WAIT_MS)))
                 .thenThrow(new SandboxException(HttpStatus.SERVICE_UNAVAILABLE,
                         "sandbox_unavailable", "piston stack trace"));
         String unavailable = tool.runCode("java", "class Main {}", null, context(trace));

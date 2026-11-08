@@ -5,6 +5,7 @@ import cn.nitrowater.server.infra.exception.ContentCooldownException;
 import cn.nitrowater.server.service.ai.model.ModerationDictionary;
 import cn.nitrowater.server.service.ai.model.OutputRedactor;
 import cn.nitrowater.server.service.ai.model.PromptLeakGuard;
+import cn.nitrowater.server.service.ai.model.ScreenedAnswer;
 import cn.nitrowater.server.service.ai.properties.ModerationProperties;
 import cn.nitrowater.server.infra.entity.AiModerationHit;
 import cn.nitrowater.server.infra.entity.BizUser;
@@ -190,15 +191,15 @@ public class AiModerationService {
      * @param text the complete answer (streamed answers are accumulated server-side)
      * @return the text to persist and return, plus whether the safety layer altered it
      */
-    public Screened screenAnswer(long uid, String conversationUuid, String text) {
+    public ScreenedAnswer screenAnswer(long uid, String conversationUuid, String text) {
         if (text == null || text.isEmpty()) {
-            return new Screened(text, false);
+            return new ScreenedAnswer(text, false);
         }
         OutputRedactor.Result redacted = OutputRedactor.redact(text);
         String answer = redacted.text();
         ModerationMode mode = mode();
         if (!mode.active()) {
-            return new Screened(answer, redacted.changed());
+            return new ScreenedAnswer(answer, redacted.changed());
         }
         if (redacted.changed()) {
             record(uid, conversationUuid, ModerationDirection.OUTPUT, ModerationAction.MASKED, redacted.kinds());
@@ -207,22 +208,22 @@ public class AiModerationService {
             if (!mode.enforcing()) {
                 record(uid, conversationUuid, ModerationDirection.OUTPUT, ModerationAction.LOGGED,
                         List.of(PromptLeakGuard.HIT));
-                return new Screened(answer, redacted.changed());
+                return new ScreenedAnswer(answer, redacted.changed());
             }
             record(uid, conversationUuid, ModerationDirection.OUTPUT, ModerationAction.MASKED,
                     List.of(PromptLeakGuard.HIT));
-            return new Screened(PromptLeakGuard.REFUSAL, true);
+            return new ScreenedAnswer(PromptLeakGuard.REFUSAL, true);
         }
         List<String> found = dictionary.size() == 0 ? List.of() : dictionary.find(answer);
         if (found.isEmpty()) {
-            return new Screened(answer, redacted.changed());
+            return new ScreenedAnswer(answer, redacted.changed());
         }
         if (!mode.enforcing()) {
             record(uid, conversationUuid, ModerationDirection.OUTPUT, ModerationAction.LOGGED, found);
-            return new Screened(answer, redacted.changed());
+            return new ScreenedAnswer(answer, redacted.changed());
         }
         record(uid, conversationUuid, ModerationDirection.OUTPUT, ModerationAction.MASKED, found);
-        return new Screened(dictionary.mask(answer), true);
+        return new ScreenedAnswer(dictionary.mask(answer), true);
     }
 
     /**
@@ -368,13 +369,4 @@ public class AiModerationService {
         }
     }
 
-    /**
-     * Result of the answer screen.
-     *
-     * @param text the text to return and persist (altered when {@code masked})
-     * @param masked whether the safety layer altered the text: credential/PII redaction, a refused
-     *     system-prompt leak, or dictionary masking; drives the stored {@code moderated} flag
-     */
-    public record Screened(String text, boolean masked) {
-    }
 }

@@ -67,8 +67,8 @@
   - **存量不强制迁移**：工具页与 auth-ui 里已有的 EP 用法保留；改动这些文件时，新增/重写的部分按上面的偏好选择，避免一边倒。
   - **设置页版式（强制）**：名称在左、控件在右，一行一个条目；按分类分组，**每组一个 card**（组标题 + 组内细线分隔的行，页头/页尾不留空白块）；**页面本身不再套外层 card**，避免 card 套 card。删除 / 清空等危险操作**不放在常规操作区**，统一放页面底部的 danger zone（GitHub 风格：红框 + 一行小标题 `Danger zone`，**每个动作一行 `label → 控件`**，确认弹窗携带细节；**不写描述、不做分组**）。可复用件：`features/admin/AdminSettingsGroup.vue`（组 card）、`AdminSettingsRow.vue`（左名右控件，用于组内）、`AdminDangerZone.vue`（危险区：深红标题条 + 浅红底）、`AdminDangerRow.vue`（危险区一行：左名右控件）。
   - **危险操作的落点（强制）**：**组 card 内不放重置 / 删除 / 重建类操作**；danger zone 只承载**与行无关的独立**破坏性动作（恢复默认设置、解除全站熔断、重建索引等），与各组 card 平级独立。**作用于单条对象的重置 / 删除放该行行内**（`link` + `type="danger"` + `ElMessageBox` 确认），**批量放列表头**（`plain` + `type="danger"`，由多选驱动）。
-  - **查询表单（强制）**：列表页筛选用**原生 `el-form :inline`** + 全局原语 `.admin-filter-form`（`style.css`）：label 在左、控件在右、单行排列，放不下自动换行；控件宽度写在页面上（`w-[220px]!` 这类 utility，**必须带 `!`**——EP 的 CSS 未分层，普通 utility 会输给它的默认宽度）；按钮放 `.admin-filter-actions`（`margin-left:auto` 靠右），`<form>` 上 `@submit.prevent`，回车即查；≤991px 自动一项一行。**不要**为筛选再包组件，也不要 `el-row/el-col` 栅格。
-  - **样式归属（强制）**：**不要为了通用而通用**。抽公共类的唯一理由是"已经有 ≥2 个不同文件写着同一组样式"，不是"看起来可以抽"。按顺序判定：
+  - **查询表单（强制）**：列表页筛选统一用 `features/admin/components/AdminFilterCard.vue`（独立 card + 原生 `el-form :inline`）：卡片壳、行列间距、窄屏规则都写在该组件的 `<style scoped>` 里，页面只声明 `el-form-item`。label 在左、控件在右、「重置 / 查询」靠右；控件宽度写在页面上（`w-[220px]!` 这类 utility，**必须带 `!`**——EP 的 CSS 未分层，普通 utility 会输给它的默认宽度）；≤991px 自动一项一行。**不要**再新增全局 `.admin-filter-form` 之类，也不要 `el-row/el-col` 栅格。
+  - **样式归属（强制）**：新增 / 重写的样式**默认先写组件 `<style scoped>`**，确认 ≥2 个不同文件复用后才上移 `style.css`；**不要为了通用而通用**。抽公共类的唯一理由是"已经有 ≥2 个不同文件写着同一组样式"，不是"看起来可以抽"。按顺序判定：
     - 单页 / 单组件的一次性布局 → 直接写模板上的 **Tailwind utility**，不建类。
     - 必须用 CSS 才能表达的（伪元素、滚动条、keyframes、状态变体 `.is-on`、`:deep()` 覆盖 Element Plus 内部、slot 内容上的第三方控件宽度）→ 写在该组件 `<style scoped>` 里，**一律原生 CSS 声明，不写 `@apply`**（SFC 的 scoped 块是独立 CSS 根，`@apply` 还得配 `@reference`，多一层依赖没换来好处；能表达成 utility 的部分本来就应该留在模板上）。同一元素上**不要**堆互相冲突的 utility（`border-line` + `border-accent/40` 谁赢取决于产物顺序），用 `.is-on` 这类状态类表达。
     - 至少 2 个不同文件、语义同一的真公共原语 → 才放 `style.css` 的 `@layer components`，且**优先原生 CSS 声明**；`@apply` 只留给成组复用的组合（`.btn`、`.input` 族）。

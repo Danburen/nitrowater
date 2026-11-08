@@ -8,6 +8,8 @@ import cn.nitrowater.server.infra.enums.ProfileChangeSource;
 import cn.nitrowater.server.infra.enums.ReplyStyle;
 import cn.nitrowater.server.infra.repository.AiProfileChangeRepository;
 import cn.nitrowater.server.infra.repository.AiUserProfileRepository;
+import cn.nitrowater.server.service.ai.model.AiProfile;
+import cn.nitrowater.server.service.ai.model.AiProfileUpdate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +27,7 @@ import java.util.Set;
 import cn.nitrowater.lib.utils.StringUtil;
 
 /**
- * Reads and updates a user's NitroBot profile.
+ * Reads and updates a user's NitroBot AiProfile.
  *
  * <p>Structured fields live in typed columns; free-form preferences are stored as a JSON array.
  * Every actual value change is appended to {@code ai_profile_change} so the user can audit (and
@@ -60,9 +62,9 @@ public class AiProfileService {
      * @return the profile view
      */
     @Transactional(readOnly = true)
-    public Profile get(long uid) {
+    public AiProfile get(long uid) {
         AiUserProfile row = profiles.findById(uid).orElse(null);
-        return row == null ? Profile.defaults() : toProfile(row);
+        return row == null ? AiProfile.defaults() : toProfile(row);
     }
 
     /**
@@ -74,7 +76,7 @@ public class AiProfileService {
      * @return the updated profile
      */
     @Transactional
-    public Profile update(long uid, Update update) {
+    public AiProfile update(long uid, AiProfileUpdate update) {
         if (update == null || (update.language() == null && update.replyStyle() == null
                 && update.expertise() == null && update.timezone() == null
                 && update.preferences() == null && update.inferenceOptIn() == null)) {
@@ -185,8 +187,8 @@ public class AiProfileService {
         changes.save(change);
     }
 
-    private static Profile toProfile(AiUserProfile row) {
-        return new Profile(true, row.getLanguage(), row.getReplyStyle().name(), row.getExpertise().name(),
+    private static AiProfile toProfile(AiUserProfile row) {
+        return new AiProfile(true, row.getLanguage(), row.getReplyStyle().name(), row.getExpertise().name(),
                 row.getTimezone(), preferences(row.getPreferencesJson()),
                 Boolean.TRUE.equals(row.getInferenceOptIn()), row.getUpdatedAt());
     }
@@ -302,40 +304,5 @@ public class AiProfileService {
             return null;
         }
         return value.length() <= max ? value : value.substring(0, max) + "…";
-    }
-
-    /**
-     * Partial profile update.
-     *
-     * @param language preferred answer language
-     * @param replyStyle answer length preference
-     * @param expertise self-declared experience level
-     * @param timezone IANA timezone, or blank to clear
-     * @param preferences free-form preference lines; empty clears
-     * @param inferenceOptIn whether automatic inference is allowed
-     */
-    public record Update(String language, ReplyStyle replyStyle, Expertise expertise, String timezone,
-            List<String> preferences, Boolean inferenceOptIn) {
-    }
-
-    /**
-     * Profile view returned by the API and the {@code /profile} slash card.
-     *
-     * @param exists whether a row exists
-     * @param language preferred answer language
-     * @param replyStyle {@code CONCISE} / {@code BALANCED} / {@code DETAILED}
-     * @param expertise {@code BEGINNER} / {@code INTERMEDIATE} / {@code EXPERT}
-     * @param timezone IANA timezone, if set
-     * @param preferences flattened free-form preferences
-     * @param inferenceOptIn whether automatic inference is allowed
-     * @param updatedAt last change, or {@code null} when no row exists
-     */
-    public record Profile(boolean exists, String language, String replyStyle, String expertise,
-            String timezone, List<String> preferences, boolean inferenceOptIn, Instant updatedAt) {
-
-        public static Profile defaults() {
-            return new Profile(false, "zh-CN", ReplyStyle.BALANCED.name(), Expertise.INTERMEDIATE.name(),
-                    null, List.of(), false, null);
-        }
     }
 }

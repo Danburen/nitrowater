@@ -10,22 +10,28 @@
 | resource | 容器 / jar | 8093 | MySQL(resource)、Redis、对象存储 |
 | web | BFF 托管 `/dist` | - | 构建产物 |
 
-Compose 文件：
+Compose 文件（三份纵向拆分的单元，共享外部网络 `nitrowater-net`）：
 
 | 文件 | 内容 |
 |---|---|
-| `deploy/docker/docker-compose.infra.yml` | MySQL / Redis / Qdrant / SeaweedFS |
-| `deploy/docker/docker-compose.app.yml` | account / resource / server / bff |
-| `deploy/docker/docker-compose.piston.yml` | Piston 沙箱 |
+| `deploy/docker/docker-compose.infra.yml` | MySQL / Redis；`edge` profile = nginx-proxy + acme-companion |
+| `deploy/docker/docker-compose.account.yml` | account（SSO / OIDC），可独立发布 |
+| `deploy/docker/docker-compose.app.yml` | SeaweedFS / Qdrant / Piston / docs / resource / server / bff |
 | 根 `Dockerfile` | 多 target 构建（account / bff / server / resource），含 node stage 构建两个 SPA |
 
 ```bash
-docker compose -f deploy/docker/docker-compose.infra.yml up -d
-docker compose -f deploy/docker/docker-compose.app.yml up -d --build
-docker compose -f deploy/docker/docker-compose.piston.yml up -d
+# 预检
+bash deploy/bin/check-env.sh
+
+# 逐个单元启动（仓库根）
+docker network create nitrowater-net    # 只需一次
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d --build
 ```
 
-`docker-compose.app.yml` 使用外部网络 `nitrowater-net`，需要先由 infra 创建。
+`docker-compose.app.yml` / `docker-compose.account.yml` 使用外部网络 `nitrowater-net`，需要先创建。
+Piston 只连 `nitrowater-runner-net`（app compose 内创建），server 同时连两个网络。
 
 ## 2. 环境变量
 
@@ -61,9 +67,11 @@ BFF 启动时会拉 account 的 discovery；account 未就绪时 BFF 会启动�
 | 服务 | compose `mem_limit` | 说明 |
 |---|---|---|
 | account | 640m | 含两个 SPA 静态资源 |
-| server | 见 compose | AI 与沙箱最吃内存 |
-| resource | 见 compose | 大文件走流式，不占堆 |
-| MySQL / Redis / Qdrant | 见 infra compose | Qdrant 建议独立卷 |
+| server | 768m | AI 与沙箱最吃内存 |
+| resource | 512m | 大文件走流式，不占堆 |
+| bff | 512m | 会话与静态托管 |
+| piston | 1024m | 沙箱，privileged |
+| MySQL / Redis / Qdrant | 见 compose | Qdrant 建议独立卷 |
 
 沙箱 `app.sandbox.memory-limit-bytes`（默认 256MB）不得超过 Piston 的 `PISTON_RUN_MEMORY_LIMIT`；全局并发默认 2，需要按机器容量调整。
 
@@ -79,9 +87,17 @@ BFF 启动时会拉 account 的 discovery；account 未就绪时 BFF 会启动�
 
 ## 6. 发布流程
 
-```powershell
-.\deploy\bin\deploy.ps1      # 构建 + 推送/部署
-./deploy/bin/deploy.sh
+```bash
+# 预检
+bash deploy/bin/check-env.sh
+
+# 全量
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-deps
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d
+
+# 只更新 account（不碰 mysql/redis/nginx）
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-deps
 ```
 
 发布前检查：

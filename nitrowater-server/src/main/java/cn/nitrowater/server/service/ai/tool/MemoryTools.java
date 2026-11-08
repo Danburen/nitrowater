@@ -2,6 +2,7 @@ package cn.nitrowater.server.service.ai.tool;
 
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.AiMemoryService;
+import cn.nitrowater.server.service.ai.model.MemorySaveResult;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import cn.nitrowater.server.service.ai.model.tool.ToolResponse;
 import cn.nitrowater.server.infra.enums.MemoryKind;
@@ -72,7 +73,7 @@ public class MemoryTools {
                     .json();
         }
 
-        AiMemoryService.SaveResult result = memories.save(uid, trace.conversationUuid(), memoryKind, content);
+        MemorySaveResult result = memories.save(uid, trace.conversationUuid(), memoryKind, content);
         if (result.memory() == null) {
             return ToolResponse.of(ToolCode.REJECTED,
                             Objects.requireNonNullElse(result.reason(), "未保存。"))

@@ -1,0 +1,64 @@
+# ============================================================
+# NitroWater 身份服务（SSO / OIDC）
+# 独立发布单元：只依赖 infra 的 mysql + redis，与业务服务解耦。
+#
+# 启动：docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d
+# 热更新（只重建 account）：同上，追加 --no-deps 和 --build / 新镜像 tag
+# ============================================================
+name: nitrowater-account
+
+services:
+  account:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: account
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-your-org/nitrowater}/account:${ACCOUNT_IMAGE_TAG:-latest}
+    container_name: nitrowater-account
+    ports:
+      - "${PUBLISH_BIND:-127.0.0.1}:8090:8090"
+    environment:
+      # 空值 = 未启用 edge 时不参与 nginx-proxy 的 vhost 发现。
+      VIRTUAL_HOST: ${AUTH_DOMAIN:-}
+      VIRTUAL_PORT: 8090
+      LETSENCRYPT_HOST: ${AUTH_DOMAIN:-}
+      LETSENCRYPT_EMAIL: ${SSL_EMAIL:-}
+      JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_account?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-root}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      NITROWATER_KEK: ${NITROWATER_KEK:?set NITROWATER_KEK in deploy/docker/.env}
+      DEVICE_SALT: ${DEVICE_SALT:-device-salt-dev}
+      BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:-nitrowater-bff-secret}
+      # 启动时 upsert 到 oauth2_registered_client / CSP；换域名时必须同步这 4 个键。
+      BFF_REDIRECT_URIS: ${BFF_REDIRECT_URIS:-http://localhost:5173/login/oauth2/code/nitrowater,http://localhost:8080/login/oauth2/code/nitrowater,http://127.0.0.1:5173/login/oauth2/code/nitrowater,http://127.0.0.1:8080/login/oauth2/code/nitrowater}
+      BFF_POST_LOGOUT_REDIRECT_URIS: ${BFF_POST_LOGOUT_REDIRECT_URIS:-http://localhost:5173,http://localhost:5173/,http://localhost:8080,http://localhost:8080/}
+      SSO_DEFAULT_REDIRECT: ${SSO_DEFAULT_REDIRECT:-http://localhost:5173}
+      SSO_FORM_ACTION_ORIGINS: ${SSO_FORM_ACTION_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      # 走 HTTPS 时必须 true。
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      COMMUNICATION_MODE: ${COMMUNICATION_MODE:-mock}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
+      ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID:-}
+      ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_TEMPLATE_CODE: ${ALIYUN_SMS_TEMPLATE_CODE:-}
+      ALIYUN_SMS_ENDPOINT: ${ALIYUN_SMS_ENDPOINT:-dysmsapi.aliyuncs.com}
+    volumes:
+      - ../keys:/app/deploy/keys:ro
+    mem_limit: 640m
+    restart: unless-stopped
+    networks:
+      - nitrowater-net
+
+networks:
+  nitrowater-net:
+    external: true

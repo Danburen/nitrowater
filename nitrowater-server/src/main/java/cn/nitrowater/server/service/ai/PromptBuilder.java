@@ -2,7 +2,8 @@ package cn.nitrowater.server.service.ai;
 
 import cn.nitrowater.server.service.ai.model.ChatTurn;
 import cn.nitrowater.server.service.ai.model.DocCollection;
-import cn.nitrowater.server.service.ai.model.Skill;
+import cn.nitrowater.server.service.ai.model.MemoryView;
+import cn.nitrowater.server.service.ai.model.skill.Skill;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -156,7 +157,7 @@ public class PromptBuilder {
      * @param memories recalled memories (may be empty)
      * @return the combined block, or an empty string
      */
-    public String agentContext(String profileBlock, List<AiMemoryService.MemoryView> memories) {
+    public String agentContext(String profileBlock, List<MemoryView> memories) {
         String memoryBlock = AiMemoryService.promptBlock(memories);
         if ((StringUtil.isBlank(profileBlock))
                 && (StringUtil.isBlank(memoryBlock))) {

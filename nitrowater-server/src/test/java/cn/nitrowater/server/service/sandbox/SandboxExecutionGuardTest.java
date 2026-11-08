@@ -3,8 +3,8 @@ package cn.nitrowater.server.service.sandbox;
 import cn.nitrowater.server.config.properties.SandboxProperties;
 import cn.nitrowater.server.infra.ratelimit.RedisRateLimiter;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
-import cn.nitrowater.server.web.dto.RunRequest;
-import cn.nitrowater.server.web.dto.RunResponse;
+import cn.nitrowater.server.service.sandbox.model.RunCommand;
+import cn.nitrowater.server.service.sandbox.model.RunResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -96,8 +96,8 @@ class SandboxExecutionGuardTest {
         SandboxProperties properties = properties(1, 1);
         SandboxGate gate = new SandboxGate(properties);
         SandboxService service = mock(SandboxService.class);
-        RunRequest request = new RunRequest("java", "class Main {}", "");
-        RunResponse response = new RunResponse("ok", "", "OK", 0, 1L, 1L, null);
+        RunCommand request = new RunCommand("java", "class Main {}", "");
+        RunResult response = new RunResult("ok", "", "OK", 0, 1L, 1L, null);
         when(service.run(request)).thenReturn(response);
         SandboxExecutionGuard guard = new SandboxExecutionGuard(limiter, gate, properties, service);
 

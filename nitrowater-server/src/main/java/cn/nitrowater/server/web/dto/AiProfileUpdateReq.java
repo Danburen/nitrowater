@@ -1,5 +1,6 @@
 package cn.nitrowater.server.web.dto;
 
+import cn.nitrowater.server.service.ai.model.AiProfileUpdate;
 import cn.nitrowater.server.infra.enums.Expertise;
 import cn.nitrowater.server.infra.enums.ReplyStyle;
 import jakarta.validation.constraints.Size;
@@ -27,4 +28,10 @@ public record AiProfileUpdateReq(
         @Size(max = 20, message = "at most 20 preferences are allowed")
         List<@Size(max = 200, message = "each preference must be at most 200 characters") String> preferences,
         Boolean inferenceOptIn) {
+
+    /** @return the service update built from this validated body */
+    public AiProfileUpdate toUpdate() {
+        return new AiProfileUpdate(language, replyStyle, expertise, timezone, preferences,
+                inferenceOptIn);
+    }
 }

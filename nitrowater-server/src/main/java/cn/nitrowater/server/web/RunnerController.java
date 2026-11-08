@@ -1,8 +1,9 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.service.sandbox.SandboxService;
-import cn.nitrowater.server.web.dto.RunRequest;
-import cn.nitrowater.server.web.dto.RunResponse;
+import cn.nitrowater.server.service.sandbox.model.RunCommand;
+import cn.nitrowater.server.web.dto.RunReq;
+import cn.nitrowater.server.web.vo.RunResp;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,7 +29,8 @@ public class RunnerController {
 
     /** Runs code for the authenticated caller. */
     @PostMapping("/sandbox/run")
-    public RunResponse run(@Valid @RequestBody RunRequest request) {
-        return sandboxService.run(request);
+    public RunResp run(@Valid @RequestBody RunReq request) {
+        return RunResp.from(sandboxService.run(
+                new RunCommand(request.language(), request.code(), request.stdin())));
     }
 }

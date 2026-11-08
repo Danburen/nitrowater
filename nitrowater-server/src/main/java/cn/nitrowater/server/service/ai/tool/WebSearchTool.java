@@ -1,6 +1,6 @@
 package cn.nitrowater.server.service.ai.tool;
 
-import cn.nitrowater.server.service.ai.model.WebSearchResult;
+import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
 import cn.nitrowater.server.service.ai.model.agent.AgentDoc;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;

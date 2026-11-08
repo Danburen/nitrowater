@@ -14,6 +14,8 @@ import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -68,6 +70,39 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleNotReadable(HttpMessageNotReadableException ex) {
         log.warn("Malformed request body: {}", ex.getMessage());
         return ResponseEntity.badRequest().body(ApiResponse.reject("invalid_request", "请求体格式错误", null));
+    }
+
+    /**
+     * The container could not parse a multipart request: a truncated body (for example a proxy
+     * that drained the stream before forwarding it), a missing or duplicated boundary, or an
+     * unreadable upload temp location.
+     *
+     * <p>This is a request/pipeline fault, not a server bug, so it must not fall through to
+     * {@link #handleRuntime} and surface as {@code 500 internal_error}: the caller has to know the
+     * upload itself was rejected. It also keeps a noisy stack trace out of the error log.</p>
+     *
+     * @param ex multipart parse failure
+     * @return 400 with the shared envelope
+     */
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ApiResponse<Object>> handleMultipart(MultipartException ex) {
+        log.warn("Malformed multipart request: {} | cause chain: {}", ex.getMessage(), describeCauseChain(ex));
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.reject("invalid_multipart", "上传内容无法解析，请重试", null));
+    }
+
+    /**
+     * A multipart upload exceeded {@code spring.servlet.multipart.max-file-size} /
+     * {@code max-request-size} (the container aborts parsing and throws this).
+     *
+     * @param ex size-limit rejection
+     * @return 413 with the shared envelope
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Object>> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
+        log.warn("Upload rejected, size limit exceeded: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
+                .body(ApiResponse.reject("upload_too_large", "上传文件超过大小限制", null));
     }
 
     /**

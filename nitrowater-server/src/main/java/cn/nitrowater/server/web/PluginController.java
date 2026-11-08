@@ -3,8 +3,8 @@ package cn.nitrowater.server.web;
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.service.plugin.PluginService;
 import cn.nitrowater.server.web.admin.AdminPluginController;
-import cn.nitrowater.server.web.dto.PluginDetailResp;
-import cn.nitrowater.server.web.dto.PluginSummaryResp;
+import cn.nitrowater.server.web.vo.PluginDetailResp;
+import cn.nitrowater.server.web.vo.PluginSummaryResp;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,12 +36,13 @@ public class PluginController {
             @RequestParam(name = "q", required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(pluginService.listPublic(keyword, page, size));
+        return ApiResponse.success(pluginService.listPublic(keyword, page, size)
+                .map(PluginSummaryResp::from));
     }
 
     /** Anonymous: one enabled plugin with its intro markdown. */
     @GetMapping("/api/public/plugins/{key}")
     public PluginDetailResp getPublic(@PathVariable String key) {
-        return pluginService.getPublic(key);
+        return PluginDetailResp.from(pluginService.getPublic(key));
     }
 }

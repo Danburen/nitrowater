@@ -23,6 +23,10 @@ export const ResponseCode = {
   InternalError: 'internal_error',
   /** A downstream service is unreachable (BFF answered 502 instead of a generic 500). */
   UpstreamUnavailable: 'upstream_unavailable',
+  /** The uploaded file exceeds the server's multipart size limit (413). */
+  UploadTooLarge: 'upload_too_large',
+  /** The server could not parse the multipart body (truncated / bad boundary). */
+  InvalidMultipart: 'invalid_multipart',
   /** Non-envelope failure answered with a non-2xx status (client-side synthetic code). */
   HttpError: 'http_error',
   /** The caller's daily AI budget is exhausted. */
@@ -46,6 +50,8 @@ export const ResponseCode = {
   ContentBlocked: 'content_blocked',
   /** The content gate put the caller on cooldown. */
   ContentCooldown: 'content_cooldown',
+  /** One AI turn exceeded its wall-clock budget (504). */
+  TurnTimeout: 'turn_timeout',
   /** User uploads are disabled on this deployment. */
   UploadsDisabled: 'uploads_disabled',
   /** The internal endpoint is not reachable from this network. */

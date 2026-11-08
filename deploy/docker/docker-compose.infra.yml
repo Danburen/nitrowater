@@ -1,12 +1,11 @@
 # ============================================================
-# NitroWater 基础设施编排（有状态中间件：MySQL + Redis + SeaweedFS）
-# 与服务编排（docker-compose.app.yml）分离，独立部署。
+# NitroWater 基础设施（共享基座）
+#   mysql / redis : 所有服务共用的有状态后端
+#   edge profile  : 公网入口 + 自动 TLS（仅生产启用）
 #
-# 用法：
-#   docker network create nitrowater-net        # 只需一次
-#   docker compose -f deploy/docker/docker-compose.infra.yml up -d
-#
-# 环境变量经同目录 .env 注入（模板见 .env.example），缺失走默认（便于本地 dev）。
+# 前置（只需一次）：docker network create nitrowater-net
+# 启动：docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
+# 带公网：docker compose ... --profile edge up -d
 # ============================================================
 name: nitrowater-infra
 
@@ -14,7 +13,6 @@ services:
   mysql:
     image: mysql:8.0
     container_name: nitrowater-mysql
-    # 不映射宿主端口：仅内网可达（避免与宿主本地 MySQL 冲突）。需要宿主访问时按需加 ports。
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
       MYSQL_DATABASE: nitrowater_account
@@ -39,7 +37,6 @@ services:
   redis:
     image: redis:7-alpine
     container_name: nitrowater-redis
-    # 不映射宿主端口：仅内网可达（避免与宿主本地 Redis 冲突）。
     volumes:
       - nitrowater-redis:/data
     environment:
@@ -63,40 +60,45 @@ services:
     networks:
       - nitrowater-net
 
-  # Third-party vector index for the documentation assistant (Spring AI Qdrant store).
-  # 6333 = REST + web UI, 6334 = gRPC (what the Java client uses).
-  qdrant:
-    image: qdrant/qdrant:v1.18.3
-    container_name: nitrowater-qdrant
+  # ---- 公网入口（profile: edge）----
+  # 只有这里发布 80/443；account / bff 通过 VIRTUAL_HOST 被自动发现。
+  nginx-proxy:
+    profiles: ["edge"]
+    image: nginxproxy/nginx-proxy:1.7-alpine
+    container_name: nitrowater-nginx-proxy
     ports:
-      # Loopback by default: the dashboard has NO authentication of its own, so it must not be
-      # reachable from the network. Ops use `deploy/bin/ops-tunnel.*` (ssh -L) and open
-      # http://127.0.0.1:6333/dashboard. 6334 (gRPC) is container-only - never publish it.
-      - "${OPS_BIND:-127.0.0.1}:6333:6333"
+      - "80:80"
+      - "443:443"
+    environment:
+      HTTPS_METHOD: redirect
+      TRUST_DOWNSTREAM_PROXY: "true"
     volumes:
-      - nitrowater-qdrant:/qdrant/storage
-    mem_limit: 384m
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - nginx_certs:/etc/nginx/certs
+      - nginx_vhost:/etc/nginx/vhost.d
+      - nginx_html:/usr/share/nginx/html
+    mem_limit: 96m
     restart: unless-stopped
     networks:
       - nitrowater-net
 
-  seaweedfs:
-    image: chrislusf/seaweedfs
-    container_name: nitrowater-seaweedfs
-    ports:
-      # S3 (:8333) stays reachable from the host because dev clients AND presigned URLs are
-      # generated for it; the filer (:8888) and master (:9333) UIs have no auth, so they are
-      # loopback-only and reached through the SSH tunnel. :23646 (volume) is never published.
-      - "${OPS_BIND:-127.0.0.1}:8333:8333"
-      - "${OPS_BIND:-127.0.0.1}:8888:8888"
-      - "${OPS_BIND:-127.0.0.1}:9333:9333"
-    volumes:
-      - nitrowater-seaweedfs:/data
+  # 按容器的 LETSENCRYPT_HOST 自动签发 / 续期证书（HTTP-01）。
+  acme-companion:
+    profiles: ["edge"]
+    image: nginxproxy/acme-companion:2.3
+    container_name: nitrowater-acme
     environment:
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-nitrowater}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-change-me}
-      S3_BUCKET: ${S3_BUCKET:-nitrowater}
-    mem_limit: 512m
+      DEFAULT_EMAIL: ${SSL_EMAIL:-}
+      NGINX_PROXY_CONTAINER: nitrowater-nginx-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - nginx_certs:/etc/nginx/certs
+      - nginx_vhost:/etc/nginx/vhost.d
+      - nginx_html:/usr/share/nginx/html
+      - acme_state:/etc/acme.sh
+    depends_on:
+      - nginx-proxy
+    mem_limit: 64m
     restart: unless-stopped
     networks:
       - nitrowater-net
@@ -108,5 +110,7 @@ networks:
 volumes:
   nitrowater-mysql:
   nitrowater-redis:
-  nitrowater-qdrant:
-  nitrowater-seaweedfs:
+  nginx_certs:
+  nginx_vhost:
+  nginx_html:
+  acme_state:
