@@ -14,7 +14,8 @@ import java.util.List;
  * @param history               previous turns supplied by legacy clients that start without a uuid
  * @param skills                skills the user explicitly selected for this turn, in priority order
  *                              (empty = the agent chooses from the catalog)
- * @param allowWeb              whether the user opted into web search for this turn
+ * @param allowWeb              whether the user allows web search for this turn (on by default;
+ *                              only an explicit opt-out reaches the service as {@code false})
  * @param continueGeneration    continue a truncated answer instead of asking a new question
  */
 public record AgentTurnCommand(

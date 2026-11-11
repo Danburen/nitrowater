@@ -37,6 +37,8 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -81,13 +83,16 @@ public class AiAgentService {
     private final AiMemoryService memoryService;
     private final int maxToolRounds;
     private final long turnTimeoutMs;
+    /** Zone of the per-turn clock block handed to the model, so "today" is never inferred. */
+    private final ZoneId turnZone;
 
     public AiAgentService(ChatModel chatModel, ToolCallingManager toolCallingManager,
                           AgentToolRegistry toolRegistry, AgentSkillService skillService,
                           AiProperties properties, PromptBuilder promptBuilder, AiAdminSettingsService settings,
                           AiUsageService usageService, AiProfileService profileService, AiMemoryService memoryService,
                           @Value("${spring.ai.tools.limits.max-total-tool-calls:10}") int maxToolRounds,
-                          @Value("${app.ai.agent.turn-timeout-ms:150000}") long turnTimeoutMs) {
+                          @Value("${app.ai.agent.turn-timeout-ms:150000}") long turnTimeoutMs,
+                          @Value("${app.ai.agent.time-zone:Asia/Shanghai}") String timeZone) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
         this.toolRegistry = toolRegistry;
@@ -100,6 +105,7 @@ public class AiAgentService {
         this.memoryService = memoryService;
         this.maxToolRounds = Math.max(1, maxToolRounds);
         this.turnTimeoutMs = Math.max(1L, turnTimeoutMs);
+        this.turnZone = ZoneId.of(timeZone);
     }
 
     /**
@@ -314,13 +320,16 @@ public class AiAgentService {
             boolean allowWeb, AgentTrace trace, AiSettings runtime, long uid,
             AgentRun run) {
         List<ToolCallback> callbacks = new ArrayList<>();
-        for (AgentTool tool : toolRegistry.forTurn(runtime, settings.disabledTools(), allowWeb)) {
+        List<AgentTool> turnTools = toolRegistry.forTurn(runtime, settings.disabledTools(), allowWeb);
+        List<String> toolNames = new ArrayList<>(turnTools.size());
+        for (AgentTool tool : turnTools) {
             callbacks.add(track(tool, run, trace));
+            toolNames.add(tool.name());
         }
         String context = userContext(uid, question);
         String system = promptBuilder.agentSystem(
-                skillService.catalog(runtime), selected, context, properties.collections());
-        String user = promptBuilder.agentUser(question, history);
+                skillService.catalog(runtime), selected, context, properties.collections(), toolNames);
+        String user = promptBuilder.agentUser(question, history, ZonedDateTime.now(turnZone));
         List<Message> messages = List.of(new SystemMessage(system), new UserMessage(user));
         Prompt prompt = new Prompt(messages, chatOptions(callbacks, trace));
         return new AgentRequest(

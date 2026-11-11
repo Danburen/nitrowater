@@ -282,7 +282,7 @@ class AiAgentServiceStreamTest {
         when(memories.recall(anyLong(), any(), anyInt())).thenReturn(List.of());
         return new AiAgentService(chatModel, toolCallingManager, tools,
                 skills, properties(), new PromptBuilder(), settings, usage, profiles,
-                memories, 10, turnTimeoutMs);
+                memories, 10, turnTimeoutMs, "Asia/Shanghai");
     }
 
     private static ToolCallback searchDocsCallback() {

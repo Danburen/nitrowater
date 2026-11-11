@@ -17,8 +17,8 @@ import java.util.List;
  * @param history previous turns (used by legacy clients that start without a uuid)
  * @param skill deprecated single-skill field, still honoured when {@code skills} is absent
  * @param skills explicitly selected skill names, in priority order (empty = automatic)
- * @param allowWeb whether the user opted into web search for this turn (only honoured when the
- *        server has a web-search provider enabled)
+ * @param allowWeb whether the user opted into web search for this turn; {@code null} means the
+ *        default (on) — only an explicit {@code false} turns it off
  * @param continueGeneration continue a truncated answer instead of asking a new question; the
  *        conversation uuid is required and no user message is appended
  */
@@ -31,7 +31,7 @@ public record AiAgentReq(
         String skill,
         @Size(max = 8, message = "skills must contain at most 8 entries")
         List<@Size(max = 64, message = "a skill name must be at most 64 characters") String> skills,
-        boolean allowWeb,
+        Boolean allowWeb,
         boolean continueGeneration
 ) {
     /** @return the service command built from this validated body */
@@ -49,7 +49,7 @@ public record AiAgentReq(
                 conversationUuid,
                 turns,
                 selection(),
-                allowWeb,
+                allowWeb == null || allowWeb,
                 continueGeneration
         );
     }

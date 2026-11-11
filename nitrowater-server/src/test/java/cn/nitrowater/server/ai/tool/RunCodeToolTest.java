@@ -35,6 +35,13 @@ class RunCodeToolTest {
     private static final long WAIT_MS = 15_000L;
 
     @Test
+    void descriptionKeepsTheAttemptBudgetInSyncWithTheCode() {
+        assertThat(RunCodeTool.DESCRIPTION)
+                .contains("最多运行 " + RunCodeTool.MAX_ATTEMPTS + " 次")
+                .contains("tool.queued");
+    }
+
+    @Test
     void runsCodeAndRecordsAnOkToolCall() {
         SandboxExecutionGuard guard = mock(SandboxExecutionGuard.class);
         when(guard.snapshot()).thenReturn(new SandboxGate.Snapshot(0, 1, 20, WAIT_MS));

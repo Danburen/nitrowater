@@ -15,7 +15,8 @@ import java.util.function.BooleanSupplier;
  *       sandbox is reachable); it says nothing about permission;</li>
  *   <li>{@link #enabled(AiSettings, Set)} — the administrator left the feature switch on and did not
  *       hide this tool; it says nothing about the user;</li>
- *   <li>{@link #optIn()} — the user must consent for this turn; it says nothing about origin;</li>
+ *   <li>{@link #optIn()} — the user must leave the tool on for this turn; it says nothing about
+ *       origin (the default is on, so only an explicit opt-out withholds it);</li>
  *   <li>{@link #timeoutMs()} — the per-call deadline.</li>
  * </ul>
  *
@@ -72,7 +73,7 @@ public record AgentTool(ToolCallback callback, ToolFeature feature, boolean optI
     /**
      * @param settings      current runtime switches
      * @param disabledTools names the administrator hid explicitly
-     * @param optInGranted  whether the user granted the per-turn opt-in
+     * @param optInGranted  whether the user left the tool on for this turn (on by default)
      * @return whether the tool may be advertised for this turn
      */
     public boolean advertised(AiSettings settings, Set<String> disabledTools, boolean optInGranted) {

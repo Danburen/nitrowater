@@ -177,7 +177,7 @@ defineExpose({ focus })
         <div class="flex items-center gap-1.5 px-2 pb-1.5 pt-1">
           <UiTooltip
             v-if="webSearchAvailable && !disabled"
-            text="本轮允许联网搜索（每轮最多 2 次）"
+            text="本轮允许联网搜索（关闭后不发起任何网络请求）"
             placement="top"
           >
             <button

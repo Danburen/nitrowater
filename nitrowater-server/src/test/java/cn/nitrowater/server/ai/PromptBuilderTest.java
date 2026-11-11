@@ -6,27 +6,84 @@ import cn.nitrowater.server.service.ai.model.skill.Skill;
 import cn.nitrowater.server.service.ai.agent.PromptBuilder;
 import org.junit.jupiter.api.Test;
 
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Verifies the agent system prompt, skill inlining and history bounds. */
+/** Verifies the agent system prompt, the per-turn tool set and the history bounds. */
 class PromptBuilderTest {
 
     private final PromptBuilder builder = new PromptBuilder();
 
     @Test
     void agentPromptNamesNitroBotAndListsItsTools() {
-        assertThat(builder.agentSystem(List.of(), null))
+        String prompt = builder.agentSystem(List.of(), null);
+
+        assertThat(prompt)
                 .contains("NitroBot")
+                .contains("<tool_policy>")
                 .contains("searchDocs")
-                .contains("loadSkill")
                 .contains("webSearch")
+                .contains("loadSkill")
                 .contains("runCode")
-                .contains("saveMemory")
                 .contains("够用即停")
-                .contains("remaining")
                 .contains("通用");
+    }
+
+    @Test
+    void agentPromptLeavesToolProcedureToTheToolDefinition() {
+        String prompt = builder.agentSystem(List.of(), null);
+
+        assertThat(prompt)
+                .doesNotContain("saveMemory")
+                .doesNotContain("tool.compile_error")
+                .doesNotContain("tool.retry_exhausted")
+                .doesNotContain("最多 3 次");
+    }
+
+    @Test
+    void agentPromptStaysWithinItsAttentionBudget() {
+        String prompt = builder.agentSystem(List.of(), null, null, List.of(), PromptBuilder.ALL_TOOLS);
+
+        assertThat(nonWhitespaceLength(prompt)).isLessThan(1600);
+    }
+
+    @Test
+    void agentPromptDescribesOnlyTheToolsAdvertisedThisTurn() {
+        String prompt = builder.agentSystem(List.of(), null, null, List.of(), List.of("searchDocs"));
+
+        assertThat(prompt)
+                .contains("searchDocs")
+                .doesNotContain("webSearch")
+                .contains("本轮未开启联网搜索");
+    }
+
+    @Test
+    void agentPromptRendersPolicyOnlyForAdvertisedTools() {
+        String prompt = builder.agentSystem(List.of(), null, null, List.of(), List.of("runCode"));
+
+        assertThat(prompt)
+                .contains("纯算术")
+                .doesNotContain("产品/项目自身的事实")
+                .doesNotContain("可核实的外部事实")
+                .doesNotContain("loadSkill");
+    }
+
+    @Test
+    void agentPromptTellsTheModelHowToContinueAnUnfinishedAnswer() {
+        assertThat(builder.agentSystem(List.of(), null))
+                .contains("<continuation>")
+                .contains("上一轮最后一条未完成条目")
+                .contains("换一个 query");
+    }
+
+    @Test
+    void agentPromptVerifiesVolatileFactsEvenWhenTheModelFeelsConfident() {
+        assertThat(builder.agentSystem(List.of(), null))
+                .contains("即使觉得有把握也核实")
+                .contains("没有工具结果支撑的具体值不写");
     }
 
     @Test
@@ -70,18 +127,57 @@ class PromptBuilderTest {
     }
 
     @Test
-    void agentUserKeepsHistoryAndQuestionWithinBounds() {
-        String history = "x".repeat(5_000);
+    void agentUserKeepsTheEndOfThePreviousAnswerForContinuation() {
+        String answer = "开头".repeat(500) + "上一轮的最后一句";
 
-        String prompt = builder.agentUser("怎么配置 chat-format？",
-                List.of(new ChatTurn("user", history), new ChatTurn("assistant", "上一个回答")));
+        String prompt = builder.agentUser("继续",
+                List.of(new ChatTurn("user", "列一下配置项"), new ChatTurn("assistant", answer)),
+                now());
 
         assertThat(prompt)
                 .contains("<conversation_history>")
-                .contains("用户: ")
-                .contains("助手: 上一个回答")
+                .contains("助手（上一轮回答）")
+                .contains("上一轮的最后一句")
                 .contains("<question>")
-                .contains("怎么配置 chat-format？");
-        assertThat(prompt.length()).isLessThan(2_500);
+                .contains("继续");
+    }
+
+    @Test
+    void agentUserCapsAPathologicalTurnAndKeepsItsTail() {
+        String huge = "头".repeat(10_000) + "结尾在这里";
+
+        String prompt = builder.agentUser("继续",
+                List.of(new ChatTurn("assistant", huge)), now());
+
+        assertThat(prompt)
+                .contains("…（中间省略")
+                .contains("结尾在这里");
+    }
+
+    @Test
+    void agentUserCarriesTheTurnClock() {
+        String prompt = builder.agentUser("今天几号", List.of(), now());
+
+        assertThat(prompt)
+                .contains("<now>2026-11-11 14:32:05 星期三")
+                .contains("Asia/Shanghai")
+                .contains("UTC+08:00");
+    }
+
+    @Test
+    void agentUserKeepsTheQuestionWithinBounds() {
+        String prompt = builder.agentUser("x".repeat(5_000), List.of(), now());
+
+        assertThat(prompt)
+                .contains("<question>");
+        assertThat(prompt.length()).isLessThan(2_200);
+    }
+
+    private static int nonWhitespaceLength(String value) {
+        return value.replaceAll("\\s", "").length();
+    }
+
+    private static ZonedDateTime now() {
+        return ZonedDateTime.of(2026, 11, 11, 14, 32, 5, 0, ZoneId.of("Asia/Shanghai"));
     }
 }

@@ -76,7 +76,7 @@ public class AgentToolRegistry {
      *
      * @param settings runtime switches of the turn
      * @param disabledTools names the administrator hid for everyone
-     * @param optInGranted whether the user consented for this turn
+     * @param optInGranted whether the user left opted-in tools on for this turn
      * @return tools in registration order, with their per-call deadlines
      */
     public List<AgentTool> forTurn(AiSettings settings, Set<String> disabledTools,

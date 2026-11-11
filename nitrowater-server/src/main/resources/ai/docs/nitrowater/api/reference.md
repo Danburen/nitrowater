@@ -106,13 +106,14 @@ account 提供标准 OIDC 端点：`/oauth2/authorize`、`/oauth2/token`、`/oau
   "conversationUuid": "6f1c...",
   "history": [{ "role": "user", "content": "..." }],
   "skills": ["config-walkthrough"],
-  "allowWeb": false
+  "allowWeb": true
 }
 ```
 
 - `question` 必填，上限 `app.ai.max-question-chars`（默认 2000）。
 - `skills` 是用户显式选择的技能名数组（上限 8 个，按优先级排序）；为空时由模型按需 `loadSkill`。多个技能会一起内联进系统提示词，冲突时以顺序靠前者为准。旧的单值 `skill` 字段仍兼容，仅在 `skills` 缺省时生效。
-- `allowWeb` 只影响 `webSearch` 工具是否注册（还需服务端配置 provider key）。
+- `allowWeb` 控制 `webSearch` 工具本轮是否注册（还需服务端配置 provider key）。**默认开启**：缺省或 `null` 都按开启处理，只有显式传 `false`（用户主动关闭）才不注册。
+- 每轮的用户消息末尾会内联 `<now>`（时刻、星期、时区），模型不需要推断“今天几号”。
 - `continueGeneration` 让服务端沿用一个被截断的回答继续写，此时忽略 `question` 且不落库用户消息。
 
 ### 7.3 SSE 事件

@@ -194,6 +194,10 @@ app:
       # of hanging. Per-tool deadlines are separate and much smaller: a tool that misses its own
       # deadline answers with a retryable `tool.timeout` and the model decides whether to retry.
       turn-timeout-ms: ${AI_AGENT_TURN_TIMEOUT_MS:150000}
+      # Zone of the per-turn <now> block in the user message. The clock is inlined because a model
+      # cannot know today's date; keeping it in the user message (not the system prompt) preserves
+      # the provider's prefix cache across turns.
+      time-zone: ${AI_AGENT_TIME_ZONE:Asia/Shanghai}
     # ---- Content moderation (violation words) ----
     # The active posture lives in the database (ai_admin_setting.moderation_mode, editable from
     # 管理端 › AI › 运行设置) so it can be switched without a redeploy. It defaults to LOG (record

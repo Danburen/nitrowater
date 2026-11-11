@@ -32,8 +32,21 @@ import java.util.Objects;
 @Component
 public class RunCodeTool {
 
-    private static final int MAX_ATTEMPTS = 3;
+    public static final int MAX_ATTEMPTS = 3;
     private static final int MAX_ARGUMENT_CHARS = 120;
+
+    /**
+     * The model-facing contract: procedure lives here, not in the system prompt, so the budget the
+     * model reads and the budget {@link #runCode} enforces cannot drift apart. A test keeps the
+     * number in sync with {@link #MAX_ATTEMPTS}.
+     */
+    public static final String DESCRIPTION = """
+            在服务端沙箱中编译并运行代码，返回 stdout、stderr、退出码和耗时。
+            仅在用户明确要求“运行 / 跑一下 / 测试 / 验证”代码，或你必须实际执行才能确认结果时调用。
+            支持 java、c、cpp、python、javascript、typescript、lua。
+            编译或运行失败时，根据 stderr 修正代码后再试；本次对话最多运行 3 次（含首次），超出后必须停止，不要重复提交完全相同的代码。
+            如果返回 code=tool.queued，说明队列较长，先询问用户是否继续等待，不要直接再次调用。
+            """;
 
     private static final Logger LOG = LoggerFactory.getLogger(RunCodeTool.class);
 
@@ -56,13 +69,7 @@ public class RunCodeTool {
      * @return JSON {@code {success,code,message,data}} with normalised outcome, stdout/stderr and
      *         timing information in {@code data}
      */
-    @Tool(name = "runCode", description = """
-            在服务端沙箱中编译并运行代码，返回 stdout、stderr、退出码和耗时。
-            仅在用户明确要求“运行 / 跑一下 / 测试 / 验证”代码，或你必须实际执行才能确认结果时调用。
-            支持 java、c、cpp、python、javascript、typescript、lua。
-            编译或运行失败时，根据 stderr 修正代码后再试；本次对话最多运行 3 次（含首次），超出后必须停止，不要重复提交完全相同的代码。
-            如果返回 code=tool.queued，说明队列较长，先询问用户是否继续等待，不要直接再次调用。
-            """)
+    @Tool(name = "runCode", description = DESCRIPTION)
     public String runCode(
             @ToolParam(description = "语言：java / c / cpp / python / javascript / typescript / lua")
             String language,
@@ -113,7 +120,7 @@ public class RunCodeTool {
                 case COMPILE_ERROR -> "编译失败，请根据 stderr 修正代码后重试。";
                 case RUN_TIMEOUT -> "运行超时，请检查是否有死循环或过大的输入。";
                 case RUNTIME_ERROR -> "运行失败，请根据 stderr 修正代码后重试。";
-                case UNAVAILABLE -> "代码运行服务器暂时不可用，请稍后再试。";
+                case UNAVAILABLE -> "代码运行服务器暂时不可用，请向用户说明并停止重试。";
                 default -> null;
             };
 
@@ -143,7 +150,7 @@ public class RunCodeTool {
                 case QUEUE_FULL -> "沙箱队列已满，请稍后再试。";
                 case QUEUE_TIMEOUT -> "沙箱排队超时，请稍后再试。";
                 case UNAUTHORIZED -> "需要登录后才能运行代码。";
-                default -> "代码运行服务器暂时不可用，请稍后再试。";
+                default -> "代码运行服务器暂时不可用，请向用户说明并停止重试。";
             };
             return ToolResponse.of(outcome, message, Map.of("attempt", attempt))
                     .record(trace, "runCode", argument, 0)
@@ -155,7 +162,7 @@ public class RunCodeTool {
             };
             String message =  switch (outcome) {
                 case INVALID_REQUEST -> "代码请求无效：请检查语言和源码是否完整。";
-                default -> "代码运行服务器暂时不可用，请稍后再试。";
+                default -> "代码运行服务器暂时不可用，请向用户说明并停止重试。";
             };
             return ToolResponse.of(outcome, message, Map.of("attempt", attempt))
                     .record(trace, "runCode", argument, 0)
@@ -163,7 +170,7 @@ public class RunCodeTool {
         } catch (Exception ex) {
             LOG.warn("runCode execution failed", ex);
             return ToolResponse.of(
-                    ToolCode.UNAVAILABLE, "代码运行服务器暂时不可用，请稍后再试。",
+                    ToolCode.UNAVAILABLE, "代码运行服务器暂时不可用，请向用户说明并停止重试。",
                             Map.of("attempt", attempt)
                     ).record(trace, "runCode", argument, 0)
                     .json();
