@@ -5,6 +5,7 @@ import cn.nitrowater.server.service.ai.model.rag.DocCollection;
 import cn.nitrowater.server.service.ai.memory.AiMemoryService;
 import cn.nitrowater.server.service.ai.model.memory.MemoryView;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
+import cn.nitrowater.server.service.ai.model.usage.AiTokenUsageMeter;
 import org.springframework.stereotype.Component;
 
 import java.time.ZoneOffset;
@@ -49,7 +50,15 @@ public class PromptBuilder {
     private static final int MAX_OLDER_TURN_CHARS = 2000;
 
     /** Messages at the end of the history rendered with the larger cap. */
-    private static final int RECENT_MESSAGES = 4;
+    public static final int RECENT_MESSAGES = 4;
+
+    /**
+     * Role label, separators and the omission marker, as a token allowance per replayed turn.
+     *
+     * <p>Shared with {@link #historyTurnTokens(String, boolean)} so the budget and the rendered
+     * prompt use one overhead constant instead of two that can drift apart.</p>
+     */
+    private static final int HISTORY_TURN_OVERHEAD_TOKENS = 4;
 
     /** Share of the cap kept from the head when a message has to be shortened. */
     private static final double HEAD_SHARE = 0.3;
@@ -123,24 +132,18 @@ public class PromptBuilder {
      * Builds the NitroBot agent system prompt: base rules + available skills + the explicitly
      * selected skill bodies (if any).
      *
+     * <p>The system prompt is the <b>cacheable prefix</b>: it must stay byte-identical across turns,
+     * so nothing that changes per question belongs here. Profile and recalled memories used to be
+     * appended to it, which changed the first token of every request and invalidated the provider's
+     * prefix cache for the whole 64K history; they now travel with the user message
+     * ({@link #agentUser(String, List, java.time.ZonedDateTime, String)}).</p>
+     *
      * @param skills all discoverable skills (may be empty)
      * @param selected skills the user selected, in priority order (empty = automatic selection)
      * @return the system prompt
      */
     public String agentSystem(List<Skill> skills, List<Skill> selected) {
-        return agentSystem(skills, selected, null, List.of(), ALL_TOOLS);
-    }
-
-    /**
-     * Builds the NitroBot agent system prompt including the caller's profile and recalled memories.
-     *
-     * @param skills all discoverable skills (may be empty)
-     * @param selected skills the user selected, in priority order (empty = automatic selection)
-     * @param userContext profile/memory block from {@link #agentContext(String, List)}, or {@code null}
-     * @return the system prompt
-     */
-    public String agentSystem(List<Skill> skills, List<Skill> selected, String userContext) {
-        return agentSystem(skills, selected, userContext, List.of(), ALL_TOOLS);
+        return agentSystem(skills, selected, List.of(), ALL_TOOLS);
     }
 
     /**
@@ -152,13 +155,12 @@ public class PromptBuilder {
      *
      * @param skills all discoverable skills (may be empty)
      * @param selected skills the user selected, in priority order (empty = automatic selection)
-     * @param userContext profile/memory block from {@link #agentContext(String, List)}, or {@code null}
      * @param corpora documentation corpora available to {@code searchDocs} (may be empty)
      * @return the system prompt
      */
-    public String agentSystem(List<Skill> skills, List<Skill> selected, String userContext,
+    public String agentSystem(List<Skill> skills, List<Skill> selected,
             List<DocCollection> corpora) {
-        return agentSystem(skills, selected, userContext, corpora, ALL_TOOLS);
+        return agentSystem(skills, selected, corpora, ALL_TOOLS);
     }
 
     /**
@@ -166,12 +168,11 @@ public class PromptBuilder {
      *
      * @param skills all discoverable skills (may be empty)
      * @param selected skills the user selected, in priority order (empty = automatic selection)
-     * @param userContext profile/memory block from {@link #agentContext(String, List)}, or {@code null}
      * @param corpora documentation corpora available to {@code searchDocs} (may be empty)
      * @param tools names of the tools registered for this turn; rules of absent tools are omitted
      * @return the system prompt
      */
-    public String agentSystem(List<Skill> skills, List<Skill> selected, String userContext,
+    public String agentSystem(List<Skill> skills, List<Skill> selected,
             List<DocCollection> corpora, List<String> tools) {
         StringBuilder prompt = new StringBuilder(AGENT_PREAMBLE.length() + 1024);
         prompt.append(AGENT_PREAMBLE);
@@ -219,9 +220,6 @@ public class PromptBuilder {
                 }
             }
         }
-        if (StringUtil.isNotBlank(userContext)) {
-            prompt.append('\n').append(userContext.trim()).append('\n');
-        }
         return prompt.toString();
     }
 
@@ -258,8 +256,12 @@ public class PromptBuilder {
     }
 
     /**
-     * Combines the profile and memory blocks into one system-prompt section. Both are data, not
+     * Combines the profile and memory blocks into one per-turn section. Both are data, not
      * instructions; the section is omitted when neither exists.
+     *
+     * <p>Rendered into the <b>user message</b>, never the system prompt: recalled memories change
+     * with the question, and anything that changes per turn at the head of the prompt would
+     * invalidate the provider's prefix cache for the whole history behind it.</p>
      *
      * @param profileBlock rendered {@code <user_profile>} block, or {@code null}
      * @param memories recalled memories (may be empty)
@@ -290,7 +292,7 @@ public class PromptBuilder {
      * @return the agent user message (no documents block; the agent fetches them via tools)
      */
     public String agentUser(String question, List<ChatTurn> history) {
-        return agentUser(question, history, ZonedDateTime.now());
+        return agentUser(question, history, ZonedDateTime.now(), null);
     }
 
     /**
@@ -300,8 +302,31 @@ public class PromptBuilder {
      * @return the agent user message, ending with the turn's clock and the question
      */
     public String agentUser(String question, List<ChatTurn> history, ZonedDateTime now) {
+        return agentUser(question, history, now, null);
+    }
+
+    /**
+     * Builds the agent user message: history, then everything that changes per turn.
+     *
+     * <p>The volatile sections live here on purpose. The provider caches a prompt by its prefix, so
+     * the stable part (system prompt + appended history) has to come first and stay byte-identical;
+     * the profile/memory block and the clock change on every request and therefore belong at the
+     * tail, after the history. Keeping them in the system prompt would make every turn a cache miss
+     * for the entire replay window.</p>
+     *
+     * @param question sanitized question
+     * @param history previous turns (may be empty)
+     * @param now the instant of this turn, or {@code null} to omit the block
+     * @param userContext profile/memory block from {@link #agentContext(String, List)}, or {@code null}
+     * @return the agent user message, ending with the turn's clock and the question
+     */
+    public String agentUser(String question, List<ChatTurn> history, ZonedDateTime now,
+            String userContext) {
         StringBuilder prompt = new StringBuilder(512);
         appendHistory(prompt, history);
+        if (StringUtil.isNotBlank(userContext)) {
+            prompt.append(userContext.trim()).append('\n');
+        }
         if (now != null) {
             prompt.append("<now>").append(NOW_FORMAT.format(now))
                     .append("（").append(now.getZone().getId()).append('，')
@@ -372,6 +397,28 @@ public class PromptBuilder {
         return text.substring(0, head)
                 + "…（中间省略 " + omitted + " 字）…"
                 + text.substring(text.length() - tail);
+    }
+
+    /**
+     * Prompt cost of one replayed turn, measured the way {@link #render} will actually send it.
+     *
+     * <p>Budgeting and rendering have to agree. Estimating an old message at its full length while
+     * the prompt cuts it to {@link #MAX_OLDER_TURN_CHARS} makes the window look full while a third of
+     * it is still free, and makes compaction fire long before the model is actually losing turns —
+     * the opposite of what the trigger is for. Keeping both in this class is what stops the two from
+     * drifting apart again.</p>
+     *
+     * @param content message text, may be {@code null}
+     * @param recent  whether the message belongs to the newest turns (larger cap)
+     * @return estimated prompt tokens including the role/framing overhead, {@code 0} for blank text
+     */
+    public static int historyTurnTokens(String content, boolean recent) {
+        if (StringUtil.isBlank(content)) {
+            return 0;
+        }
+        int max = recent ? MAX_HISTORY_TURN_CHARS : MAX_OLDER_TURN_CHARS;
+        String text = content.length() <= max ? content : content.substring(0, max);
+        return AiTokenUsageMeter.estimateTokens(text) + HISTORY_TURN_OVERHEAD_TOKENS;
     }
 
     private static String offsetLabel(ZoneOffset offset) {

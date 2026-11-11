@@ -335,12 +335,15 @@ watch(background, () => {
             >
               <span
                 class="size-3.5 rounded-[3px] border border-line-strong"
-                :class="item.value === 'transparent' ? 'icon-checker' : ''"
+                :class="item.value === 'transparent' ? 'icon-checker icon-checker-sm' : ''"
                 :style="item.value === 'transparent' ? undefined : { backgroundColor: item.value }"
               />
               {{ item.label }}
             </button>
           </div>
+          <p class="text-[11.5px] leading-relaxed text-faint">
+            透明背景在游戏里会露出服务器列表的底色（通常是深色）；想要确定的观感就选一个纯色。
+          </p>
         </div>
 
         <div class="border-t border-line pt-4">
@@ -362,13 +365,29 @@ watch(background, () => {
 </template>
 
 <style scoped>
+/*
+ * Transparency checkerboard.
+ *
+ * Kept deliberately low-contrast: the preview is 320px wide, so hard black/white squares at a
+ * 45-degree angle read as a flickering band and tire the eye within seconds. A translucent slate
+ * (theme token) at ~16% works on both the light and the dark panel, and 16px cells keep the
+ * frequency low.
+ */
 .icon-checker {
+  --icon-checker-cell: color-mix(in srgb, var(--color-dim) 16%, transparent);
   background-image:
-    linear-gradient(45deg, #2a2f38 25%, transparent 25%),
-    linear-gradient(-45deg, #2a2f38 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #2a2f38 75%),
-    linear-gradient(-45deg, transparent 75%, #2a2f38 75%);
+    linear-gradient(45deg, var(--icon-checker-cell) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--icon-checker-cell) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--icon-checker-cell) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--icon-checker-cell) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* The 14px background swatch is smaller than one cell of the preview pattern, so it gets its own
+   frequency: otherwise it reads as a flat tint and stops meaning "transparent". */
+.icon-checker-sm {
+  background-size: 6px 6px;
+  background-position: 0 0, 0 3px, 3px -3px, -3px 0;
 }
 </style>

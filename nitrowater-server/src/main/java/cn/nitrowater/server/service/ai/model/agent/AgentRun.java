@@ -5,6 +5,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -29,15 +30,30 @@ public final class AgentRun {
     private final AtomicReference<Disposable> active = new AtomicReference<>();
 
     /**
+     * Set when the consumer goes away.
+     *
+     * <p>Disposing {@link #active} only stops the round that is streaming right now; a cancel that
+     * lands between rounds (while a tool batch runs) would otherwise let the next round start and
+     * bill tokens into a stream nobody reads. The loop checks this flag at every boundary.</p>
+     */
+    private final AtomicBoolean cancelled = new AtomicBoolean();
+
+    /**
      * @return the turn's event stream; cancelling it stops the round in flight
      */
     public Flux<AiStreamChunk> events() {
         return this.sink.asFlux().doOnCancel(() -> {
+            this.cancelled.set(true);
             Disposable running = this.active.get();
             if (running != null) {
                 running.dispose();
             }
         });
+    }
+
+    /** @return whether the consumer has cancelled this turn */
+    public boolean cancelled() {
+        return this.cancelled.get();
     }
 
     /**

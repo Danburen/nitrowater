@@ -19,9 +19,9 @@ const platforms = [
 ] as const
 
 const scriptPresets = [
-  { key: 'paper', label: 'Paper 4G', desc: '2–4 GB + Aikar flags', min: 2, max: 4, aikar: true },
-  { key: 'vanilla', label: 'Vanilla 2G', desc: '1–2 GB，无额外 flags', min: 1, max: 2, aikar: false },
-  { key: 'modded', label: '大型模组 8G', desc: '4–8 GB，关闭 Aikar flags', min: 4, max: 8, aikar: false },
+  { key: 'paper', label: 'Paper 4G', desc: '4 GB，Xms = Xmx + Aikar flags', min: 4, max: 4, aikar: true },
+  { key: 'vanilla', label: 'Vanilla 2G', desc: '2 GB，Xms = Xmx，无额外 flags', min: 2, max: 2, aikar: false },
+  { key: 'modded', label: '大型模组 8G', desc: '8 GB，Xms = Xmx，关闭 Aikar flags', min: 8, max: 8, aikar: false },
 ] as const
 
 type Platform = (typeof platforms)[number]['key']
@@ -53,7 +53,7 @@ const AIKAR_FLAGS = [
 const platform = ref<Platform>('windows')
 const jarName = ref('server.jar')
 const javaPath = ref('java')
-const minMemory = ref('2')
+const minMemory = ref('4')
 const maxMemory = ref('4')
 const nogui = ref(true)
 const aikarFlags = ref(true)
@@ -100,6 +100,9 @@ const hasNonAscii = computed(() =>
 const warnings = computed(() => {
   const list: string[] = []
   if (aikarFlags.value) list.push('Aikar flags 主要针对 Paper/Purpur；原版或模组核心不一定适用。')
+  if (aikarFlags.value && Number(minMemory.value) !== Number(maxMemory.value)) {
+    list.push('Aikar flags 官方建议 -Xms 与 -Xmx 相同：Xms 更小时多出的堆要到运行时才提交，AlwaysPreTouch 也预分配不到。')
+  }
   if (autoRestart.value) list.push('自动重启会循环执行；停止请关闭窗口或按 Ctrl+C。')
   if (platform.value === 'windows' && hasNonAscii.value) {
     list.push('.bat 包含非 ASCII 字符；建议使用英文路径与参数，避免乱码或命令解析问题。')
@@ -183,7 +186,7 @@ function applyScriptPreset(preset: ScriptPreset): void {
 function reset(): void {
   jarName.value = 'server.jar'
   javaPath.value = 'java'
-  minMemory.value = '2'
+  minMemory.value = '4'
   maxMemory.value = '4'
   nogui.value = true
   aikarFlags.value = true
@@ -301,7 +304,7 @@ function download(): void {
                   内存
                 </h2>
                 <p class="mt-0.5 text-[12.5px] text-dim">
-                  单位 GB，按实际物理内存留出余量
+                  单位 GB；Aikar 建议 Xms = Xmx，并给系统留 1–1.5 GB
                 </p>
               </div>
               <code class="rounded bg-soft px-2 py-1 text-[11.5px] text-dim">-Xms{{ formatMemory(minMemory) }} -Xmx{{ formatMemory(maxMemory) }}</code>

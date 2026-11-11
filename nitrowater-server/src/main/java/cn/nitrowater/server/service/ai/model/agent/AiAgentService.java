@@ -35,6 +35,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.time.ZoneId;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -71,6 +73,16 @@ public class AiAgentService {
     private static final Logger log = LoggerFactory.getLogger(AiAgentService.class);
     private static final long NANOS_PER_MILLI = 1_000_000L;
 
+    /**
+     * Injected as a user message when the daily budget is nearly spent.
+     *
+     * <p>It replaces the tool call the model was about to make instead of aborting the turn: the
+     * answer the user already paid for still arrives, and the model says what it could not verify.</p>
+     */
+    private static final String QUOTA_WRAP_UP = """
+            [系统提示] 今日 AI token 额度即将用完，本轮不要再调用任何工具。请直接基于已获得的信息给出最终回答，并用一句话说明还有哪些内容未能核实。
+            """;
+
     private final ChatModel chatModel;
     private final ToolCallingManager toolCallingManager;
     private final AgentToolRegistry toolRegistry;
@@ -81,8 +93,20 @@ public class AiAgentService {
     private final AiUsageService usageService;
     private final AiProfileService profileService;
     private final AiMemoryService memoryService;
-    private final int maxToolRounds;
+    private final int maxRounds;
     private final long turnTimeoutMs;
+    /**
+     * Provider retries of a round that failed before a single token reached the client.
+     *
+     * <p>A stream cannot be retried once it has emitted something: the browser already rendered
+     * those tokens and a replay would duplicate them. Up to that point the attempt is invisible, so
+     * a transient 503/429 is worth one more try instead of turning it into a failed turn. {@code 0}
+     * disables it.</p>
+     */
+    private final int retryAttempts;
+    private final long retryBackoffMs;
+    /** Below this much remaining daily budget no new tool batch starts; the turn wraps up instead. */
+    private final long quotaFloorTokens;
     /** Zone of the per-turn clock block handed to the model, so "today" is never inferred. */
     private final ZoneId turnZone;
 
@@ -90,8 +114,11 @@ public class AiAgentService {
                           AgentToolRegistry toolRegistry, AgentSkillService skillService,
                           AiProperties properties, PromptBuilder promptBuilder, AiAdminSettingsService settings,
                           AiUsageService usageService, AiProfileService profileService, AiMemoryService memoryService,
-                          @Value("${spring.ai.tools.limits.max-total-tool-calls:10}") int maxToolRounds,
+                          @Value("${app.ai.agent.max-rounds:18}") int maxRounds,
                           @Value("${app.ai.agent.turn-timeout-ms:150000}") long turnTimeoutMs,
+                          @Value("${app.ai.agent.retry-attempts:1}") int retryAttempts,
+                          @Value("${app.ai.agent.retry-backoff-ms:400}") long retryBackoffMs,
+                          @Value("${app.ai.agent.quota-floor-tokens:10000}") long quotaFloorTokens,
                           @Value("${app.ai.agent.time-zone:Asia/Shanghai}") String timeZone) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
@@ -103,8 +130,11 @@ public class AiAgentService {
         this.usageService = usageService;
         this.profileService = profileService;
         this.memoryService = memoryService;
-        this.maxToolRounds = Math.max(1, maxToolRounds);
+        this.maxRounds = Math.max(1, maxRounds);
         this.turnTimeoutMs = Math.max(1L, turnTimeoutMs);
+        this.retryAttempts = Math.max(0, retryAttempts);
+        this.retryBackoffMs = Math.max(1L, retryBackoffMs);
+        this.quotaFloorTokens = Math.max(0L, quotaFloorTokens);
         this.turnZone = ZoneId.of(timeZone);
     }
 
@@ -141,8 +171,17 @@ public class AiAgentService {
             int round = 0;
             while (hasToolCalls(response) && hasToolCallbacks(prompt.getOptions())) {
                 session.record(usageOf(response));
-                if (round >= maxToolRounds) {
+                // Commit the round before the next one starts: a long tool turn must not stay
+                // invisible to other turns until it settles.
+                session.flush();
+                if (round >= maxRounds) {
                     prompt = new Prompt(prompt.getInstructions(), withoutTools(prompt.getOptions()));
+                } else if (outOfBudget(session)) {
+                    // Wrap up with what the tools already returned instead of spending what is left
+                    // on a batch whose answer nobody could afford to read.
+                    log.info("Daily token budget nearly spent: ending the turn without further tools");
+                    prompt = new Prompt(withWrapUp(prompt.getInstructions()),
+                            withoutTools(prompt.getOptions()));
                 } else {
                     // Checked before the batch: a tool call started with no budget left would only
                     // overshoot the whole-turn limit by its own deadline.
@@ -203,7 +242,7 @@ public class AiAgentService {
         Flux<AiStreamChunk> chunks = run.events()
                 .doOnSubscribe(ignored -> {
                     run.step(AiStreamChunk.Step.thinking());
-                    driveRound(request.prompt(), 0, deadline, run);
+                    driveRound(request.prompt(), 0, deadline, run, session);
                 })
                 .doOnNext(chunk -> {
                     session.record(chunk.usage());
@@ -222,8 +261,15 @@ public class AiAgentService {
      * @param round  zero-based round index
      * @param deadline {@link System#nanoTime()} value at which the turn must stop
      * @param run    turn stream that receives tokens and steps
+     * @param session quota accounting for this turn, used to stop before the budget runs out
      */
-    private void driveRound(Prompt prompt, int round, long deadline, AgentRun run) {
+    private void driveRound(Prompt prompt, int round, long deadline, AgentRun run,
+            AiUsageTracker session) {
+        if (run.cancelled()) {
+            // The consumer went away between rounds: the next call would only bill tokens nobody
+            // can read. The sink is already terminated, so there is nothing to complete.
+            return;
+        }
         long remaining = remainingNanos(deadline);
         if (remaining <= 0) {
             run.fail(turnTimeout());
@@ -233,10 +279,28 @@ public class AiAgentService {
         // once it completes. Note it emits a *running* aggregate per chunk (not one final element),
         // so the decision is taken in onComplete with the last snapshot. The timeout is the turn
         // budget that is left, so a stalled provider cannot hold the stream open.
-        Flux<ChatResponse> raw = chatModel.stream(prompt)
-                .timeout(Duration.ofNanos(remaining))
+        AtomicBoolean emitted = new AtomicBoolean();
+        // defer(), not a bare stream() call: a retry has to issue a new provider request, and the
+        // per-round timeout has to be recomputed from what is left of the turn instead of reusing
+        // the budget measured before the failed attempt. Resubscribing the same Flux would replay
+        // whatever it already produced (or the same failure) instead.
+        Flux<ChatResponse> raw = Flux.defer(() -> {
+                    long left = remainingNanos(deadline);
+                    if (left <= 0) {
+                        return Flux.error(turnTimeout());
+                    }
+                    return chatModel.stream(prompt).timeout(Duration.ofNanos(left));
+                })
                 .onErrorMap(TimeoutException.class, error -> turnTimeout())
-                .doOnNext(response -> emit(run, AiStreamChunk.from(response)));
+                .doOnNext(response -> {
+                    AiStreamChunk chunk = AiStreamChunk.from(response);
+                    if (!chunk.text().isEmpty() || chunk.usage() != null
+                            || chunk.finishReason() != null) {
+                        emitted.set(true);
+                    }
+                    emit(run, chunk);
+                })
+                .retryWhen(retryBeforeFirstToken(emitted));
         AtomicReference<ChatResponse> last = new AtomicReference<>();
         Flux<ChatClientResponse> aggregated = AGGREGATOR.aggregateChatClientResponse(
                 raw.map(response -> new ChatClientResponse(response, Map.of())),
@@ -245,7 +309,25 @@ public class AiAgentService {
         run.track(aggregated.subscribe(
                 one -> last.set(one.chatResponse()),
                 run::fail,
-                () -> completeRound(last.get(), prompt, round, deadline, run)));
+                () -> completeRound(last.get(), prompt, round, deadline, run, session)));
+    }
+
+    /**
+     * Retries a round that failed before anything reached the client.
+     *
+     * <p>Emitting is one-way: once a delta is out, a replay would duplicate it, so the filter stops
+     * retrying from the first visible chunk on. A turn timeout is excluded as well — the budget is
+     * already gone, and another attempt would only overshoot it.</p>
+     *
+     * @param emitted whether this round has already published a chunk
+     * @return retry policy; a no-op when {@code app.ai.agent.retry-attempts} is {@code 0}
+     */
+    private Retry retryBeforeFirstToken(AtomicBoolean emitted) {
+        return Retry.backoff(Math.max(1, retryAttempts), Duration.ofMillis(retryBackoffMs))
+                .filter(error -> retryAttempts > 0
+                        && !emitted.get()
+                        && !(error instanceof AiTurnTimeoutException))
+                .onRetryExhaustedThrow((spec, signal) -> signal.failure());
     }
 
     /**
@@ -259,19 +341,38 @@ public class AiAgentService {
      * @param round    zero-based round index
      * @param deadline {@link System#nanoTime()} value at which the turn must stop
      * @param run      turn stream
+     * @param session  quota accounting for this turn
      */
     private void completeRound(ChatResponse response, Prompt prompt, int round, long deadline,
-            AgentRun run) {
+            AgentRun run, AiUsageTracker session) {
+        if (run.cancelled()) {
+            // Cancelled while the round was in flight: its usage is already recorded by the stream
+            // consumer, and no further round should start.
+            return;
+        }
+        // Publish this round's spend before deciding anything else, so a concurrent turn of the same
+        // user is checked against a day that already includes it.
+        session.flush();
         if (!hasToolCalls(response) || !hasToolCallbacks(prompt.getOptions())) {
             run.complete();
             return;
         }
         try {
-            if (round >= maxToolRounds) {
+            if (round >= maxRounds) {
                 // Budget exhausted: one final round without tools so the turn still terminates.
                 run.step(AiStreamChunk.Step.thinking());
                 driveRound(new Prompt(prompt.getInstructions(), withoutTools(prompt.getOptions())),
-                        round + 1, deadline, run);
+                        round + 1, deadline, run, session);
+                return;
+            }
+            if (outOfBudget(session)) {
+                // Same shape as the round cap, but the reason is money: answer from what the tools
+                // already returned and let the model name what it could not verify.
+                log.info("Daily token budget nearly spent: wrapping up without executing tools");
+                run.step(AiStreamChunk.Step.thinking());
+                driveRound(new Prompt(withWrapUp(prompt.getInstructions()),
+                                withoutTools(prompt.getOptions())),
+                        round + 1, deadline, run, session);
                 return;
             }
             // The batch is executed synchronously, so the turn budget is checked here: starting one
@@ -282,12 +383,37 @@ public class AiAgentService {
                 run.complete();
                 return;
             }
+            if (run.cancelled()) {
+                // The batch finished after the client left; the next round would bill tokens into a
+                // stream nobody is reading.
+                return;
+            }
             run.step(AiStreamChunk.Step.thinking());
             driveRound(new Prompt(result.conversationHistory(), prompt.getOptions()), round + 1,
-                    deadline, run);
+                    deadline, run, session);
         } catch (RuntimeException ex) {
             run.fail(ex);
         }
+    }
+
+    /**
+     * @param session quota accounting of the current turn
+     * @return whether the daily budget left is below the floor that still allows another tool batch
+     */
+    private boolean outOfBudget(AiUsageTracker session) {
+        return quotaFloorTokens > 0 && session.remainingTokens() < quotaFloorTokens;
+    }
+
+    /**
+     * @param instructions messages of the current round
+     * @return the same messages plus the wrap-up instruction, so the model answers instead of
+     *         asking for another tool
+     */
+    private static List<Message> withWrapUp(List<Message> instructions) {
+        List<Message> messages = new ArrayList<>(instructions.size() + 1);
+        messages.addAll(instructions);
+        messages.add(new UserMessage(QUOTA_WRAP_UP));
+        return messages;
     }
 
     private static void emit(AgentRun run, AiStreamChunk chunk) {
@@ -327,10 +453,12 @@ public class AiAgentService {
             callbacks.add(track(tool, run, trace));
             toolNames.add(tool.name());
         }
+        // The system prompt stays identical across turns so the provider can reuse its cached
+        // prefix; everything that depends on this question goes into the user message.
         String context = userContext(uid, question);
         String system = promptBuilder.agentSystem(
-                skillService.catalog(runtime), selected, context, properties.collections(), toolNames);
-        String user = promptBuilder.agentUser(question, history, ZonedDateTime.now(turnZone));
+                skillService.catalog(runtime), selected, properties.collections(), toolNames);
+        String user = promptBuilder.agentUser(question, history, ZonedDateTime.now(turnZone), context);
         List<Message> messages = List.of(new SystemMessage(system), new UserMessage(user));
         Prompt prompt = new Prompt(messages, chatOptions(callbacks, trace));
         return new AgentRequest(
@@ -376,10 +504,13 @@ public class AiAgentService {
     }
 
     /**
-     * Loads the user's profile and question-relevant memories for the system prompt.
+     * Loads the user's profile and question-relevant memories for the user message.
      *
      * <p>Personalization is best-effort: a database failure must not take down chat, so the turn
      * continues without this block and the failure is logged.</p>
+     *
+     * <p>It is not part of the system prompt because recalled memories change per question: a
+     * changing head would turn every request into a prefix-cache miss for the whole history.</p>
      */
     private String userContext(long uid, String question) {
         try {

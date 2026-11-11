@@ -54,6 +54,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
@@ -116,6 +117,70 @@ class AiAgentServiceStreamTest {
 
         assertThat(texts).containsExactly("这里才是", "最终回答");
         verify(toolCallingManager).executeToolCalls(any(Prompt.class), any(ChatResponse.class));
+    }
+
+    /**
+     * The provider can fail before a single token is out. That attempt is invisible to the client,
+     * so it is retried instead of becoming a failed turn.
+     */
+    @Test
+    void retriesTheRoundWhenTheProviderFailsBeforeTheFirstToken() {
+        service = service(new ScriptedChatModel(List.of(
+                Flux.error(new RuntimeException("503 Service Unavailable")),
+                chunks("好"))), 1, 1L);
+
+        List<String> texts = prepare().chunks()
+                .map(AiStreamChunk::text)
+                .filter(text -> !text.isEmpty())
+                .collectList()
+                .block();
+
+        assertThat(texts).containsExactly("好");
+    }
+
+    /**
+     * Replaying a stream that already reached the client would duplicate the visible answer, so a
+     * failure after the first delta has to surface instead of being retried.
+     */
+    @Test
+    void doesNotRetryOnceATokenReachedTheClient() {
+        ScriptedChatModel model = new ScriptedChatModel(List.of(
+                Flux.concat(chunks("你"), Flux.<ChatResponse>error(
+                        new RuntimeException("connection reset")))));
+        service = service(model, 1, 1L);
+
+        assertThatThrownBy(() -> prepare().chunks().blockLast())
+                .hasMessageContaining("connection reset");
+        assertThat(model.calls())
+                .as("no second attempt after the first token was published")
+                .isEqualTo(1);
+    }
+
+    /**
+     * Below the daily-budget floor no tool batch starts: the turn still answers, from what the tools
+     * already returned, instead of spending the rest of the day on a round nobody can afford.
+     */
+    @Test
+    void wrapsUpInsteadOfCallingToolsWhenTheDailyBudgetIsNearlySpent() {
+        when(usage.start(anyLong(), anyInt())).thenReturn(new NoopTracker(1_000L));
+        AssistantMessage toolCallMessage = callMessage("searchDocs", "{\"query\":\"NitroWater\"}");
+        stubToolExecution(toolCallMessage);
+        ScriptedChatModel model = new ScriptedChatModel(List.of(
+                Flux.just(new ChatResponse(List.of(new Generation(toolCallMessage)))),
+                chunks("先给出已有结论")));
+        service = service(model, searchDocsCallback(), 0, 150_000L, RenderPolicy.FULL, 10_000L);
+
+        List<String> texts = prepare().chunks()
+                .map(AiStreamChunk::text)
+                .filter(text -> !text.isEmpty())
+                .collectList()
+                .block();
+
+        assertThat(texts).containsExactly("先给出已有结论");
+        verify(toolCallingManager, never()).executeToolCalls(any(Prompt.class), any(ChatResponse.class));
+        assertThat(model.lastPrompt().getInstructions())
+                .as("the final round must be told to answer instead of asking for another tool")
+                .anyMatch(message -> message.getText().contains("额度即将用完"));
     }
 
     /**
@@ -331,6 +396,22 @@ class AiAgentServiceStreamTest {
 
     private AiAgentService service(ChatModel chatModel, ToolCallback callback, int toolTimeoutMs,
             long turnTimeoutMs, RenderPolicy render) {
+        return service(chatModel, callback, toolTimeoutMs, turnTimeoutMs, render, 10_000L);
+    }
+
+    private AiAgentService service(ChatModel chatModel, ToolCallback callback, int toolTimeoutMs,
+            long turnTimeoutMs, RenderPolicy render, long quotaFloorTokens) {
+        return service(chatModel, callback, toolTimeoutMs, turnTimeoutMs, render, quotaFloorTokens,
+                0, 400L);
+    }
+
+    /**
+     * @param retryAttempts extra provider attempts for a round that failed before its first token
+     * @param retryBackoffMs pause between those attempts
+     */
+    private AiAgentService service(ChatModel chatModel, ToolCallback callback, int toolTimeoutMs,
+            long turnTimeoutMs, RenderPolicy render, long quotaFloorTokens, int retryAttempts,
+            long retryBackoffMs) {
         AgentToolRegistry tools = mock(AgentToolRegistry.class);
         when(tools.forTurn(any(AiSettings.class), anySet(), anyBoolean()))
                 .thenReturn(List.of(new AgentTool(callback, ToolFeature.DOCS, false, toolTimeoutMs,
@@ -343,7 +424,13 @@ class AiAgentServiceStreamTest {
         when(memories.recall(anyLong(), any(), anyInt())).thenReturn(List.of());
         return new AiAgentService(chatModel, toolCallingManager, tools,
                 skills, properties(), new PromptBuilder(), settings, usage, profiles,
-                memories, 10, turnTimeoutMs, "Asia/Shanghai");
+                memories, 10, turnTimeoutMs, retryAttempts, retryBackoffMs, quotaFloorTokens,
+                "Asia/Shanghai");
+    }
+
+    private AiAgentService service(ChatModel chatModel, int retryAttempts, long retryBackoffMs) {
+        return service(chatModel, searchDocsCallback(), 0, 150_000L, RenderPolicy.FULL, 10_000L,
+                retryAttempts, retryBackoffMs);
     }
 
     private static ToolCallback searchDocsCallback() {
@@ -468,6 +555,11 @@ class AiAgentServiceStreamTest {
             return lastPrompt.get();
         }
 
+        /** @return how many times the round script was requested (a retry asks again) */
+        private int calls() {
+            return index;
+        }
+
         @Override
         public ChatOptions getOptions() {
             return ToolCallingChatOptions.builder().model("test-model").build();
@@ -488,8 +580,18 @@ class AiAgentServiceStreamTest {
         }
     }
 
-    /** No-op accounting: this test only cares about delta shape. */
+    /** No-op accounting: this test only cares about delta shape, with an optional quota reading. */
     private static final class NoopTracker implements AiUsageTracker {
+
+        private final long remaining;
+
+        private NoopTracker() {
+            this(Long.MAX_VALUE);
+        }
+
+        private NoopTracker(long remaining) {
+            this.remaining = remaining;
+        }
 
         @Override
         public void record(Usage usage) {
@@ -502,6 +604,11 @@ class AiAgentServiceStreamTest {
         @Override
         public AiTokenUsage finish() {
             return new AiTokenUsage(0, 0, false);
+        }
+
+        @Override
+        public long remainingTokens() {
+            return remaining;
         }
     }
 }

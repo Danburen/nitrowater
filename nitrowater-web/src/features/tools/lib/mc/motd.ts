@@ -5,10 +5,25 @@
  * `&#RRGGBB` shorthand, styles (bold / italic / underline / strike / obfuscated) and newlines.
  * Outputs are pure strings so the same parsed model can feed the preview, `server.properties`
  * escaping and a JSON text component for `/tellraw`-style use.
+ *
+ * <p>Scope of the hex form: `§x§r§r§g§g§b§b` is an Adventure (Paper / Purpur / Velocity) extension.
+ * Vanilla only understands the 16 palette codes, so a hex color in a `server.properties` MOTD is
+ * exported for vanilla servers as broken text — {@link #hasCustomHexColor} lets the UI say so.</p>
  */
 import { escapePropertyValue } from './escape'
 
 const SECTION = '\u00A7'
+
+/**
+ * The server list is two rows, and a row longer than this is reported by the client as a
+ * communication error (or truncated) on some versions.
+ *
+ * <p>Source: Minecraft Wiki, {@code server.properties § motd}.</p>
+ */
+export const SERVER_LIST_LINE_CHARS = 59
+
+/** Lines the vanilla server list actually renders. */
+export const SERVER_LIST_LINES = 2
 
 export interface MotdStyle {
   /** Lower-case `#rrggbb`, or `null` for the default color. */
@@ -233,8 +248,34 @@ export function parseMotd(input: string): MotdParseResult {
   }
 
   flush()
-  if (lines.length > 2) warnings.push('服务器列表通常只显示 MOTD 的前 2 行。')
+  if (lines.length > SERVER_LIST_LINES) {
+    warnings.push(`服务器列表只显示前 ${SERVER_LIST_LINES} 行，多出的行不会出现。`)
+  }
+  lines.forEach((line, index) => {
+    const visible = line.reduce((total, segment) => total + segment.text.length, 0)
+    if (visible > SERVER_LIST_LINE_CHARS) {
+      warnings.push(
+        `第 ${index + 1} 行有 ${visible} 个可见字符，超过 ${SERVER_LIST_LINE_CHARS} 个时部分版本会显示通信错误或被截断。`,
+      )
+    }
+  })
   return { lines, warnings, usesAmpersand }
+}
+
+/**
+ * True when a line uses a hex color outside the 16 legacy palette.
+ *
+ * <p>Such a color survives the JSON output (hex colors are vanilla since 1.16) but not the
+ * `server.properties` / legacy one: vanilla does not parse `§x`, so the color codes leak into the
+ * text. The UI uses this to warn before the value is pasted into a vanilla server.</p>
+ *
+ * @param lines parsed MOTD lines
+ * @returns whether any segment carries a custom hex color
+ */
+export function hasCustomHexColor(lines: MotdSegment[][]): boolean {
+  return lines.some((line) =>
+    line.some((segment) => segment.color !== null && !colorByHex.has(segment.color)),
+  )
 }
 
 function colorCode(hex: string): string {

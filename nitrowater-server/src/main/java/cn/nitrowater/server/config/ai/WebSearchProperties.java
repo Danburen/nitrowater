@@ -40,7 +40,7 @@ public record WebSearchProperties(
     /** Exposes at most {@link #MAX_RESULTS_CAP} hits, because DeepSeek accepts 1..50 but tokens are linear. */
     private static final int MAX_RESULTS_CAP = 10;
     private static final int DEFAULT_MAX_RESULTS = 3;
-    private static final int DEFAULT_MAX_SUCCESSES = 3;
+    private static final int DEFAULT_MAX_SUCCESSES = 8;
     private static final int DEFAULT_MAX_ATTEMPTS = 2;
 
     /** @return hits to request per call, clamped to {@code [1, 10]} with a default of 3 */
@@ -49,7 +49,7 @@ public record WebSearchProperties(
         return Math.min(MAX_RESULTS_CAP, value);
     }
 
-    /** @return successful searches allowed per turn; a non-positive value means the default of 3 */
+    /** @return successful searches allowed per turn; a non-positive value means the default of 8 */
     public int effectiveMaxSuccesses() {
         return maxSuccesses > 0 ? maxSuccesses : DEFAULT_MAX_SUCCESSES;
     }

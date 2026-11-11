@@ -13,7 +13,10 @@
 # the desktop/taskbar.
 # ============================================================
 
-$RunDir = Join-Path (Split-Path $PSCommandPath -Parent) '.run'
+# $PSScriptRoot (not $PSCommandPath): bin\dev\*.ps1 dot-source this file from another directory, and
+# $PSCommandPath would then point at the CALLER, silently relocating .run (and every pid file) to
+# bin\dev\.run. $PSScriptRoot inside a dot-sourced file is still this file's directory.
+$RunDir = Join-Path $PSScriptRoot '.run'
 if (-not (Test-Path -LiteralPath $RunDir)) { New-Item -ItemType Directory -Path $RunDir -Force | Out-Null }
 
 function Save-WindowPid([string]$Name, $Process) {

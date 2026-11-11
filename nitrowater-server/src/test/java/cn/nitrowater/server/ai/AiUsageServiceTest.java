@@ -12,9 +12,15 @@ import cn.nitrowater.server.service.ai.ops.AiUsageService;
 import cn.nitrowater.server.service.ai.model.usage.AiGlobalUsage;
 import cn.nitrowater.server.service.ai.model.usage.AiUsageReservation;
 import cn.nitrowater.server.service.ai.model.usage.AiUserUsage;
+import cn.nitrowater.server.service.ai.model.usage.AiUsageTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -39,14 +45,16 @@ import static org.mockito.Mockito.when;
  * own reservation would overflow the limit is still admitted, because refusing it left the user
  * without an answer after paying for the prompt.</p>
  */
+@ExtendWith(OutputCaptureExtension.class)
 class AiUsageServiceTest {
 
     private static final LocalDate TODAY = LocalDate.now(ZoneOffset.UTC);
 
     private final AiDailyUsageRepository repository = mock(AiDailyUsageRepository.class);
     private final AiAdminSettingsService settings = mock(AiAdminSettingsService.class);
+    private final PlatformTransactionManager transactions = transactions();
     private final AiUsageService service =
-            new AiUsageService(repository, settings, mock(PlatformTransactionManager.class), 100L);
+            new AiUsageService(repository, settings, transactions, 100L, 128_000);
 
     @BeforeEach
     void setUp() {
@@ -132,6 +140,118 @@ class AiUsageServiceTest {
 
         assertThat(global.totalTokens()).isEqualTo(900L);
         assertThat(global.tripped()).isTrue();
+    }
+
+    /**
+     * A round-level commit keeps the day accurate while a long turn is still running, and the
+     * settlement only writes the part no flush has written yet — otherwise every flushed token
+     * would be counted twice.
+     */
+    @Test
+    void flushesEachRoundAndSettlesOnlyTheRemainder() {
+        when(settings.get()).thenReturn(runtime(false, 0L));
+        AiDailyUsageEntity row = row(7L, 0L, 0L, 0L);
+        when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY))).thenReturn(Optional.of(row));
+
+        AiUsageTracker session = service.start(7L, 100);
+        session.record(usage(1_000));
+        session.flush();
+        session.record(usage(500));
+        session.finish();
+
+        assertThat(row.getInputTokens())
+                .as("1000 flushed after round 1 plus 500 settled at the end")
+                .isEqualTo(1_500L);
+        assertThat(row.getReservedTokens())
+                .as("the hold is released exactly once")
+                .isZero();
+    }
+
+    @Test
+    void holdsTheBudgetItReservedAndReleasesItAtSettlement() {
+        when(settings.get()).thenReturn(runtime(false, 0L));
+        AiDailyUsageEntity row = row(7L, 0L, 0L, 0L);
+        when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY))).thenReturn(Optional.of(row));
+
+        AiUsageTracker session = service.start(7L, 100);
+        session.record(usage(300));
+        session.flush();
+
+        assertThat(row.getReservedTokens())
+                .as("a flush must not release the hold")
+                .isEqualTo(200L);
+        assertThat(row.getInputTokens()).isEqualTo(300L);
+    }
+
+    /**
+     * The guard must price the live day, not the admission snapshot: another turn of the same user
+     * that already committed 500 tokens has to shrink what this turn may still spend.
+     */
+    @Test
+    void remainingBudgetCountsWhatOtherTurnsAlreadyCommitted() {
+        when(settings.get()).thenReturn(runtime(false, 0L));
+        // 500 spent by someone else; start() then adds this turn's 200 hold on top.
+        when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY)))
+                .thenReturn(Optional.of(row(7L, 500L, 0L, 0L)));
+        AiUsageTracker session = service.start(7L, 100);
+        session.record(usage(50));
+
+        assertThat(session.remainingTokens())
+                .as("50 prompt + 10 completion of this turn, 500 committed by the other turn")
+                .isEqualTo(50_000L - 500L - 60L);
+    }
+
+    @Test
+    void warnsOnceWhenTheProviderReportsAPromptNearTheModelWindow(CapturedOutput output) {
+        when(settings.get()).thenReturn(runtime(false, 0L));
+        when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY)))
+                .thenReturn(Optional.of(row(7L, 0L, 0L, 0L)));
+        AiUsageTracker session = service.start(7L, 100);
+        Usage nearWindow = usage(120_000);
+
+        session.record(nearWindow);
+        session.record(nearWindow);
+
+        assertThat(output)
+                .as("the provider count is the only ground truth for an estimate-driven budget")
+                .containsOnlyOnce("of the 128000-token model window");
+    }
+
+    @Test
+    void staysQuietWhileThePromptIsWellInsideTheWindow(CapturedOutput output) {
+        when(settings.get()).thenReturn(runtime(false, 0L));
+        when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY)))
+                .thenReturn(Optional.of(row(7L, 0L, 0L, 0L)));
+        AiUsageTracker session = service.start(7L, 100);
+
+        session.record(usage(50_000));
+
+        assertThat(output).doesNotContain("model window");
+    }
+
+    private static PlatformTransactionManager transactions() {
+        PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
+        when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        return manager;
+    }
+
+    private static Usage usage(int promptTokens) {
+        return new Usage() {
+            @Override
+            public Integer getPromptTokens() {
+                return promptTokens;
+            }
+
+            @Override
+            public Integer getCompletionTokens() {
+                return 10;
+            }
+
+            @Override
+            public Object getNativeUsage() {
+                return null;
+            }
+        };
     }
 
     private static AiSettings runtime(boolean globalEnabled, long globalLimit) {

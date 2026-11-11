@@ -13,8 +13,10 @@ import { toast } from '../../../shared/ui/toast'
 import { copyText, downloadText } from '../lib/mc/download'
 import {
   formatCodes,
+  hasCustomHexColor,
   legacyColors,
   parseMotd,
+  SERVER_LIST_LINE_CHARS,
   toJson,
   toLegacy,
   toPlain,
@@ -43,6 +45,15 @@ const editor = ref<TextEditorHandle | null>(null)
 
 const hexCodeLabel = computed(() => `&#${hexColor.value.replace('#', '').toUpperCase()}`)
 const parsed = computed(() => parseMotd(input.value))
+/** Hex outside the 16 vanilla colors: fine for JSON, not parseable by a vanilla server. */
+const customHex = computed(() => hasCustomHexColor(parsed.value.lines))
+/** Per-line character usage, so "too long for the server list" is visible while typing. */
+const lineStats = computed(() =>
+  parsed.value.lines.map((line, index) => {
+    const length = line.reduce((total, segment) => total + segment.text.length, 0)
+    return { line: index + 1, length, over: length > SERVER_LIST_LINE_CHARS }
+  }),
+)
 const legacy = computed(() => toLegacy(parsed.value.lines))
 const properties = computed(() => toProperties(parsed.value.lines, escapeUnicode.value))
 const json = computed(() => toJson(parsed.value.lines))
@@ -121,7 +132,7 @@ function reset(): void {
               MOTD 输入
             </h2>
             <p class="mt-0.5 text-[12.5px] text-dim">
-              支持 &amp; / § 代码、十六进制色、换行
+              支持 &amp; / § 代码、16 色与十六进制色、换行
             </p>
           </div>
           <button
@@ -286,6 +297,17 @@ function reset(): void {
           </div>
         </div>
 
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span
+            v-for="stat in lineStats"
+            :key="stat.line"
+            class="rounded-full border px-2 py-0.5 text-[11.5px] tabular-nums"
+            :class="stat.over ? 'border-warn/50 bg-warn/10 text-warn' : 'border-line text-faint'"
+          >
+            第 {{ stat.line }} 行 {{ stat.length }}/{{ SERVER_LIST_LINE_CHARS }}
+          </span>
+        </div>
+
         <p class="text-[12px] leading-relaxed text-faint">
           预览使用常见客户端字体近似渲染；游戏内最终效果以服务端和客户端为准。服务器列表通常只显示前 2 行。
         </p>
@@ -336,6 +358,14 @@ function reset(): void {
         </div>
       </div>
 
+      <div
+        v-if="customHex && tab !== 'json'"
+        class="rounded-[9px] border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] leading-relaxed text-warn"
+      >
+        含自定义十六进制颜色：原版服务端不解析 <code>§x</code> 语法，<code>server.properties</code> 里会变成乱码；
+        请改用 16 色，或部署 Paper / Purpur 等使用 Adventure 的服务端。JSON 输出不受影响。
+      </div>
+
       <TextArea
         :model-value="activeOutput"
         readonly
@@ -346,12 +376,15 @@ function reset(): void {
       <p class="text-[12px] leading-relaxed text-faint">
         <template v-if="tab === 'properties'">
           输出为 <code>motd=...</code> 行；已转义换行与 <code>§</code>。直接粘贴到 server.properties 或与现有文件合并。
+          <br>
+          现代 Java 版按 UTF-8 读取该文件，转义非 ASCII 只是为了兼容旧版或让文件保持纯 ASCII。
         </template>
         <template v-else-if="tab === 'json'">
           JSON text 组件适用于 <code>/tellraw</code>、书、告示牌等场景；十六进制颜色需要 1.16+，旧版请用 legacy 输出。
         </template>
         <template v-else>
           legacy 字符串使用 <code>§</code> 格式；可粘贴到支持该格式的服务端配置或插件文本中。
+          原版只认 16 色，十六进制色（<code>§x…</code>）需要 Paper / Purpur 等 Adventure 服务端。
         </template>
       </p>
     </section>

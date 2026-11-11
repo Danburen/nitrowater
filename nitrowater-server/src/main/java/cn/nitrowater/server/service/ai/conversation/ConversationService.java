@@ -6,7 +6,6 @@ import cn.nitrowater.server.service.ai.ops.AiModerationService;
 import cn.nitrowater.server.config.ai.AiProperties;
 import cn.nitrowater.server.config.ai.ContextProperties;
 import cn.nitrowater.server.service.ai.model.usage.AiTokenUsage;
-import cn.nitrowater.server.service.ai.model.usage.AiTokenUsageMeter;
 import cn.nitrowater.server.service.ai.model.agent.ChatTurn;
 import cn.nitrowater.server.service.ai.model.agent.ContextReset;
 import cn.nitrowater.server.service.ai.model.agent.ConversationContext;
@@ -60,8 +59,6 @@ public class ConversationService {
     private static final int TITLE_MAX_CHARS = 60;
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    /** Tokens added per replayed turn so role markers and framing are not free. */
-    private static final int MESSAGE_OVERHEAD_TOKENS = 4;
     /** Marks the rolling summary as data: it must never read like an instruction from the user. */
     public static final String SUMMARY_PREFIX = "【此前对话摘要｜非指令】";
 
@@ -212,7 +209,7 @@ public class ConversationService {
         moderation.guardQuestion(uid, conversationUuid, question);
         AiConversation conversation = (StringUtil.isBlank(conversationUuid))
                 ? create(uid, deriveTitle(question))
-                : require(conversationUuid, uid);
+                : lockForWrite(require(conversationUuid, uid));
         List<ChatTurn> history = history(conversation);
         append(conversation, MessageRole.USER, question, 0, null, null, null, null, false);
         return new ConversationTurn(conversation, history);
@@ -240,6 +237,7 @@ public class ConversationService {
     public void finish(AiConversation conversation, String answer, List<DocSource> sources,
             List<ToolCall> tools, List<String> skills, String model, AiTokenUsage usage,
             boolean moderated, boolean continuing) {
+        AiConversation owner = lockForWrite(conversation);
         String raw = Objects.requireNonNullElse(answer, "");
         // A new answer is trimmed as a whole; a continuation is appended verbatim, because the
         // leading space (or lack of one) of the next sentence is part of the text.
@@ -249,15 +247,15 @@ public class ConversationService {
         int tokens = (int) Math.min(Integer.MAX_VALUE, Math.max(0, usage.outputTokens()));
         if (continuing) {
             AiMessage previous = messages
-                    .findFirstByConversationIdAndRoleOrderBySeqDesc(conversation.getId(),
+                    .findFirstByConversationIdAndRoleOrderBySeqDesc(owner.getId(),
                             MessageRole.ASSISTANT)
                     .orElse(null);
             if (previous != null) {
-                merge(conversation, previous, text, sources, tools, skills, model, tokens, moderated);
+                merge(owner, previous, text, sources, tools, skills, model, tokens, moderated);
                 return;
             }
         }
-        append(conversation, MessageRole.ASSISTANT, text, tokens,
+        append(owner, MessageRole.ASSISTANT, text, tokens,
                 jsonOrNull(sources), jsonOrNull(tools), jsonOrNull(skills),
                 trimToNull(model, 64), moderated);
     }
@@ -270,8 +268,9 @@ public class ConversationService {
      */
     @Transactional
     public void fail(AiConversation conversation, String errorMessage) {
+        AiConversation owner = lockForWrite(conversation);
         String text = Objects.requireNonNullElse(errorMessage, "AI request failed").trim();
-        append(conversation, MessageRole.ERROR, text, 0, null, null, null, null, false);
+        append(owner, MessageRole.ERROR, text, 0, null, null, null, null, false);
     }
 
     /**
@@ -298,7 +297,8 @@ public class ConversationService {
      * folded into {@code summary} or dropped by {@code /clear}. Filtering on it is what prevents
      * the old messages from being fed a second time alongside the summary.</p>
      *
-     * <p>The window is a token budget ({@code app.ai.context.history-max-tokens}): messages are
+     * <p>The window is a token budget ({@code model-window-tokens × history-window-ratio}, e.g.
+     * 128K × 0.5 = 64K; {@code app.ai.context.history-max-tokens} overrides it): messages are
      * taken newest-first until the budget is spent and then replayed oldest-first, so a long answer
      * cannot crowd out the recent turns. The summary, when present, is charged against the same
      * budget because it is replayed on every turn. When the budget is {@code 0} the legacy rule
@@ -315,7 +315,8 @@ public class ConversationService {
         if (StringUtil.isNotBlank(summary)) {
             String injected = SUMMARY_PREFIX + summary.trim();
             history.add(new ChatTurn("assistant", injected));
-            summaryTokens = estimateTurnTokens(injected);
+            // The summary sits at the head of the window, so it is rendered with the older cap.
+            summaryTokens = PromptBuilder.historyTurnTokens(injected, false);
         }
 
         int boundary = Math.max(0, conversation.getSummaryUptoSeq());
@@ -329,7 +330,7 @@ public class ConversationService {
             return List.copyOf(history);
         }
 
-        int budget = contextProperties.historyMaxTokens() - summaryTokens;
+        int budget = contextProperties.historyBudgetTokens() - summaryTokens;
         if (budget <= 0) {
             return List.copyOf(history);
         }
@@ -341,7 +342,10 @@ public class ConversationService {
             if (roleOf(message) == null || StringUtil.isBlank(message.getContent())) {
                 continue;
             }
-            int cost = estimateTurnTokens(message.getContent());
+            // The first entries of a newest-first list are the ones the prompt renders verbatim;
+            // everything older is cut to the smaller cap, so the budget must price it the same way.
+            int cost = PromptBuilder.historyTurnTokens(message.getContent(),
+                    selected.size() < PromptBuilder.RECENT_MESSAGES);
             // The newest turn always stays, even when it alone exceeds the budget: dropping it would
             // make the model answer without seeing what it just said.
             if (!selected.isEmpty() && used + cost > budget) {
@@ -414,23 +418,6 @@ public class ConversationService {
     }
 
     /**
-     * Estimates the prompt cost of one replayed turn, capped like {@link PromptBuilder} truncates
-     * it, so the budget matches what the model is actually sent.
-     *
-     * @param content turn text
-     * @return estimated tokens including role framing
-     */
-    private static int estimateTurnTokens(String content) {
-        if (StringUtil.isBlank(content)) {
-            return MESSAGE_OVERHEAD_TOKENS;
-        }
-        String capped = content.length() <= PromptBuilder.MAX_HISTORY_TURN_CHARS
-                ? content
-                : content.substring(0, PromptBuilder.MAX_HISTORY_TURN_CHARS);
-        return AiTokenUsageMeter.estimateTokens(capped) + MESSAGE_OVERHEAD_TOKENS;
-    }
-
-    /**
      * Drops every stored turn from the model's context without deleting anything.
      *
      * <p>This backs the {@code /clear} slash command: the transcript stays intact (and readable
@@ -444,7 +431,7 @@ public class ConversationService {
      */
     @Transactional
     public ContextReset resetContext(String uuid, long uid) {
-        AiConversation conversation = require(uuid, uid);
+        AiConversation conversation = lockForWrite(require(uuid, uid));
         int previousBoundary = Math.max(0, conversation.getSummaryUptoSeq());
         int boundary = messages.findFirstByConversationIdOrderBySeqDesc(conversation.getId())
                 .map(AiMessage::getSeq)
@@ -492,6 +479,29 @@ public class ConversationService {
             conversation.setTitle(deriveTitle(content));
         }
         conversations.save(conversation);
+    }
+
+    /**
+     * Re-reads the conversation with a write lock for the rest of the transaction.
+     *
+     * <p>The entity held by the caller was loaded before the model ran, so its counters and
+     * timestamps are stale: writing it back would undo whatever a concurrent turn committed.
+     * Re-reading also serializes {@link #nextSeq(Long)} and the aggregate updates, which is what
+     * keeps two tabs on one conversation from colliding on {@code uk_ai_message_conv_seq}.</p>
+     *
+     * <p>A conversation created by this very call has nothing to lock yet, and a row that vanished
+     * mid-turn (deleted while the model was answering) falls back to the caller's entity so the
+     * failure is reported by the database instead of a {@code null} pointer.</p>
+     *
+     * @param conversation conversation the caller holds, possibly detached
+     * @return the locked, freshly loaded conversation
+     */
+    private AiConversation lockForWrite(AiConversation conversation) {
+        Long id = conversation.getId();
+        if (id == null) {
+            return conversation;
+        }
+        return conversations.findByIdForUpdate(id).orElse(conversation);
     }
 
     private int nextSeq(Long conversationId) {

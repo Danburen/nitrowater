@@ -226,6 +226,15 @@ function download(): void {
         </ul>
       </div>
 
+      <!-- Whitelist reminder: the vanilla default is on, and an empty whitelist locks everyone out -->
+      <div
+        v-if="values['white-list'] === 'true'"
+        class="rounded-[10px] border border-warn/30 bg-warn/10 px-3.5 py-3 text-[12.5px] leading-relaxed text-warn"
+      >
+        白名单已开启：开服前先执行 <code>/whitelist add &lt;玩家&gt;</code>（OP 会自动加入），
+        否则其他玩家会被拒绝进入。需要公开服就关掉这一项。
+      </div>
+
       <div class="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
         <!-- Group nav -->
         <nav class="panel flex h-fit flex-row flex-wrap gap-1 lg:flex-col">

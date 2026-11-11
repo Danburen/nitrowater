@@ -88,14 +88,22 @@ spring:
         max-retries: 2
     # Agent tool-loop guardrails (Spring AI's built-in tool-calling limits). Exceeding a limit
     # returns an error response to the model instead of throwing.
+    #
+    # The framework cap counts *every* invocation, including duplicates and failures, while the
+    # tool's own budget (app.ai.web-search.max-successes) counts only successes. Keep the cap
+    # above the success budget: webSearch 12 = 8 successes + 4 attempts available for duplicate
+    # queries or failed searches. `calculate` gets headroom for multi-step arithmetic; it is pure
+    # CPU and its rows are COMPACT, so extra calls cost no tokens.
     tools:
       limits:
         # runCode gets one call beyond its 3-run budget: that 4th call is how the tool itself
         # returns `retry_exhausted` instead of the framework rejecting it first.
-        max-total-tool-calls: ${AI_AGENT_MAX_TOOL_CALLS:10}
+        max-total-tool-calls: ${AI_AGENT_MAX_TOOL_CALLS:18}
         max-calls-per-tool-default: ${AI_AGENT_MAX_CALLS_PER_TOOL:3}
         max-calls-per-tool:
           runCode: 4
+          webSearch: 12
+          calculate: 6
         on-limit-exceeded: RETURN_ERROR_RESPONSE
     # Qdrant is the third-party vector index. initialize-schema=false keeps the service bootable
     # when Qdrant is down; DocsIndexService creates the collection on the first index run.
@@ -143,21 +151,42 @@ app:
     ingest-on-startup: ${AI_INGEST_ON_STARTUP:true}
     per-user-per-minute: ${AI_PER_USER_PER_MINUTE:20}
     # ---- Context window & rolling compaction ----
-    # history-max-tokens is the primary window: history is filled newest-first until the budget is
-    # spent, so a long answer cannot crowd out recent turns. 0 falls back to max-history-turns.
-    # history-hard-max-messages bounds how many rows one turn reads.
-    # Compaction folds the oldest unsummarized turns into ai_conversation.summary once
-    # compact-trigger-messages accumulate (roughly every 8-15 turns at the default), keeping
-    # compact-keep-turns turns verbatim; /compact folds on demand. A smaller trigger means fresher
-    # summaries and more model calls.
+    # Everything here is a share of the model's real context window, the way agent frameworks size
+    # their prompts: the window is a property of the model (deepseek-chat is served by
+    # deepseek-flash — 1M context, verified against GET /models and a live request), and the replay
+    # budget / compaction trigger derive from it. Switching models is a one-line change
+    # (model-window-tokens), not a hunt for hard-coded budgets.
+    #
+    # The replay budget is pinned to 64K on purpose, even though the window is 1M: every model round
+    # resends the whole budget, so it is a cost lever, not a capability limit. 64K keeps a tool turn
+    # at tens of thousands of tokens and still leaves ~900K of headroom for tool results and the
+    # 4096-token completion.
+    # history-window-ratio is the derived alternative (1M x 0.064 = 64K); it only applies when
+    # history-max-tokens is absent. Setting the absolute budget to 0 restores the legacy
+    # max-history-turns mode.
+    # history-hard-max-messages bounds how many rows one turn reads (a query bound, not a budget:
+    # it only starts to matter for chats made of many tiny messages).
+    #
+    # Compaction folds the oldest unsummarized turns into ai_conversation.summary and runs after a
+    # turn, never on the request path. Two triggers, whichever fires first:
+    #   * compact-trigger-ratio — the backlog's estimated size as a share of the replay budget
+    #     (0.8 x 64K = 51.2K tokens). It sits *below* 1.0 by design: folding before the window starts
+    #     dropping turns is what keeps the summary contiguous with what the model can still see.
+    #   * compact-trigger-messages — guard for chats made of many tiny turns.
+    # A smaller trigger means fresher summaries and more summarizer calls; /compact folds on demand.
+    # summary-input-max-chars bounds one summarizer call, so a large backlog needs several passes
+    # (at most 4 per run); summary-max-chars is what the summary keeps.
     context:
-      history-max-tokens: ${AI_CONTEXT_HISTORY_MAX_TOKENS:4000}
-      history-hard-max-messages: ${AI_CONTEXT_HARD_MAX_MESSAGES:60}
+      model-window-tokens: ${AI_CONTEXT_MODEL_WINDOW_TOKENS:1000000}
+      history-window-ratio: ${AI_CONTEXT_HISTORY_WINDOW_RATIO:0.064}
+      history-max-tokens: ${AI_CONTEXT_HISTORY_MAX_TOKENS:64000}
+      history-hard-max-messages: ${AI_CONTEXT_HARD_MAX_MESSAGES:120}
       compact-enabled: ${AI_CONTEXT_COMPACT_ENABLED:true}
       compact-trigger-messages: ${AI_CONTEXT_COMPACT_TRIGGER_MESSAGES:32}
-      compact-keep-turns: ${AI_CONTEXT_COMPACT_KEEP_TURNS:1}
-      summary-max-chars: ${AI_CONTEXT_SUMMARY_MAX_CHARS:800}
-      summary-input-max-chars: ${AI_CONTEXT_SUMMARY_INPUT_MAX_CHARS:8000}
+      compact-trigger-ratio: ${AI_CONTEXT_COMPACT_TRIGGER_RATIO:0.8}
+      compact-keep-turns: ${AI_CONTEXT_COMPACT_KEEP_TURNS:2}
+      summary-max-chars: ${AI_CONTEXT_SUMMARY_MAX_CHARS:2000}
+      summary-input-max-chars: ${AI_CONTEXT_SUMMARY_INPUT_MAX_CHARS:24000}
     # Long-term memory lifecycle: unused active entries expire after retention-days; user-deleted
     # and expired rows are hard-deleted after purge-days so audit history stays bounded.
     memory:
@@ -189,11 +218,28 @@ app:
     # no further SSE frames are written after the disconnect either way.
     agent:
       interrupt-on-disconnect: ${AI_AGENT_INTERRUPT_ON_DISCONNECT:false}
+      # Model rounds per turn (one round = one model call; a round may run several tool calls).
+      # Separate from spring.ai.tools.limits.max-total-tool-calls on purpose: that counter is owned
+      # by Spring AI and counts invocations including failures, so tuning a tool budget (e.g. the 12
+      # webSearch attempts) must not silently move the round cap.
+      max-rounds: ${AI_AGENT_MAX_ROUNDS:18}
       # Wall-clock budget of one turn (model rounds + tool calls together). It must stay below the
       # SSE timeout (180s in AiAgentController); when it expires the turn ends with an error instead
       # of hanging. Per-tool deadlines are separate and much smaller: a tool that misses its own
       # deadline answers with a retryable `tool.timeout` and the model decides whether to retry.
       turn-timeout-ms: ${AI_AGENT_TURN_TIMEOUT_MS:150000}
+      # Retries of a round that failed before the first token reached the client (a 503/429 or a
+      # reset connection). Once a delta is out the stream cannot be replayed, so the retry stops
+      # there — and a turn timeout is never retried, because the budget is already gone.
+      # 0 disables it.
+      retry-attempts: ${AI_AGENT_RETRY_ATTEMPTS:1}
+      retry-backoff-ms: ${AI_AGENT_RETRY_BACKOFF_MS:400}
+      # Daily-budget floor for tools. Before starting a tool batch the agent asks the usage session
+      # how much of the user's day is left; below this it stops calling tools and drives one final
+      # round with a wrap-up instruction instead ("answer from what you have, say what is unverified").
+      # Sized for one last answer: system prompt + history (~4-6k) plus a normal completion. 0 disables
+      # the guard (only the admission check in AiUsageService remains).
+      quota-floor-tokens: ${AI_AGENT_QUOTA_FLOOR_TOKENS:10000}
       # Zone of the per-turn <now> block in the user message. The clock is inlined because a model
       # cannot know today's date; keeping it in the user message (not the system prompt) preserves
       # the provider's prefix cache across turns.
@@ -223,10 +269,14 @@ app:
       endpoint: ${AI_WEB_SEARCH_ENDPOINT:https://api.deepseek.com/v1/tools/search}
       # `searchDocs` falls back to one web search per turn when the local corpus has no match.
       auto-fallback: ${AI_WEB_SEARCH_AUTO_FALLBACK:true}
-      # Hits per call. The explicit tool and the docs fallback share this value; tokens grow linearly.
+      # Hits per call. The explicit tool and the docs fallback share this value; tokens grow
+      # linearly, so breadth comes from more queries (max-successes) rather than more hits here.
       max-results: ${AI_WEB_SEARCH_MAX_RESULTS:3}
       # Successful searches per turn, counting the fallback. Failures and retries do not count.
-      max-successes: ${AI_WEB_SEARCH_MAX_SUCCESSES:3}
+      # Eight covers a multi-part research question (one or two queries per sub-question); every
+      # call resends the accumulated results, so this is also the main lever on token cost — keep
+      # the framework's per-tool cap above it and raise the daily token limit accordingly.
+      max-successes: ${AI_WEB_SEARCH_MAX_SUCCESSES:8}
       # HTTP attempts per call (first try + one retry) and the pause between retryable attempts.
       max-attempts: ${AI_WEB_SEARCH_MAX_ATTEMPTS:2}
       retry-backoff-ms: ${AI_WEB_SEARCH_RETRY_BACKOFF_MS:300}

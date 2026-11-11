@@ -6,6 +6,7 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -23,6 +24,17 @@ import java.util.Map;
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ToolResponse {
+
+    /**
+     * Ceiling of one tool result, in JSON characters.
+     *
+     * <p>Tool results are replayed on every later round of the same turn, so an oversized payload is
+     * paid for repeatedly. Individual tools cap their own fields; this is the backstop for the one
+     * that forgets, and for a payload that is legitimately huge (the sandbox returns up to 64KB per
+     * stream). 16K characters stays well inside the 64K replay budget next to the system prompt and
+     * the history.</p>
+     */
+    private static final int MAX_JSON_CHARS = 16_000;
 
     private final boolean success;
     private final String code;
@@ -98,6 +110,24 @@ public final class ToolResponse {
 
     /** @return the JSON payload handed to the model */
     public String json() {
-        return JsonUtil.toJson(this);
+        String json = JsonUtil.toJson(this);
+        if (json.length() <= MAX_JSON_CHARS) {
+            return json;
+        }
+        // Every model round resends the tool results, so one oversized payload is paid for by every
+        // later round of the turn. Tools cap their own fields, but a new tool can forget to and the
+        // sandbox alone may return 64KB per stream; this is the single ceiling that cannot be
+        // forgotten. The envelope stays valid (the preview is a string field), so the model still
+        // reads success/code/message and can ask for a narrower query.
+        int head = MAX_JSON_CHARS / 2;
+        int tail = MAX_JSON_CHARS / 2;
+        String preview = json.substring(0, head)
+                + "\n…（工具结果过长，已截断 " + (json.length() - head - tail) + " 字符）…\n"
+                + json.substring(json.length() - tail);
+        Map<String, Object> capped = new LinkedHashMap<>();
+        capped.put("truncated", true);
+        capped.put("originalChars", json.length());
+        capped.put("preview", preview);
+        return JsonUtil.toJson(new ToolResponse(success, code, message, retryable, capped));
     }
 }

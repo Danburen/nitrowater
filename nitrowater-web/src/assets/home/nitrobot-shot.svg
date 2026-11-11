@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="NitroBot 对话界面示意">
+  <defs>
+    <linearGradient id="nb-accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b8cff" stop-opacity="0.32" />
+      <stop offset="1" stop-color="#9b6bff" stop-opacity="0.26" />
+    </linearGradient>
+  </defs>
+
+  <rect width="480" height="360" fill="#0f1115" />
+
+  <rect x="0" y="0" width="118" height="360" fill="#171a21" />
+  <rect x="117.5" y="0" width="1" height="360" fill="#2a2f3a" />
+
+  <rect x="14" y="16" width="90" height="26" rx="8" fill="#5b8cff" fill-opacity="0.18" stroke="#5b8cff" stroke-opacity="0.4" />
+  <rect x="24" y="25" width="52" height="8" rx="4" fill="#5b8cff" fill-opacity="0.9" />
+  <rect x="14" y="60" width="80" height="8" rx="4" fill="#414855" />
+  <rect x="14" y="82" width="62" height="8" rx="4" fill="#333a47" />
+  <rect x="14" y="104" width="74" height="8" rx="4" fill="#333a47" />
+  <rect x="14" y="126" width="54" height="8" rx="4" fill="#333a47" />
+
+  <rect x="140" y="16" width="70" height="10" rx="5" fill="#3a4150" />
+
+  <rect x="252" y="56" width="196" height="46" rx="14" fill="#5b8cff" fill-opacity="0.18" stroke="#5b8cff" stroke-opacity="0.38" />
+  <rect x="266" y="70" width="140" height="8" rx="4" fill="#9fb8ff" fill-opacity="0.85" />
+  <rect x="266" y="84" width="92" height="7" rx="3.5" fill="#9fb8ff" fill-opacity="0.5" />
+
+  <rect x="140" y="122" width="14" height="14" rx="4" fill="url(#nb-accent)" />
+
+  <rect x="164" y="118" width="120" height="24" rx="8" fill="#1c2029" stroke="#2a2f3a" />
+  <circle cx="178" cy="130" r="3" fill="#5b8cff" />
+  <rect x="188" y="126" width="76" height="7" rx="3.5" fill="#4a5160" />
+
+  <rect x="164" y="150" width="148" height="24" rx="8" fill="#1c2029" stroke="#2a2f3a" />
+  <circle cx="178" cy="162" r="3" fill="#5b8cff" />
+  <rect x="188" y="158" width="104" height="7" rx="3.5" fill="#4a5160" />
+
+  <rect x="164" y="182" width="106" height="24" rx="8" fill="#1c2029" stroke="#2a2f3a" />
+  <circle cx="178" cy="194" r="3" fill="#9b6bff" />
+  <rect x="188" y="190" width="62" height="7" rx="3.5" fill="#4a5160" />
+
+  <rect x="164" y="224" width="252" height="8" rx="4" fill="#4a5160" />
+  <rect x="164" y="242" width="286" height="8" rx="4" fill="#3f4655" />
+  <rect x="164" y="260" width="214" height="8" rx="4" fill="#3f4655" />
+  <rect x="164" y="278" width="132" height="8" rx="4" fill="#333a47" />
+
+  <rect x="140" y="308" width="308" height="38" rx="12" fill="#171a21" stroke="#2a2f3a" />
+  <rect x="154" y="323" width="150" height="8" rx="4" fill="#333a47" />
+  <rect x="406" y="315" width="30" height="24" rx="8" fill="#5b8cff" />
+  <path d="M417 327h9m0 0-3.4-3.4M426 327l-3.4 3.4" stroke="#0f1115" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

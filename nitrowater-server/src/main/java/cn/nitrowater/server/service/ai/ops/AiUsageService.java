@@ -38,18 +38,24 @@ public class AiUsageService {
     /** Upper bound on the admin listing page size, so a caller cannot force an unbounded scan. */
     private static final int MAX_PAGE_SIZE = 100;
 
+    /** Share of the model window at which one turn's prompt is worth a warning. */
+    private static final double WINDOW_WARN_RATIO = 0.9;
+
     private final AiDailyUsageRepository usageRepository;
     private final AiAdminSettingsService settings;
     private final TransactionTemplate transactions;
     private final long maxOutputAiUsageReservation;
+    private final int modelWindowTokens;
 
     public AiUsageService(AiDailyUsageRepository usageRepository, AiAdminSettingsService settings,
             PlatformTransactionManager transactionManager,
-            @Value("${spring.ai.openai.chat.max-tokens:4096}") long maxOutputAiUsageReservation) {
+            @Value("${spring.ai.openai.chat.max-tokens:4096}") long maxOutputAiUsageReservation,
+            @Value("${app.ai.context.model-window-tokens:128000}") int modelWindowTokens) {
         this.usageRepository = usageRepository;
         this.settings = settings;
         this.transactions = new TransactionTemplate(transactionManager);
         this.maxOutputAiUsageReservation = maxOutputAiUsageReservation > 0 ? maxOutputAiUsageReservation : 4096L;
+        this.modelWindowTokens = modelWindowTokens > 0 ? modelWindowTokens : 128_000;
     }
 
     /**
@@ -100,7 +106,7 @@ public class AiUsageService {
             globalRow.setRequestCount(globalRow.getRequestCount() + 1);
             usageRepository.save(globalRow);
         }
-        return new AiUsageReservation(uid, date, reservation, estimate, global);
+        return new AiUsageReservation(uid, date, reservation, estimate, global, limit, used);
     }
 
     /** Starts accounting for a model call after its prompt has been assembled. */
@@ -112,6 +118,65 @@ public class AiUsageService {
     /** Settles a reservation with provider usage or a marked character-based estimate. */
     public void settle(AiUsageReservation reservation, AiTokenUsage usage) {
         transactions.executeWithoutResult(status -> settleInTransaction(reservation, usage));
+    }
+
+    /**
+     * Commits usage measured so far without releasing the hold.
+     *
+     * <p>This is the point of the per-round flush: a turn that runs several model rounds would
+     * otherwise stay invisible until it settles, so a second turn admitted during that window would
+     * be checked against a budget that is already spent. Committing each round keeps the visible
+     * total within one round of the truth, and leaves the hold untouched so the reservation still
+     * guards the unfinished part.</p>
+     *
+     * @param reservation hold of the turn being flushed
+     * @param inputTokens prompt tokens measured since the previous flush
+     * @param outputTokens completion tokens measured since the previous flush
+     */
+    public void flushPartial(AiUsageReservation reservation, long inputTokens, long outputTokens) {
+        if (inputTokens <= 0 && outputTokens <= 0) {
+            return;
+        }
+        transactions.executeWithoutResult(status -> {
+            // Global first, then the user row: same lock order as reserve() and settle().
+            if (reservation.global()) {
+                applyDelta(GLOBAL_UID, reservation.date(), inputTokens, outputTokens);
+            }
+            applyDelta(reservation.uid(), reservation.date(), inputTokens, outputTokens);
+        });
+    }
+
+    /**
+     * Reads the live day for one turn: everything spent by everybody else, so a guard can decide
+     * from numbers no older than the last flush instead of the snapshot taken at admission.
+     *
+     * <p>Reads the row without a lock on purpose — this feeds a best-effort guard in the middle of a
+     * stream, and a slightly stale number only means the turn wraps up one round earlier or later.</p>
+     *
+     * @param reservation this turn's hold
+     * @param flushedTokens how much of this turn was already written by {@link #flushPartial}
+     * @param spentThisTurn tokens this turn measured but has not flushed yet
+     * @return the day's remaining budget for this turn
+     */
+    public long remainingBudgetTokens(AiUsageReservation reservation, long flushedTokens,
+            long spentThisTurn) {
+        AiDailyUsageEntity row = usageRepository
+                .findByIdUidAndIdUsageDate(reservation.uid(), reservation.date())
+                .orElse(null);
+        if (row == null) {
+            return reservation.limit() - spentThisTurn;
+        }
+        long used = row.getInputTokens() + row.getOutputTokens() + row.getReservedTokens();
+        // The row still carries this turn's hold and its flushed part; neither is "someone else's".
+        long others = Math.max(0, used - reservation.reservedTokens() - flushedTokens);
+        return reservation.limit() - others - spentThisTurn;
+    }
+
+    private void applyDelta(long uid, LocalDate date, long inputTokens, long outputTokens) {
+        AiDailyUsageEntity row = rowForUpdate(new AiDailyUsageId(uid, date));
+        row.setInputTokens(row.getInputTokens() + Math.max(0, inputTokens));
+        row.setOutputTokens(row.getOutputTokens() + Math.max(0, outputTokens));
+        usageRepository.save(row);
     }
 
     /** Releases a reservation when no model request completed. */
@@ -335,7 +400,10 @@ public class AiUsageService {
         private final int estimatedInputTokens;
         private final AiTokenUsageMeter meter = new AiTokenUsageMeter();
         private final StringBuilder output = new StringBuilder();
+        private long flushedInput;
+        private long flushedOutput;
         private boolean settled;
+        private boolean windowWarned;
         private AiTokenUsage result;
 
         private Session(AiUsageService owner, AiUsageReservation reservation, int estimatedInputTokens) {
@@ -347,7 +415,36 @@ public class AiUsageService {
         /** Adds provider usage metadata from one stream chunk. */
         @Override
         public synchronized void record(Usage usage) {
+            warnIfNearModelWindow(usage);
             meter.record(usage);
+        }
+
+        /**
+         * Warns once per turn when the provider reports a prompt close to the model window.
+         *
+         * <p>The replay budget is decided by an estimate, so the estimator cannot notice that it is
+         * wrong — provider usage is the only ground truth in the pipeline. This is the backstop for
+         * that gap: a single warning per turn is enough, because a prompt that keeps growing would
+         * otherwise log on every round. Nothing is corrected automatically; the fix is lowering
+         * {@code history-window-ratio}, which is a deployment decision.</p>
+         *
+         * @param usage provider usage for one round, may be {@code null}
+         */
+        private void warnIfNearModelWindow(Usage usage) {
+            if (windowWarned || usage == null) {
+                return;
+            }
+            Integer prompt = usage.getPromptTokens();
+            if (prompt == null || prompt <= 0) {
+                return;
+            }
+            long threshold = Math.round(owner.modelWindowTokens * WINDOW_WARN_RATIO);
+            if (prompt >= threshold) {
+                windowWarned = true;
+                LOG.warn("Prompt used {} of the {}-token model window; lower "
+                        + "app.ai.context.history-window-ratio if this repeats", prompt,
+                        owner.modelWindowTokens);
+            }
         }
 
         /** Appends generated answer text for a fallback estimate if the provider omits usage. */
@@ -358,14 +455,80 @@ public class AiUsageService {
             }
         }
 
+        /**
+         * Writes the usage accumulated since the previous flush without releasing the hold.
+         *
+         * <p>Failures are swallowed: accounting must never break a running turn, and the amount that
+         * could not be flushed is still settled at the end.</p>
+         */
+        @Override
+        public synchronized void flush() {
+            if (settled) {
+                return;
+            }
+            AiTokenUsage snapshot = meter.snapshot(estimatedInputTokens, output.toString());
+            // Monotonic in practice, but an estimated flush followed by real provider usage can
+            // overshoot: clamp so the counters never move backwards and the day is never credited.
+            long input = Math.max(0, snapshot.inputTokens() - flushedInput);
+            long outputTokens = Math.max(0, snapshot.outputTokens() - flushedOutput);
+            if (input == 0 && outputTokens == 0) {
+                return;
+            }
+            try {
+                owner.flushPartial(reservation, input, outputTokens);
+                flushedInput += input;
+                flushedOutput += outputTokens;
+            } catch (RuntimeException ex) {
+                LOG.warn("Failed to flush AI token usage for uid={} date={}", reservation.uid(),
+                        reservation.date(), ex);
+            }
+        }
+
+        /**
+         * {@inheritDoc}
+         *
+         * <p>Reads the live day instead of the admission snapshot, so usage committed by the other
+         * turns of the same user counts against this one. When the read fails it falls back to the
+         * snapshot: a guard that cannot see the database must not stop a turn that still has budget.
+         * </p>
+         */
+        @Override
+        public synchronized long remainingTokens() {
+            if (settled) {
+                return Long.MAX_VALUE;
+            }
+            long spent = spentTokens();
+            try {
+                return owner.remainingBudgetTokens(reservation, flushedInput + flushedOutput, spent);
+            } catch (RuntimeException ex) {
+                return reservation.limit() - reservation.usedBefore() - spent;
+            }
+        }
+
+        /**
+         * @return tokens this turn has measured so far: provider usage when available, otherwise the
+         *         first-round prompt estimate plus the generated text
+         */
+        private long spentTokens() {
+            return meter.hasReportedUsage()
+                    ? meter.consumed()
+                    : (long) estimatedInputTokens + AiTokenUsageMeter.estimateTokens(output.toString());
+        }
+
         /** Settles actual usage once on success, failure, or stream cancellation. */
         @Override
         public synchronized AiTokenUsage finish() {
             if (!settled) {
                 settled = true;
                 result = meter.snapshot(estimatedInputTokens, output.toString());
+                // Only the part that no flush has committed yet: settle() releases the hold and adds
+                // this delta, so the day never counts the same tokens twice.
+                AiTokenUsage delta = new AiTokenUsage(
+                        Math.max(0, result.inputTokens() - flushedInput),
+                        Math.max(0, result.outputTokens() - flushedOutput),
+                        result.estimated());
                 try {
-                    owner.settle(reservation, result);
+                    owner.settle(reservation, delta);
                 } catch (RuntimeException ex) {
                     // Accounting must never fail the user's answer or break SSE teardown; the
                     // reservation is left in place and expires with the next day's reset.

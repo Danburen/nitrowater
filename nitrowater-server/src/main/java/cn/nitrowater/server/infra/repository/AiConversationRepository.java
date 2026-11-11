@@ -2,9 +2,11 @@ package cn.nitrowater.server.infra.repository;
 
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -24,6 +26,22 @@ public interface AiConversationRepository extends JpaRepository<AiConversation, 
      * @return the conversation when it belongs to that user
      */
     Optional<AiConversation> findByUuidAndUid(String uuid, Long uid);
+
+    /**
+     * Loads the conversation row and holds a write lock on it until the transaction ends.
+     *
+     * <p>Every {@code ai_message} insert derives its {@code seq} from {@code MAX(seq) + 1}, and the
+     * conversation aggregates are a read-modify-write, so two browsers on one conversation would
+     * otherwise pick the same {@code seq} and lose a {@code message_count} increment. Locking the
+     * owner row serializes the writers without locking the message table, and it also makes the
+     * history read consistent with the append that follows it.</p>
+     *
+     * @param id internal id of the conversation to lock
+     * @return the conversation, or empty when it no longer exists
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from AiConversation c where c.id = :id")
+    Optional<AiConversation> findByIdForUpdate(@Param("id") Long id);
 
     /**
      * @param uid owner uid

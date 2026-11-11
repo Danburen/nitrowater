@@ -42,12 +42,55 @@ public final class AiTokenUsageMeter {
         return reported;
     }
 
-    /** Estimates provider tokens with the same conservative character fallback used by persistence. */
+    /** @return provider-reported input+output accumulated so far ({@code 0} before the first usage) */
+    public synchronized long consumed() {
+        return inputTokens.get() + outputTokens.get();
+    }
+
+    /**
+     * Estimates provider tokens for a piece of text, without a tokenizer.
+     *
+     * <p>CJK characters count 1:1 — a Chinese character is about one token in the tokenizers these
+     * providers use — while everything else keeps the classic four-characters-per-token rule. A flat
+     * {@code (chars + 3) / 4} would under-report a Chinese conversation by a factor of ~3, and the
+     * context window and the compaction trigger are expressed in these units: an estimate that is
+     * off by 3x silently overflows the model window (and undercounts the daily quota).</p>
+     *
+     * @param text text to measure, may be {@code null}
+     * @return estimated tokens, {@code 0} for blank text
+     */
     public static int estimateTokens(String text) {
         return (int) Math.min(Integer.MAX_VALUE, estimate(text));
     }
 
     private static long estimate(String text) {
-        return StringUtil.isBlank(text) ? 0 : Math.max(1, (text.length() + 3L) / 4L);
+        if (StringUtil.isBlank(text)) {
+            return 0;
+        }
+        long wide = 0;
+        long narrow = 0;
+        for (int index = 0; index < text.length(); ) {
+            int codePoint = text.codePointAt(index);
+            if (isWide(codePoint)) {
+                wide++;
+            } else {
+                narrow++;
+            }
+            index += Character.charCount(codePoint);
+        }
+        return Math.max(1, wide + (narrow + 3L) / 4L);
+    }
+
+    /**
+     * @param codePoint unicode code point
+     * @return whether the code point is a CJK character or a full-width form that is one token
+     */
+    private static boolean isWide(int codePoint) {
+        return (codePoint >= 0x3000 && codePoint <= 0x30FF)      // CJK punctuation, kana
+                || (codePoint >= 0x3400 && codePoint <= 0x4DBF)  // CJK extension A
+                || (codePoint >= 0x4E00 && codePoint <= 0x9FFF)  // CJK unified ideographs
+                || (codePoint >= 0xF900 && codePoint <= 0xFAFF)  // compatibility ideographs
+                || (codePoint >= 0xFF00 && codePoint <= 0xFFEF)  // full-width forms
+                || (codePoint >= 0x20000 && codePoint <= 0x2FA1F); // extensions B onwards
     }
 }

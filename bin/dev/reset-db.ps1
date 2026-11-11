@@ -73,15 +73,18 @@ foreach ($t in $targets) {
 
     if (Test-TcpPort $d.port) {
         Write-Host "  stopping $($d.module)"
-        $pf = Join-Path $RunDir "$($d.module).pid"
-        if (Test-Path -LiteralPath $pf) {
-            $procId = (Get-Content -LiteralPath $pf -Raw).Trim()
-            if ($procId) { try { Stop-Process -Id ([int]$procId) -Force -ErrorAction Stop } catch { } }
-            Remove-Item -LiteralPath $pf -Force -ErrorAction SilentlyContinue
-        } else {
-            Stop-ByPort $d.port
+        # Tracked pid first (it also closes the wrapper console), port as the fallback for jars
+        # started by hand. Dropping tables under a LIVE process leaves it serving 500s until the
+        # next restart, so this refuses to continue while the port is still bound.
+        Stop-ModuleProcess $d.module $d.port | Out-Null
+        $deadline = (Get-Date).AddSeconds(20)
+        while ((Test-TcpPort $d.port) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
+        if (Test-TcpPort $d.port) {
+            Write-Err "$($d.module) is still listening on $($d.port) - refusing to drop $($d.database)"
+            Write-Err 'stop it manually (pwsh -File bin\stop-all.ps1) and re-run this script'
+            exit 1
         }
-        Start-Sleep -Seconds 1
+        Write-Ok "stopped $($d.module) (port $($d.port) free)"
     }
 
     Invoke-Mysql $dropSql $d.database | Out-Null

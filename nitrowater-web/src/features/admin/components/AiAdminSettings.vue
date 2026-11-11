@@ -43,17 +43,17 @@ const MODERATION_MODES: readonly { value: AiModerationMode; label: string; hint:
 
 /** Mirror of the server-side factory defaults; the danger zone restores this exact snapshot. */
 const DEFAULT_SETTINGS: AiAdminSettings = {
-  dailyTokenLimit: 50000,
+  dailyTokenLimit: 2000000,
   aiEnabled: true,
   chatEnabled: true,
   agentEnabled: true,
   documentSearchEnabled: true,
-  webSearchEnabled: false,
+  webSearchEnabled: true,
   codeRunnerEnabled: true,
   skillsEnabled: true,
   moderationMode: 'LOG',
-  globalDailyTokenLimit: 0,
-  globalQuotaEnabled: false,
+  globalDailyTokenLimit: 40000000,
+  globalQuotaEnabled: true,
 }
 
 const form = reactive<AiAdminSettings>({ ...DEFAULT_SETTINGS })

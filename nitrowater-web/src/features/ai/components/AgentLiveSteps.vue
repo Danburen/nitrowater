@@ -7,10 +7,14 @@
  * still empty. Each marker the server sends becomes one card — an argument-bearing tool start, a
  * result-bearing tool end, or a round boundary.</p>
  *
+ * <p>Consecutive calls to the same tool fold into one row ("2 次检索 · 8 条结果"), expandable back
+ * into the per-call lines. Only the presentation changes: every call still reaches this component
+ * as its own step, and the persisted trace is untouched.</p>
+ *
  * <p>The list is live-only: it is never persisted, and the collapsed {@code ToolTrace} row takes
  * over once the turn completes.</p>
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { LiveStep } from '../types'
 
 const props = defineProps<{
@@ -101,6 +105,124 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
   if (step.phase === 'tool_start' || step.phase === 'thinking') return 'running'
   return step.ok === false ? 'failed' : 'done'
 }
+
+/*
+ * Folding: a run of consecutive calls to the same tool collapses into one row. Repeated searches
+ * are the common case — three lookups read better as "3 次检索 · 9 条结果" than as three cards.
+ */
+
+/** One rendered timeline row: a single step, or a folded run of same-tool steps. */
+interface StepRow {
+  key: string
+  tool: string | null
+  steps: LiveStep[]
+  head: LiveStep
+  compact: boolean
+  state: 'running' | 'failed' | 'done'
+  title: string
+  detail: string
+  /** Whether the row folds more than one call and can therefore be expanded. */
+  foldable: boolean
+}
+
+/** Noun used in the folded header ("2 次检索"); unknown tools fall back to "调用". */
+const TOOL_COUNT_NOUNS: Readonly<Record<string, string>> = {
+  searchDocs: '检索',
+  webSearch: '检索',
+  runCode: '运行',
+  loadSkill: '加载',
+  saveMemory: '写入',
+  calculate: '计算',
+}
+
+/** Tools whose {@code resultCount} is a hit count worth summing in the folded header. */
+const RESULT_TOOLS: ReadonlySet<string> = new Set(['searchDocs', 'webSearch'])
+
+/**
+ * @return whether the step may fold into a neighbouring one
+ *
+ * <p>Round boundaries ({@code thinking}) separate runs on purpose — the order of the timeline is
+ * part of the information — and COMPACT rows (e.g. {@code calculate}) are already a single line.</p>
+ */
+function mergeable(step: LiveStep): boolean {
+  return step.tool !== null && step.phase !== 'thinking' && step.render !== 'COMPACT'
+}
+
+/** Aggregate state of a folded row: any failure wins, then any still-running call. */
+function rowState(steps: readonly LiveStep[]): 'running' | 'failed' | 'done' {
+  if (steps.some((step) => state(step) === 'failed')) return 'failed'
+  return steps.some((step) => step.phase !== 'tool_end') ? 'running' : 'done'
+}
+
+function rowTitle(steps: readonly LiveStep[]): string {
+  if (steps.length === 1) return label(steps[0])
+  const name = TOOL_LABELS[steps[0].tool ?? ''] ?? steps[0].tool ?? '工具'
+  return rowState(steps) === 'running' ? `正在${name}` : name
+}
+
+/**
+ * Header second line of a folded row: call count, summed hits, failures and total time.
+ *
+ * <p>{@code resultCount} is a per-call raw hit count, so the sum can repeat a URL that two queries
+ * both returned; the header therefore says "条结果" and not "个网页".</p>
+ */
+function rowDetail(steps: readonly LiveStep[]): string {
+  if (steps.length === 1) return detail(steps[0])
+  const tool = steps[0].tool ?? ''
+  const parts = [`${steps.length} 次${TOOL_COUNT_NOUNS[tool] ?? '调用'}`]
+  if (RESULT_TOOLS.has(tool)) {
+    const hits = steps.reduce((sum, step) => sum + (step.resultCount ?? 0), 0)
+    if (hits > 0) parts.push(`${hits} 条结果`)
+  }
+  const failed = steps.filter((step) => step.ok === false).length
+  if (failed > 0) parts.push(`${failed} 次失败`)
+  const totalMs = steps.reduce((sum, step) => sum + (step.durationMs ?? 0), 0)
+  if (totalMs > 0 && steps.every((step) => step.durationMs !== null)) {
+    parts.push(`${(totalMs / 1000).toFixed(1)}s`)
+  }
+  return parts.join(' · ')
+}
+
+function toRow(steps: LiveStep[]): StepRow {
+  return {
+    key: steps[0].id,
+    tool: steps[0].tool,
+    steps,
+    head: steps[0],
+    compact: compact(steps[0]),
+    state: rowState(steps),
+    title: rowTitle(steps),
+    detail: rowDetail(steps),
+    foldable: steps.length > 1,
+  }
+}
+
+/** @return the timeline as rows, merging only *consecutive* same-tool calls */
+const rows = computed<StepRow[]>(() => {
+  const groups: LiveStep[][] = []
+  for (const step of shown.value) {
+    const last = groups.at(-1)
+    // Only a run whose head is itself foldable may absorb another call: a COMPACT head (or a round
+    // boundary) always stays its own row.
+    if (mergeable(step) && last && mergeable(last[0]) && last[0].tool === step.tool) {
+      last.push(step)
+      continue
+    }
+    groups.push([step])
+  }
+  return groups.map(toRow)
+})
+
+/** Explicit expand/collapse overrides by row key; a failed row defaults to expanded. */
+const expanded = ref(new Map<string, boolean>())
+
+function isOpen(row: StepRow): boolean {
+  return expanded.value.get(row.key) ?? (row.state === 'failed')
+}
+
+function toggle(row: StepRow): void {
+  expanded.value.set(row.key, !isOpen(row))
+}
 </script>
 
 <template>
@@ -110,86 +232,129 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
     :aria-live="live ? 'polite' : 'off'"
   >
     <li
-      v-for="step in shown"
-      :key="step.id"
-      class="live-step"
-      :class="[`is-${state(step)}`, { 'is-compact': compact(step) }]"
+      v-for="row in rows"
+      :key="row.key"
+      class="live-group"
     >
-      <span
-        class="live-step-icon"
-        aria-hidden="true"
+      <div
+        class="live-step"
+        :class="[`is-${row.state}`, { 'is-compact': row.compact }]"
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.7"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+        <span
+          class="live-step-icon"
+          aria-hidden="true"
         >
-          <path
-            v-for="(d, index) in icon(step)"
-            :key="index"
-            :d="d"
-          />
-        </svg>
-      </span>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              v-for="(d, index) in icon(row.head)"
+              :key="index"
+              :d="d"
+            />
+          </svg>
+        </span>
 
-      <span class="live-step-body">
-        <span class="live-step-title">{{ label(step) }}</span>
-        <span
-          v-if="compact(step) && step.argument"
-          class="live-step-expr"
-        >{{ step.argument }}</span>
-        <span
-          v-else-if="!compact(step) && detail(step)"
-          class="live-step-detail"
-        >{{ detail(step) }}</span>
-      </span>
+        <span class="live-step-body">
+          <span class="live-step-title">{{ row.title }}</span>
+          <span
+            v-if="row.compact && row.head.argument"
+            class="live-step-expr"
+          >{{ row.head.argument }}</span>
+          <span
+            v-else-if="row.detail"
+            class="live-step-detail"
+          >{{ row.detail }}</span>
+        </span>
 
-      <span
-        class="live-step-state"
-        aria-hidden="true"
+        <button
+          v-if="row.foldable"
+          class="live-step-toggle"
+          type="button"
+          :aria-expanded="isOpen(row)"
+          :title="isOpen(row) ? '收起明细' : '展开明细'"
+          @click="toggle(row)"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        <span
+          class="live-step-state"
+          aria-hidden="true"
+        >
+          <svg
+            v-if="row.state === 'running'"
+            class="live-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+          >
+            <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+          </svg>
+          <svg
+            v-else-if="row.state === 'failed'"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="9"
+            />
+            <path d="M12 7.5v5.5" />
+            <path d="M12 16.5h.01" />
+          </svg>
+          <svg
+            v-else
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </span>
+      </div>
+
+      <ol
+        v-if="row.foldable && isOpen(row)"
+        class="live-group-items"
       >
-        <svg
-          v-if="state(step) === 'running'"
-          class="live-spin"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.2"
-          stroke-linecap="round"
+        <li
+          v-for="item in row.steps"
+          :key="item.id"
+          class="live-substep"
         >
-          <path d="M21 12a9 9 0 1 1-6.2-8.6" />
-        </svg>
-        <svg
-          v-else-if="state(step) === 'failed'"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-        >
-          <circle
-            cx="12"
-            cy="12"
-            r="9"
+          <span
+            class="live-substep-dot"
+            :class="`is-${state(item)}`"
+            aria-hidden="true"
           />
-          <path d="M12 7.5v5.5" />
-          <path d="M12 16.5h.01" />
-        </svg>
-        <svg
-          v-else
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      </span>
+          <span class="live-substep-detail">{{ detail(item) || '—' }}</span>
+        </li>
+      </ol>
     </li>
   </ol>
 </template>
@@ -217,6 +382,16 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
   background: var(--color-card);
   font-size: 12.5px;
   line-height: 1.4;
+}
+
+/*
+ * A folded run: the header row is the same card as a single call, the per-call lines hang below it
+ * and are aligned under the header text rather than the card border.
+ */
+.live-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .live-step.is-running {
@@ -322,6 +497,76 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
 .live-step-detail {
   overflow: hidden;
   color: var(--color-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Disclosure chevron of a folded row; sits between the body and the state glyph. */
+.live-step-toggle {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-faint);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.live-step-toggle:hover {
+  color: var(--color-ink);
+}
+
+.live-step-toggle svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.15s ease;
+}
+
+.live-step-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.live-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0 0 1px 41px;
+  list-style: none;
+}
+
+.live-substep {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--color-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.live-substep-dot {
+  flex-shrink: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-dim) 55%, transparent);
+}
+
+.live-substep-dot.is-running {
+  background: var(--color-accent);
+}
+
+.live-substep-dot.is-failed {
+  background: var(--color-warn);
+}
+
+.live-substep-detail {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

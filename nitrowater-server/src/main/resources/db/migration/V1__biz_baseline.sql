@@ -5,7 +5,9 @@
 -- 与 SSO 库 nitrowater_account 物理隔离：仅以 uid / *_resource_uuid 逻辑关联，不建跨库 FK。
 -- 首次部署前可直接改本文件；部署后冻结，后续走 V2__...
 -- 已折叠进本基线的迁移：V1_1 (ai_message.skills_json)、V1_2 (ai_admin_setting.disabled_tools)、
---   V1_3 (ai_skill)。折叠后必须 drop schema 让 Flyway 重放；只改文件不重置会 checksum mismatch。
+--   V1_3 (ai_skill)、V1_4 (AI 日额度 2M / 全局 40M / 熔断开启，原 raise_ai_token_defaults 与
+--   scale_token_defaults_to_context_window)。折叠后必须 drop schema 让 Flyway 重放；
+--   只改文件不重置会 checksum mismatch。
 -- ============================================================
 
 -- ---------- 业务用户镜像（account 为身份权威，本表为投影 + 应用态）----------
@@ -278,11 +280,15 @@ CREATE TABLE ai_admin_setting (
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Runtime NitroBot controls managed by administrators';
 
+-- Seeded runtime controls. The token budgets are sized against a 1M-token model window: a
+-- search-heavy turn replays tens of thousands of prompt tokens per round, so 2M per user per day
+-- and 40M platform-wide (20 full user-days) are the values a fresh deployment should start with.
+-- Administrators tune both in the admin console; this row is only the seed.
 INSERT INTO ai_admin_setting
   (id, daily_token_limit, ai_enabled, chat_enabled, agent_enabled, document_search_enabled,
    web_search_enabled, code_runner_enabled, skills_enabled, global_daily_token_limit,
    global_quota_enabled, moderation_mode)
-VALUES (1, 50000, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1);
+VALUES (1, 2000000, 1, 1, 1, 1, 1, 1, 1, 40000000, 1, 1);
 
 -- Content-moderation audit rows. The matched terms are kept; the surrounding text is not, so a
 -- review row never becomes a second copy of the content the gate removed. `direction` records

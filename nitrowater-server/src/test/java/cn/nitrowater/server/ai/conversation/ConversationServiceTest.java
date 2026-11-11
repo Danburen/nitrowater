@@ -18,6 +18,7 @@ import cn.nitrowater.server.infra.repository.AiConversationRepository;
 import cn.nitrowater.server.infra.repository.AiMessageRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.data.domain.Limit;
 
 import java.util.List;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,7 +41,8 @@ class ConversationServiceTest {
     private final AiProperties properties = mock(AiProperties.class);
     private final AiModerationService moderation = mock(AiModerationService.class);
     /** Budget disabled: these tests exercise the legacy turn-count rule and the boundary. */
-    private final ContextProperties context = new ContextProperties(0, 60, true, 32, 1, 800, 8000);
+    private final ContextProperties context =
+            new ContextProperties(128000, null, 0, 60, true, 32, null, 1, 800, 8000);
     private final ConversationService service =
             new ConversationService(conversations, messages, properties, context, moderation);
 
@@ -69,7 +72,7 @@ class ConversationServiceTest {
     @Test
     void historyStopsAtTheTokenBudgetKeepingTheNewestTurns() {
         ConversationService budgeted = new ConversationService(conversations, messages, properties,
-                new ContextProperties(40, 60, true, 32, 1, 800, 8000), moderation);
+                new ContextProperties(128000, null, 40, 60, true, 32, null, 1, 800, 8000), moderation);
         AiConversation conversation = mock(AiConversation.class);
         when(conversation.getId()).thenReturn(1L);
         when(conversation.getSummaryUptoSeq()).thenReturn(0);
@@ -191,5 +194,58 @@ class ConversationServiceTest {
         verify(messages).save(saved.capture());
         assertThat(saved.getValue().getSkillsJson()).contains("searchDocs");
         assertThat(saved.getValue().getModerated()).isFalse();
+    }
+
+    /**
+     * The entity the caller holds was loaded before the model ran, so its counters are stale.
+     * Writing it back would undo a concurrent turn's bookkeeping, and the {@code seq} it allocates
+     * would collide with the other writer's on {@code uk_ai_message_conv_seq}. The append must use
+     * the row re-read under the write lock.
+     */
+    @Test
+    void writesOntoTheLockedRowInsteadOfTheStaleHandedInEntity() {
+        AiConversation stale = new AiConversation();
+        stale.setId(1L);
+        stale.setTitle("t");
+        stale.setMessageCount(1);
+
+        AiConversation locked = new AiConversation();
+        locked.setId(1L);
+        locked.setTitle("t");
+        locked.setMessageCount(7);
+
+        when(conversations.findByIdForUpdate(1L)).thenReturn(Optional.of(locked));
+        when(messages.findFirstByConversationIdOrderBySeqDesc(1L)).thenReturn(Optional.empty());
+
+        service.finish(stale, "回答", List.of(), List.of(), List.of(), "model",
+                new AiTokenUsage(5, 7, false), false, false);
+
+        assertThat(locked.getMessageCount()).isEqualTo(8);
+        assertThat(stale.getMessageCount())
+                .as("the detached instance is never written back")
+                .isEqualTo(1);
+        verify(conversations).save(locked);
+        verify(conversations, never()).save(stale);
+    }
+
+    /**
+     * Reading the history and appending the question must happen under the same lock, otherwise two
+     * tabs can pick the same {@code seq} before either commits.
+     */
+    @Test
+    void startLocksTheConversationRowBeforeReadingHistory() {
+        AiConversation locked = new AiConversation();
+        locked.setId(1L);
+        locked.setUuid("uuid");
+        when(conversations.findByUuidAndUid("uuid", 7L)).thenReturn(Optional.of(locked));
+        when(conversations.findByIdForUpdate(1L)).thenReturn(Optional.of(locked));
+        when(properties.maxHistoryTurns()).thenReturn(0);
+
+        service.start(7L, "uuid", "question");
+
+        InOrder order = inOrder(conversations, messages);
+        order.verify(conversations).findByIdForUpdate(1L);
+        order.verify(messages).save(any(AiMessage.class));
+        order.verify(conversations).save(locked);
     }
 }

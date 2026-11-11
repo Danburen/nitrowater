@@ -23,6 +23,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.data.domain.Limit;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,7 +46,8 @@ class AiCompactServiceTest {
     private final AiModerationService moderation = mock(AiModerationService.class);
     private final AiUsageService usage = mock(AiUsageService.class);
     private final ChatModel chatModel = mock(ChatModel.class);
-    private final ContextProperties context = new ContextProperties(4000, 60, true, 32, 1, 800, 8000);
+    private final ContextProperties context =
+            new ContextProperties(128000, null, 4000, 60, true, 32, null, 1, 800, 8000);
     private final AiCompactService service =
             new AiCompactService(conversations, messages, context, moderation, usage, chatModel);
 
@@ -122,13 +125,83 @@ class AiCompactServiceTest {
     @Test
     void automaticCompactionWaitsForTheTriggerThreshold() {
         conversation();
-        when(messages.countByConversationIdAndSeqGreaterThan(1L, 0)).thenReturn(10L);
+        stubPending();
 
         CompactResult result = service.autoCompact(7L, "c-1");
 
         assertThat(result.compacted()).isFalse();
         assertThat(result.reason()).isEqualTo("below_trigger");
         verify(chatModel, never()).call(any(Prompt.class));
+    }
+
+    /**
+     * The token trigger is the one that matters once a chat is long: it fires on the size of the
+     * backlog, in the same unit as the replay budget, while the message count is still far away.
+     */
+    @Test
+    void automaticCompactionAlsoTriggersOnTheTokenBudget() {
+        ContextProperties tokenTriggered =
+                new ContextProperties(128000, null, 1000, 60, true, 32, null, 1, 800, 8000);
+        AiCompactService tokenService = new AiCompactService(conversations, messages, tokenTriggered,
+                moderation, usage, chatModel);
+        conversation();
+        List<AiMessage> longTurns = List.of(
+                message(1, MessageRole.USER, "问".repeat(400)),
+                message(2, MessageRole.ASSISTANT, "答".repeat(400)),
+                message(3, MessageRole.USER, "最近的问题"),
+                message(4, MessageRole.ASSISTANT, "最近的回答"));
+        when(messages.findByConversationIdAndSeqGreaterThanOrderBySeqAsc(eq(1L), eq(0),
+                any(Limit.class))).thenReturn(longTurns);
+        stubSummary("用户问了两个问题。");
+        when(conversations.updateSummary(eq(1L), eq(0), any(String.class), eq(2), any(Instant.class)))
+                .thenReturn(1);
+
+        CompactResult result = tokenService.autoCompact(7L, "c-1");
+
+        assertThat(result.compacted())
+                .as("four messages are below the message trigger but above the token trigger")
+                .isTrue();
+        assertThat(result.summarizedMessages()).isEqualTo(2);
+        assertThat(result.boundarySeq()).isEqualTo(2);
+    }
+
+    /**
+     * A backlog that one summarizer call cannot swallow is folded over several passes, and the loop
+     * stops on the trigger instead of the row count: the point of compaction is "the window stopped
+     * losing turns", not "we spent four model calls".
+     */
+    @Test
+    void automaticCompactionKeepsFoldingUntilTheBacklogIsBelowTheTrigger() {
+        ContextProperties dense = new ContextProperties(128000, null, 10000, 40, true, 32, null, 1,
+                800, 4000);
+        AiCompactService denseService = new AiCompactService(conversations, messages, dense,
+                moderation, usage, chatModel);
+        conversation();
+        List<AiMessage> backlog = new ArrayList<>();
+        for (int seq = 1; seq <= 20; seq++) {
+            MessageRole role = seq % 2 == 0 ? MessageRole.ASSISTANT : MessageRole.USER;
+            backlog.add(message(seq, role, "问".repeat(1000)));
+        }
+        // Each pass folds three 1000-char messages (the transcript cap is 4000 chars).
+        when(messages.findByConversationIdAndSeqGreaterThanOrderBySeqAsc(eq(1L), anyInt(),
+                any(Limit.class)))
+                .thenReturn(backlog)
+                .thenReturn(backlog.subList(3, 20))
+                .thenReturn(backlog.subList(6, 20))
+                .thenReturn(backlog.subList(9, 20))
+                .thenReturn(backlog.subList(12, 20));
+        when(conversations.updateSummary(eq(1L), anyInt(), any(String.class), anyInt(),
+                any(Instant.class))).thenReturn(1);
+        when(messages.countByConversationIdAndSeqGreaterThan(eq(1L), anyInt()))
+                .thenReturn(17L, 14L, 11L, 8L);
+        stubSummary("用户连续提出了若干问题。");
+
+        CompactResult result = denseService.autoCompact(7L, "c-1");
+
+        assertThat(result.compacted()).isTrue();
+        assertThat(result.summarizedMessages()).isEqualTo(12);
+        // Bounded by the per-run pass cap (4), not by the backlog: the next turn continues.
+        verify(chatModel, times(4)).call(any(Prompt.class));
     }
 
     private void stubPending() {

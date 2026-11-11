@@ -65,11 +65,12 @@ export const propertyFields: ReadonlyArray<PropertyField> = [
     multiline: true,
     hint: '服务器列表显示的两行文字；支持 § 颜色代码。',
   },
-  { key: 'server-port', label: '服务器端口', type: 'int', defaultValue: '25565', group: '基础', min: 1, max: 65535 },
+  { key: 'server-port', label: '服务器端口', type: 'int', defaultValue: '25565', group: '基础', min: 1, max: 65534 },
   { key: 'server-ip', label: '监听地址', type: 'string', defaultValue: '', group: '基础', placeholder: '留空监听所有网卡' },
-  { key: 'max-players', label: '最大玩家数', type: 'int', defaultValue: '20', group: '基础', min: 1, max: 10000 },
-  { key: 'level-name', label: '世界文件夹', type: 'string', defaultValue: 'world', group: '基础', hint: '不要包含 / 或 \\。' },
+  { key: 'max-players', label: '最大玩家数', type: 'int', defaultValue: '20', group: '基础', min: 0, max: 10000 },
+  { key: 'level-name', label: '世界目录', type: 'string', defaultValue: 'world', group: '基础', hint: '目录名或相对工作目录的路径，可以带 / 子目录。' },
   { key: 'level-seed', label: '世界种子', type: 'string', defaultValue: '', group: '基础', placeholder: '留空则随机' },
+  { key: 'generate-structures', label: '生成结构', type: 'boolean', defaultValue: 'true', group: '基础', hint: '只影响新生成的区块；关闭后村庄、神殿等不再生成。' },
   {
     key: 'level-type',
     label: '世界类型',
@@ -91,7 +92,7 @@ export const propertyFields: ReadonlyArray<PropertyField> = [
   // Players and rules
   { key: 'online-mode', label: '正版验证', type: 'boolean', defaultValue: 'true', group: '玩家与规则' },
   { key: 'enforce-secure-profile', label: '强制安全聊天签名', type: 'boolean', defaultValue: 'true', group: '玩家与规则', hint: '1.19+；关闭后部分客户端可绕过聊天签名。' },
-  { key: 'white-list', label: '启用白名单', type: 'boolean', defaultValue: 'false', group: '玩家与规则' },
+  { key: 'white-list', label: '启用白名单', type: 'boolean', defaultValue: 'true', group: '玩家与规则', hint: '26.3 起原版默认开启；开服前先 /whitelist add，否则只有 OP 能进入。' },
   { key: 'enforce-whitelist', label: '强制白名单', type: 'boolean', defaultValue: 'false', group: '玩家与规则' },
   { key: 'allow-flight', label: '允许飞行', type: 'boolean', defaultValue: 'false', group: '玩家与规则' },
   { key: 'allow-nether', label: '允许下界', type: 'boolean', defaultValue: 'true', group: '玩家与规则' },
@@ -101,12 +102,15 @@ export const propertyFields: ReadonlyArray<PropertyField> = [
   { key: 'function-permission-level', label: '函数权限等级', type: 'int', defaultValue: '2', group: '玩家与规则', min: 1, max: 4 },
   { key: 'player-idle-timeout', label: '挂机踢出（分钟）', type: 'int', defaultValue: '0', group: '玩家与规则', min: 0, max: 1440, hint: '0 表示不踢出。' },
   { key: 'hide-online-players', label: '隐藏在线玩家', type: 'boolean', defaultValue: 'false', group: '玩家与规则' },
+  { key: 'broadcast-console-to-ops', label: '控制台输出发给 OP', type: 'boolean', defaultValue: 'true', group: '玩家与规则', hint: '关闭后在线 OP 看不到控制台命令的回显。' },
+  { key: 'log-ips', label: '日志记录玩家 IP', type: 'boolean', defaultValue: 'true', group: '玩家与规则', hint: '1.20.2+；关闭后日志与聊天记录里不出现 IP。' },
 
   // Performance
   { key: 'view-distance', label: '视距', type: 'int', defaultValue: '10', group: '性能', min: 3, max: 32 },
   { key: 'simulation-distance', label: '模拟距离', type: 'int', defaultValue: '10', group: '性能', min: 3, max: 32 },
   { key: 'max-tick-time', label: '单 tick 上限（ms）', type: 'int', defaultValue: '60000', group: '性能', min: -1, max: 600000, hint: '-1 表示禁用看门狗。' },
   { key: 'network-compression-threshold', label: '网络压缩阈值', type: 'int', defaultValue: '256', group: '性能', min: -1, max: 65536, hint: '-1 表示关闭压缩。' },
+  { key: 'entity-broadcast-range-percentage', label: '实体同步距离（%）', type: 'int', defaultValue: '100', group: '性能', min: 10, max: 1000, hint: '1.17+；调低可减少实体同步带宽。' },
   { key: 'sync-chunk-writes', label: '同步区块写入', type: 'boolean', defaultValue: 'true', group: '性能' },
   { key: 'max-world-size', label: '最大世界半径', type: 'int', defaultValue: '29999984', group: '性能', min: 1, max: 29999984 },
   { key: 'pause-when-empty-seconds', label: '空服暂停（秒）', type: 'int', defaultValue: '60', group: '性能', min: 0, max: 3600, hint: '1.21.2+；0 表示不暂停。' },
@@ -114,15 +118,16 @@ export const propertyFields: ReadonlyArray<PropertyField> = [
   // Network and query
   { key: 'enable-status', label: '响应状态查询', type: 'boolean', defaultValue: 'true', group: '网络与查询' },
   { key: 'enable-query', label: '启用 Query', type: 'boolean', defaultValue: 'false', group: '网络与查询' },
-  { key: 'query.port', label: 'Query 端口', type: 'int', defaultValue: '25565', group: '网络与查询', min: 1, max: 65535 },
+  { key: 'query.port', label: 'Query 端口', type: 'int', defaultValue: '25565', group: '网络与查询', min: 1, max: 65534 },
   { key: 'prevent-proxy-connections', label: '阻止代理连接', type: 'boolean', defaultValue: 'false', group: '网络与查询' },
   { key: 'use-native-transport', label: '使用原生传输', type: 'boolean', defaultValue: 'true', group: '网络与查询', hint: 'Linux 上可提升网络性能。' },
   { key: 'accepts-transfers', label: '接受跨服转移', type: 'boolean', defaultValue: 'false', group: '网络与查询', hint: '1.20.5+。' },
 
   // RCON
   { key: 'enable-rcon', label: '启用 RCON', type: 'boolean', defaultValue: 'false', group: 'RCON' },
-  { key: 'rcon.port', label: 'RCON 端口', type: 'int', defaultValue: '25575', group: 'RCON', min: 1, max: 65535 },
+  { key: 'rcon.port', label: 'RCON 端口', type: 'int', defaultValue: '25575', group: 'RCON', min: 1, max: 65534 },
   { key: 'rcon.password', label: 'RCON 密码', type: 'string', defaultValue: '', group: 'RCON', secret: true, hint: '只在本地处理；不要分享导出的文件。' },
+  { key: 'broadcast-rcon-to-ops', label: 'RCON 输出发给 OP', type: 'boolean', defaultValue: 'true', group: 'RCON', hint: '关闭后在线 OP 看不到 RCON 命令的回显。' },
 
   // Resource pack
   { key: 'resource-pack', label: '资源包地址', type: 'string', defaultValue: '', group: '资源包', placeholder: 'https://example.com/pack.zip' },
@@ -159,6 +164,9 @@ export function applyPropertyPreset(preset: PropertyPreset): Record<string, stri
       difficulty: 'normal',
       pvp: 'true',
       'spawn-protection': '16',
+      // A preset is meant to boot straight away; the whitelist would lock everyone (except ops)
+      // out until the owner adds names.
+      'white-list': 'false',
     })
   } else if (preset === 'creative') {
     Object.assign(values, {
@@ -169,6 +177,7 @@ export function applyPropertyPreset(preset: PropertyPreset): Record<string, stri
       'allow-flight': 'true',
       'spawn-protection': '0',
       'enable-command-block': 'true',
+      'white-list': 'false',
     })
   } else {
     Object.assign(values, {
@@ -180,6 +189,7 @@ export function applyPropertyPreset(preset: PropertyPreset): Record<string, stri
       'spawn-protection': '0',
       'enable-command-block': 'true',
       'force-gamemode': 'true',
+      'white-list': 'false',
     })
   }
   return values
@@ -308,9 +318,13 @@ export function validateProperties(values: Record<string, string>): Record<strin
     }
   }
 
+  // `level-name` is the world directory *path* (absolute or relative to the working directory),
+  // so `/` and `\` are legitimate; only an empty value breaks the server.
   const levelName = values['level-name'] ?? ''
   if (!levelName.trim()) errors['level-name'] = '不能为空'
-  else if (levelName.includes('/') || levelName.includes('\\')) errors['level-name'] = '不能包含 / 或 \\'
+  else if (Array.from(levelName).some((char) => (char.codePointAt(0) ?? 0) < 0x20)) {
+    errors['level-name'] = '不能包含控制字符'
+  }
 
   const generatorSettings = values['generator-settings'] ?? ''
   if (generatorSettings.trim()) {

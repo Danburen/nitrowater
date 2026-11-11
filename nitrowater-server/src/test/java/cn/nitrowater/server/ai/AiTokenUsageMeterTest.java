@@ -61,6 +61,19 @@ class AiTokenUsageMeterTest {
         assertThat(AiTokenUsageMeter.estimateTokens("abcde")).isEqualTo(2);
     }
 
+    /**
+     * A Chinese character is about one token, so counting four characters per token would
+     * under-report a Chinese conversation ~3x — and both the replay budget and the compaction
+     * trigger are expressed in these units.
+     */
+    @Test
+    void countsEachCjkCharacterAsAToken() {
+        assertThat(AiTokenUsageMeter.estimateTokens("你好")).isEqualTo(2);
+        assertThat(AiTokenUsageMeter.estimateTokens("你好，世界")).isEqualTo(5);
+        assertThat(AiTokenUsageMeter.estimateTokens("你好abcd")).isEqualTo(3);
+        assertThat(AiTokenUsageMeter.estimateTokens("abc中文")).isEqualTo(3);
+    }
+
     private static Usage usage(int promptTokens, int completionTokens) {
         return new Usage() {
             @Override

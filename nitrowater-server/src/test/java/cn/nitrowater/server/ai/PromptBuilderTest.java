@@ -45,14 +45,14 @@ class PromptBuilderTest {
 
     @Test
     void agentPromptStaysWithinItsAttentionBudget() {
-        String prompt = builder.agentSystem(List.of(), null, null, List.of(), PromptBuilder.ALL_TOOLS);
+        String prompt = builder.agentSystem(List.of(), null, List.of(), PromptBuilder.ALL_TOOLS);
 
         assertThat(nonWhitespaceLength(prompt)).isLessThan(1600);
     }
 
     @Test
     void agentPromptDescribesOnlyTheToolsAdvertisedThisTurn() {
-        String prompt = builder.agentSystem(List.of(), null, null, List.of(), List.of("searchDocs"));
+        String prompt = builder.agentSystem(List.of(), null, List.of(), List.of("searchDocs"));
 
         assertThat(prompt)
                 .contains("searchDocs")
@@ -62,7 +62,7 @@ class PromptBuilderTest {
 
     @Test
     void agentPromptRendersPolicyOnlyForAdvertisedTools() {
-        String prompt = builder.agentSystem(List.of(), null, null, List.of(), List.of("runCode"));
+        String prompt = builder.agentSystem(List.of(), null, List.of(), List.of("runCode"));
 
         assertThat(prompt)
                 .contains("执行环境")
@@ -97,7 +97,7 @@ class PromptBuilderTest {
 
     @Test
     void agentPromptListsTheSearchableCorpora() {
-        String prompt = builder.agentSystem(List.of(), null, null, List.of(
+        String prompt = builder.agentSystem(List.of(), null, List.of(
                 new DocCollection("nitrowater", "classpath:ai/docs/nitrowater", "",
                         "NitroWater 平台文档"),
                 new DocCollection("velochatx", "classpath:ai/docs/velochatx",
@@ -107,6 +107,32 @@ class PromptBuilderTest {
                 .contains("知识库文档")
                 .contains("nitrowater：NitroWater 平台文档")
                 .contains("velochatx：VeloChatX 插件文档");
+    }
+
+    /**
+     * The prompt is cached by the provider as a prefix, so the per-question block has to come after
+     * the stable part: recalled memories change on every turn, and a changing system prompt would
+     * invalidate the cache for the whole replayed history behind it.
+     */
+    @Test
+    void perQuestionContextTravelsWithTheUserMessageNotTheSystemPrompt() {
+        String context = builder.agentContext("<user_profile>偏好简洁</user_profile>", List.of());
+
+        String system = builder.agentSystem(List.of(), null, List.of(), PromptBuilder.ALL_TOOLS);
+        String user = builder.agentUser("你好", List.of(), now(), context);
+
+        assertThat(system)
+                .as("the system prompt is the cacheable prefix")
+                .doesNotContain("user_context")
+                .doesNotContain("偏好简洁");
+        assertThat(user)
+                .as("personalization is per turn, so it rides with the question")
+                .contains("<user_context>")
+                .contains("偏好简洁");
+        assertThat(user.indexOf("<user_context>"))
+                .as("it must still come before the question it personalizes")
+                .isNotNegative()
+                .isLessThan(user.indexOf("<question>"));
     }
 
     @Test
@@ -161,6 +187,27 @@ class PromptBuilderTest {
         assertThat(prompt)
                 .contains("…（中间省略")
                 .contains("结尾在这里");
+    }
+
+    /**
+     * The budget and the rendered prompt have to agree: an old message is cut to a fifth of the
+     * recent cap, so pricing it at its raw length would make the window look full while most of it
+     * is still free — and would compact a conversation the model can still read.
+     */
+    @Test
+    void historyCostFollowsTheCapThePromptActuallyApplies() {
+        String longTurn = "字".repeat(5000);
+
+        int recent = PromptBuilder.historyTurnTokens(longTurn, true);
+        int older = PromptBuilder.historyTurnTokens(longTurn, false);
+
+        assertThat(recent)
+                .as("the newest turns are rendered verbatim: 5000 chars + 4 framing tokens")
+                .isEqualTo(5004);
+        assertThat(older)
+                .as("older turns are cut to 2000 chars (+4 framing tokens)")
+                .isEqualTo(2004);
+        assertThat(PromptBuilder.historyTurnTokens("  ", true)).isZero();
     }
 
     @Test

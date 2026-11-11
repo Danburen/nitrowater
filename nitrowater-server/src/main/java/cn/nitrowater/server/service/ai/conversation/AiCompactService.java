@@ -8,6 +8,7 @@ import cn.nitrowater.server.infra.enums.MessageRole;
 import cn.nitrowater.server.infra.repository.AiConversationRepository;
 import cn.nitrowater.server.infra.repository.AiMessageRepository;
 import cn.nitrowater.server.service.ai.model.agent.CompactResult;
+import cn.nitrowater.server.service.ai.agent.PromptBuilder;
 import cn.nitrowater.server.service.ai.model.moderation.ContentGuards;
 import cn.nitrowater.server.service.ai.model.usage.AiTokenUsageMeter;
 import cn.nitrowater.server.service.ai.model.usage.AiUsageTracker;
@@ -61,8 +62,8 @@ public class AiCompactService {
 
     private static final Logger log = LoggerFactory.getLogger(AiCompactService.class);
 
-    /** A manual {@code /compact} folds in several passes, but never unbounded. */
-    private static final int MAX_MANUAL_ROUNDS = 4;
+    /** One compaction call folds in several passes, but never unbounded. */
+    private static final int MAX_ROUNDS = 4;
 
     /** One message's contribution to the summarizer prompt is trimmed to this many chars. */
     private static final int MAX_MESSAGE_CHARS = 1000;
@@ -98,7 +99,7 @@ public class AiCompactService {
      * Folds the oldest unsummarized turns into the rolling summary ({@code /compact}).
      *
      * <p>Ignores the automatic trigger threshold — an explicit command always compacts something —
-     * and folds up to {@link #MAX_MANUAL_ROUNDS} passes so one call clears a large backlog.</p>
+     * and folds up to {@link #MAX_ROUNDS} passes so one call clears a large backlog.</p>
      *
      * @param uid owner uid
      * @param uuid external conversation id
@@ -111,11 +112,16 @@ public class AiCompactService {
     }
 
     /**
-     * Runs one automatic pass when the unsummarized backlog reaches the trigger threshold.
+     * Folds the backlog while it is over the trigger, in up to {@link #MAX_ROUNDS} passes.
      *
      * <p>Called after a turn has been persisted, off the request path. Every failure is logged and
      * swallowed: compaction is an optimisation, and a context that was not compacted is still
      * valid.</p>
+     *
+     * <p>Several passes are needed once the window is a real share of the model window: a single
+     * pass only feeds the summarizer {@code summary-input-max-chars}, so a 50K-token backlog cannot
+     * be cleared in one call when the text is dense. Stopping on the trigger (not on the row count)
+     * keeps the result proportional to what the window actually lost.</p>
      *
      * @param uid owner uid
      * @param uuid external conversation id
@@ -152,17 +158,17 @@ public class AiCompactService {
         String summary = StringUtil.isBlank(conversation.getSummary())
                 ? null : conversation.getSummary().trim();
 
-        int pending = countAfter(conversation.getId(), boundary);
-        if (!manual && pending < context.compactTriggerMessages()) {
-            return CompactResult.skipped("below_trigger", pending);
+        List<AiMessage> backlog = loadBacklog(conversation.getId(), boundary);
+        if (!manual && !shouldCompact(backlog)) {
+            return CompactResult.skipped("below_trigger", backlog.size());
         }
 
-        int rounds = manual ? MAX_MANUAL_ROUNDS : 1;
+        int rounds = MAX_ROUNDS;
         int folded = 0;
-        int remaining = pending;
+        int remaining = backlog.size();
         String reason = "nothing_to_compact";
         for (int round = 0; round < rounds; round++) {
-            Pass pass = compactOnce(uid, conversation, boundary, version, summary);
+            Pass pass = compactOnce(uid, conversation, backlog, version, summary);
             if (!pass.compacted()) {
                 reason = pass.reason();
                 break;
@@ -172,7 +178,14 @@ public class AiCompactService {
             summary = pass.summary();
             version += 1;
             remaining = pass.remaining();
-            if (remaining <= context.keepMessages()) {
+            backlog = loadBacklog(conversation.getId(), boundary);
+            if (backlog.size() <= context.keepMessages()) {
+                break;
+            }
+            // Automatic runs stop as soon as the trigger no longer fires: the next turn appends a
+            // few thousand tokens, so compacting further would only pre-pay for a summary nobody
+            // reads yet. Manual runs drain what is foldable instead.
+            if (!manual && !shouldCompact(backlog)) {
                 break;
             }
         }
@@ -184,20 +197,67 @@ public class AiCompactService {
     }
 
     /**
+     * @param conversationId internal conversation id
+     * @param boundary       current context boundary
+     * @return the oldest unsummarized messages, bounded like the replay window
+     */
+    private List<AiMessage> loadBacklog(Long conversationId, int boundary) {
+        return messages.findByConversationIdAndSeqGreaterThanOrderBySeqAsc(
+                conversationId, boundary, Limit.of(context.historyHardMaxMessages()));
+    }
+
+    /**
+     * Decides whether the backlog is worth folding.
+     *
+     * <p>Two triggers, whichever fires first: message count (cheap guard against long chats made of
+     * many tiny turns) and estimated tokens (the same unit as the replay budget, so the summary is
+     * refreshed before the window drops turns it does not cover).</p>
+     *
+     * @param backlog unsummarized messages, oldest first
+     * @return whether an automatic pass should run
+     */
+    private boolean shouldCompact(List<AiMessage> backlog) {
+        if (backlog.size() >= context.compactTriggerMessages()) {
+            return true;
+        }
+        return context.tokenTriggerEnabled()
+                && estimatedTokens(backlog) >= context.compactTriggerTokens();
+    }
+
+    /**
+     * @param backlog unsummarized messages, oldest first
+     * @return approximate prompt cost of replaying them, in tokens
+     *
+     * <p>Prices each message the way {@link PromptBuilder} will render it — the newest four verbatim,
+     * everything older cut to the smaller cap. Measuring the raw transcript instead would fire the
+     * trigger on content the prompt never sends, which costs a summarizer call and buys nothing.</p>
+     */
+    private static int estimatedTokens(List<AiMessage> backlog) {
+        int total = 0;
+        for (int index = 0; index < backlog.size(); index++) {
+            AiMessage message = backlog.get(index);
+            if (StringUtil.isBlank(message.getContent())) {
+                continue;
+            }
+            boolean recent = index >= backlog.size() - PromptBuilder.RECENT_MESSAGES;
+            total += PromptBuilder.historyTurnTokens(message.getContent(), recent);
+        }
+        return total;
+    }
+
+    /**
      * One summarization pass: pick the oldest foldable turns, ask the model, clean the answer and
      * write it back with the boundary in a single CAS statement.
      *
      * @param uid owner uid
      * @param conversation conversation being compacted
-     * @param boundary current context boundary
+     * @param pending unsummarized messages above the boundary, oldest first
      * @param version current {@code compress_version}
      * @param existing summary already stored, or {@code null}
      * @return the pass outcome
      */
-    private Pass compactOnce(long uid, AiConversation conversation, int boundary, int version,
-            String existing) {
-        List<AiMessage> pending = messages.findByConversationIdAndSeqGreaterThanOrderBySeqAsc(
-                conversation.getId(), boundary, Limit.of(context.historyHardMaxMessages()));
+    private Pass compactOnce(long uid, AiConversation conversation, List<AiMessage> pending,
+            int version, String existing) {
         int foldable = pending.size() - context.keepMessages();
         if (foldable <= 0) {
             return Pass.skipped("nothing_to_compact", pending.size());
