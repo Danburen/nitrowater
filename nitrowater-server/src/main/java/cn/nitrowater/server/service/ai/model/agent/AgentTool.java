@@ -17,7 +17,9 @@ import java.util.function.BooleanSupplier;
  *       hide this tool; it says nothing about the user;</li>
  *   <li>{@link #optIn()} — the user must leave the tool on for this turn; it says nothing about
  *       origin (the default is on, so only an explicit opt-out withholds it);</li>
- *   <li>{@link #timeoutMs()} — the per-call deadline.</li>
+ *   <li>{@link #timeoutMs()} — the per-call deadline;</li>
+ *   <li>{@link #render()} — how the call is shown to the user. Also independent: it changes neither
+ *       the model-facing schema nor the trace nor the budget.</li>
  * </ul>
  *
  * <p>{@link #advertised(AiSettings, Set, boolean)} is the only combination rule, so a new gate is
@@ -30,12 +32,20 @@ import java.util.function.BooleanSupplier;
  *        deployments flip the underlying configuration without rebuilding the registry
  * @param timeoutMs hard deadline for one invocation; {@code 0} means the tool enforces its own
  *        budget (the sandbox and the web-search provider already do), so no second clock is added
+ * @param render how the invocation is presented to the user
  */
 public record AgentTool(ToolCallback callback, ToolFeature feature, boolean optIn,
-        BooleanSupplier probe, int timeoutMs) {
+        BooleanSupplier probe, int timeoutMs, RenderPolicy render) {
 
     /** Tools that are usable whenever their bean exists. */
     private static final BooleanSupplier ALWAYS = () -> true;
+
+    /** Defaults keep old call sites unchanged and every existing tool a full card. */
+    public AgentTool {
+        if (render == null) {
+            render = RenderPolicy.FULL;
+        }
+    }
 
     /**
      * Registers a tool with no runtime precondition of its own.
@@ -44,9 +54,33 @@ public record AgentTool(ToolCallback callback, ToolFeature feature, boolean optI
      * @param feature   administrator switch it belongs to
      * @param optIn     whether the user must opt in per turn
      * @param timeoutMs per-call deadline, or {@code 0} when the tool owns its budget
+     * @param render    how the invocation is presented to the user
+     */
+    public AgentTool(ToolCallback callback, ToolFeature feature, boolean optIn, int timeoutMs,
+            RenderPolicy render) {
+        this(callback, feature, optIn, ALWAYS, timeoutMs, render);
+    }
+
+    /**
+     * @param callback  Spring AI callback
+     * @param feature   administrator switch it belongs to
+     * @param optIn     whether the user must opt in per turn
+     * @param timeoutMs per-call deadline, or {@code 0} when the tool owns its budget
      */
     public AgentTool(ToolCallback callback, ToolFeature feature, boolean optIn, int timeoutMs) {
-        this(callback, feature, optIn, ALWAYS, timeoutMs);
+        this(callback, feature, optIn, ALWAYS, timeoutMs, RenderPolicy.FULL);
+    }
+
+    /**
+     * @param callback  Spring AI callback
+     * @param feature   administrator switch it belongs to
+     * @param optIn     whether the user must opt in per turn
+     * @param probe     runtime precondition
+     * @param timeoutMs per-call deadline, or {@code 0} when the tool owns its budget
+     */
+    public AgentTool(ToolCallback callback, ToolFeature feature, boolean optIn, BooleanSupplier probe,
+            int timeoutMs) {
+        this(callback, feature, optIn, probe, timeoutMs, RenderPolicy.FULL);
     }
 
     /** @return registered tool name, as advertised to the model */

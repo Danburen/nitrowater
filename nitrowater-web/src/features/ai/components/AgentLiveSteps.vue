@@ -33,6 +33,7 @@ const PENDING: LiveStep = {
   status: null,
   ok: null,
   resultCount: null,
+  render: 'FULL',
   startedAt: 0,
   durationMs: null,
 }
@@ -51,6 +52,7 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   searchDocs: '查阅文档',
   webSearch: '联网搜索',
   runCode: '运行代码',
+  calculate: '精确计算',
   loadSkill: '加载技能',
   saveMemory: '写入记忆',
 }
@@ -61,6 +63,7 @@ const TOOL_ICONS: Readonly<Record<string, readonly string[]>> = {
   searchDocs: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5', 'M9 13h6', 'M9 17h4'],
   webSearch: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18', 'M3.5 12h17', 'M12 3a14 14 0 0 1 0 18', 'M12 3a14 14 0 0 0 0 18'],
   runCode: ['M4 17l6-5-6-5', 'M12 19h8'],
+  calculate: ['M5 3h14v18H5z', 'M8 7h8', 'M8 11h.01', 'M12 11h.01', 'M16 11h.01', 'M8 15h.01', 'M12 15h.01', 'M16 15h.01'],
   loadSkill: ['M12 3l9 5-9 5-9-5 9-5z', 'M3 13l9 5 9-5'],
   saveMemory: ['M6 3h9l5 5v13H6z', 'M9 3v5h6'],
   fallback: ['M14.7 6.3a5 5 0 0 0 6.9 6.9L14 21h-4v-4z', 'M3 3l6 6'],
@@ -88,6 +91,11 @@ function icon(step: LiveStep): readonly string[] {
   return TOOL_ICONS[step.tool ?? ''] ?? TOOL_ICONS.fallback
 }
 
+/** Whether the server asked for the one-line form of this call. */
+function compact(step: LiveStep): boolean {
+  return step.render === 'COMPACT'
+}
+
 /** @return running / failed / done, driving the colour and the status glyph */
 function state(step: LiveStep): 'running' | 'failed' | 'done' {
   if (step.phase === 'tool_start' || step.phase === 'thinking') return 'running'
@@ -105,7 +113,7 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
       v-for="step in shown"
       :key="step.id"
       class="live-step"
-      :class="`is-${state(step)}`"
+      :class="[`is-${state(step)}`, { 'is-compact': compact(step) }]"
     >
       <span
         class="live-step-icon"
@@ -130,7 +138,11 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
       <span class="live-step-body">
         <span class="live-step-title">{{ label(step) }}</span>
         <span
-          v-if="detail(step)"
+          v-if="compact(step) && step.argument"
+          class="live-step-expr"
+        >{{ step.argument }}</span>
+        <span
+          v-else-if="!compact(step) && detail(step)"
           class="live-step-detail"
         >{{ detail(step) }}</span>
       </span>
@@ -248,6 +260,49 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
 .live-step.is-failed .live-step-icon {
   background: color-mix(in srgb, var(--color-warn) 14%, transparent);
   color: var(--color-warn);
+}
+
+/*
+ * COMPACT rows: same protocol, far less visual weight. A deterministic helper (today only
+ * `calculate`) still shows what ran, but as one muted line instead of a card, so a multi-step
+ * answer is not padded with boxes the user did not ask for.
+ */
+.live-step.is-compact {
+  padding: 1px 2px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+}
+
+.live-step.is-compact .live-step-icon {
+  width: 16px;
+  height: 16px;
+  background: transparent;
+}
+
+.live-step.is-compact .live-step-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
+.live-step.is-compact .live-step-title {
+  flex-shrink: 0;
+  color: var(--color-faint);
+  font-weight: 400;
+}
+
+.live-step.is-compact.is-running::after {
+  display: none;
+}
+
+.live-step-expr {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .live-step-body {

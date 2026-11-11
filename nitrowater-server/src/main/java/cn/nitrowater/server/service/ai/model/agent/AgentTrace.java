@@ -2,6 +2,7 @@ package cn.nitrowater.server.service.ai.model.agent;
 
 import cn.nitrowater.server.service.ai.model.rag.DocSource;
 import cn.nitrowater.server.service.ai.model.rag.DocSourceMapper;
+import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import org.springframework.ai.document.Document;
 
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,6 +44,12 @@ public final class AgentTrace {
     private final AtomicBoolean webFallbackUsed = new AtomicBoolean();
     private final AtomicInteger webSearchSuccesses = new AtomicInteger();
     private final Set<String> webQueries = new LinkedHashSet<>();
+    /**
+     * Presentation policy per advertised tool, registered once per turn. Tool code records its own
+     * call without knowing how the UI renders it; the lookup happens here so a tool definition
+     * never has to carry UI state.
+     */
+    private final Map<String, RenderPolicy> renderByName = new ConcurrentHashMap<>();
     private int nextIndex = 1;
 
     /** Creates a trace without a user id; used by tests and non-authenticated tool paths. */
@@ -115,7 +123,8 @@ public final class AgentTrace {
      * @param resultCount number of results
      */
     public void recordTool(String name, String argument, int resultCount) {
-        calls.add(new ToolCall(name, truncate(argument, 160), resultCount));
+        calls.add(new ToolCall(name, truncate(argument, 160), resultCount, ToolCode.OK.getCode(),
+                null, null, renderOf(name)));
     }
 
     /**
@@ -129,7 +138,29 @@ public final class AgentTrace {
      */
     public void recordTool(String name, String argument, int resultCount, String status, String summary) {
         calls.add(new ToolCall(name, truncate(argument, 160), resultCount, status,
-                truncate(summary, 240)));
+                truncate(summary, 240), null, renderOf(name)));
+    }
+
+    /**
+     * Registers how one advertised tool is presented. Called once per turn, before any call runs,
+     * so tool implementations never have to know their own render policy.
+     *
+     * @param name   tool name
+     * @param policy presentation policy, or {@code null} to keep the default
+     */
+    public void registerRender(String name, RenderPolicy policy) {
+        if (StringUtil.isBlank(name) || policy == null) {
+            return;
+        }
+        renderByName.put(name, policy);
+    }
+
+    /**
+     * @param name tool name
+     * @return its presentation policy, defaulting to a full card
+     */
+    private RenderPolicy renderOf(String name) {
+        return name == null ? RenderPolicy.FULL : renderByName.getOrDefault(name, RenderPolicy.FULL);
     }
 
     /**

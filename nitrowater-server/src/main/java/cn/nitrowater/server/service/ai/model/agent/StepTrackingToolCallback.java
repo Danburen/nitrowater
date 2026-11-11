@@ -58,6 +58,7 @@ final class StepTrackingToolCallback implements ToolCallback {
     private final AgentRun run;
     private final AgentTrace trace;
     private final int timeoutMs;
+    private final RenderPolicy render;
     private final AtomicInteger sequence = new AtomicInteger();
 
     /**
@@ -66,12 +67,15 @@ final class StepTrackingToolCallback implements ToolCallback {
      *                  live channel (the non-streaming path still needs the deadline)
      * @param trace     turn trace the delegate records its call into
      * @param timeoutMs per-call deadline, or {@code 0} to defer to the tool's own budget
+     * @param render    how the client presents this tool
      */
-    StepTrackingToolCallback(ToolCallback delegate, AgentRun run, AgentTrace trace, int timeoutMs) {
+    StepTrackingToolCallback(ToolCallback delegate, AgentRun run, AgentTrace trace, int timeoutMs,
+            RenderPolicy render) {
         this.delegate = delegate;
         this.run = run;
         this.trace = trace;
         this.timeoutMs = timeoutMs;
+        this.render = render == null ? RenderPolicy.FULL : render;
     }
 
     @NotNull
@@ -97,7 +101,7 @@ final class StepTrackingToolCallback implements ToolCallback {
     public String call(@NotNull String toolInput, ToolContext toolContext) {
         String tool = this.delegate.getToolDefinition().name();
         String callId = tool + "#" + this.sequence.incrementAndGet();
-        step(AiStreamChunk.Step.toolStart(tool, callId, summarise(toolInput)));
+        step(AiStreamChunk.Step.toolStart(tool, callId, summarise(toolInput), this.render));
         int recorded = callCount();
         long startedAt = System.nanoTime();
         String result;
@@ -107,14 +111,14 @@ final class StepTrackingToolCallback implements ToolCallback {
             result = timeoutResponse(tool, toolInput).json();
         } catch (RuntimeException ex) {
             step(AiStreamChunk.Step.toolEnd(tool, callId, ToolCode.UNAVAILABLE.getCode(), 0,
-                    elapsedMillis(startedAt)));
+                    elapsedMillis(startedAt), this.render));
             throw ex;
         }
         ToolCall call = lastCallFrom(recorded);
         step(AiStreamChunk.Step.toolEnd(tool, callId,
                 call == null ? ToolCode.OK.getCode() : call.status(),
                 call == null ? 0 : call.resultCount(),
-                elapsedMillis(startedAt)));
+                elapsedMillis(startedAt), this.render));
         return result;
     }
 
@@ -177,7 +181,10 @@ final class StepTrackingToolCallback implements ToolCallback {
     }
 
     private void step(AiStreamChunk.Step step) {
-        if (this.run != null) {
+        // EXCLUDED calls stay on the trace but never reach the live channel: an internal result the
+        // answer pipeline consumed is not an action the user should watch. The settled tool list is
+        // filtered with the same policy, so live and persisted views can never disagree.
+        if (this.run != null && this.render != RenderPolicy.EXCLUDED) {
             this.run.step(step);
         }
     }

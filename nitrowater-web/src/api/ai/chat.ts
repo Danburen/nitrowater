@@ -163,8 +163,8 @@ function dispatchAgent(event: string, payload: string, handlers: AgentStreamHand
       const parsed = JSON.parse(payload) as { text?: string }
       if (parsed.text) handlers.onDelta?.(parsed.text)
     } else if (event === 'step') {
-      // Forward the whole marker: argument/callId/status/ok/resultCount/durationMs are what make a
-      // card informative and let a start be paired with its own end.
+      // Forward the whole marker: argument/callId/status/ok/resultCount/durationMs/render are what
+      // make a card informative and let a start be paired with its own end.
       const parsed = JSON.parse(payload) as AgentStep
       if (parsed.phase) handlers.onStep?.(parsed)
     } else if (event === 'moderation') {

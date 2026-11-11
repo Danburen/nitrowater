@@ -45,18 +45,24 @@ const awaiting = computed(() => props.streaming && props.steps.length === 0 && !
  * <p>{@code tools_json} already travels with every stored message, so the same timeline the live
  * turn showed survives a reload without a new column or a client-side copy. Only the per-call
  * duration is absent, and the card simply omits it.</p>
+ *
+ * <p>Rows the server marked {@code EXCLUDED} stay in the payload (audit, admin statistics) but are
+ * not rendered, so a reload shows the same timeline the live turn did.</p>
  */
-const settledSteps = computed<LiveStep[]>(() => props.message.tools.map((tool, index): LiveStep => ({
-  id: `tool-${index}`,
-  phase: 'tool_end',
-  tool: tool.name,
-  argument: tool.argument || null,
-  status: tool.status ?? null,
-  ok: tool.ok ?? null,
-  resultCount: tool.resultCount,
-  startedAt: 0,
-  durationMs: null,
-})))
+const settledSteps = computed<LiveStep[]>(() => props.message.tools
+  .filter((tool) => tool.render !== 'EXCLUDED')
+  .map((tool, index): LiveStep => ({
+    id: `tool-${index}`,
+    phase: 'tool_end',
+    tool: tool.name,
+    argument: tool.argument || null,
+    status: tool.status ?? null,
+    ok: tool.ok ?? null,
+    resultCount: tool.resultCount,
+    render: tool.render ?? 'FULL',
+    startedAt: 0,
+    durationMs: null,
+  })))
 
 /** Live cards while the turn runs, the ones kept on the message afterwards, else the persisted calls. */
 const shownSteps = computed<readonly LiveStep[]>(() => {

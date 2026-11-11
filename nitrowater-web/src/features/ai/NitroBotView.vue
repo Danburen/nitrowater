@@ -623,6 +623,7 @@ async function streamInto(
               status: null,
               ok: null,
               resultCount: null,
+              render: step.render ?? 'FULL',
               startedAt: Date.now(),
               durationMs: null,
             })
@@ -637,6 +638,7 @@ async function streamInto(
             target.status = step.status ?? null
             target.ok = step.ok ?? null
             target.resultCount = step.resultCount ?? null
+            target.render = step.render ?? target.render
             target.durationMs = step.durationMs ?? Date.now() - target.startedAt
             // Held-back answer text may have arrived while the tool ran.
             if (received.length > shown) ensurePump()
@@ -652,6 +654,7 @@ async function streamInto(
               status: null,
               ok: null,
               resultCount: null,
+              render: 'FULL',
               startedAt: Date.now(),
               durationMs: null,
             })

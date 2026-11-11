@@ -65,7 +65,8 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 |---|---|---|
 | `searchDocs(query, topK)` | 检索本地文档语料；**无命中时自动联网一次** | 站点产品、配置、权限、版本等事实性问题 |
 | `loadSkill(name)` | 加载预置工作流 | 需要按固定步骤完成的任务（命令参考、配置导览、排障） |
-| `runCode(language, code, stdin)` | 在 Piston 沙箱编译并运行 | 用户明确要求运行/测试/验证代码 |
+| `calculate(expression)` | 精确十进制求值（`+ - * /`、括号、`round/abs/min/max/sqrt`） | 问题里有具体算式（小数、多步乘除、百分比换算后）；心算不可靠 |
+| `runCode(language, code, stdin)` | 在 Piston 沙箱编译并运行 | 需要执行环境才能确认：跑/测代码、循环、解析、批量数据、读写文件 |
 | `webSearch(query)` | 联网搜索（DeepSeek 搜索 API），默认 1 次够用即停，单轮成功上限 3 次 | 近期事件/实时数据/可能变更，或需要核实自己没有把握的具体事实（版本、价格、日期、签名、链接），或用户明确要求 |
 | `saveMemory(kind, content)` | 保存跨会话的长期事实/偏好/决定/项目背景 | 用户**明确要求**“记住/保存/以后都按这个来”；不随普通聊天自动保存 |
 
@@ -79,7 +80,7 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 
 时区来自 `app.ai.agent.time-zone`（默认 `Asia/Shanghai`）。放在用户消息而不是 system 前缀，是为了保住供应商的前缀缓存；`<answer>` 段要求涉及「今天/现在/最近」时以它为准，避免模型按训练截止日期推断。
 
-工具轨迹由 `AgentTrace` 汇总：`name`、`argument`、`resultCount`、`status`（`ToolCode` 码，如 `tool.ok`）、`ok`、`summary`、耗时。SSE 在结束前发送 `tools` 与 `skills`；运行期间的 `step` 事件渲染成答案上方的实时卡片，结束（或重新加载）后由持久化的 `tools` 用同一套卡片展示。
+工具轨迹由 `AgentTrace` 汇总：`name`、`argument`、`resultCount`、`status`（`ToolCode` 码，如 `tool.ok`）、`ok`、`summary`、`render`（展示级别，见 5.2.1）、耗时。SSE 在结束前发送 `tools` 与 `skills`；运行期间的 `step` 事件渲染成答案上方的实时卡片，结束（或重新加载）后由持久化的 `tools` 用同一套卡片展示。
 
 引用、工具轨迹与技能名随回答一起落库（`sources_json` / `tools_json` / `skills_json`），所以刷新或切换会话后过程卡片仍然完整。`conversation` / `start` / 首个 `step{thinking}` 在请求处理器返回时即写出，早于上下文组装，客户端不必等首个 token 才显示过程卡片。
 
@@ -108,7 +109,21 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 - 控制台 `AiToolInfo` 分别上报 `enabled`（配置）/ `optIn`（需用户同意）/ `available`（运行时可用），所以「管理员关了」与「用户没勾选」不会被压成同一个 false。
 - 新增工具：在注册表加一行 `scan(...)`；新增分类：给 `ToolFeature` 加一个枚举值并补 `bucket()`，控制台会自动多一个来源标签（前端未映射时回落显示原始值）。
 
-### 5.2.1 工具调用限额
+### 5.2.1 展示级别（RenderPolicy）
+
+工具调用**永远**进协议、进轨迹、进限额；`RenderPolicy` 只决定客户端怎么画，三档语义与业内一致（AI SDK 的 tool part、LangGraph 的 `tools` 通道、Anthropic 的 `response_inclusion`）：
+
+| 级别 | 用于 | 表现 |
+|---|---|---|
+| `FULL` | 外部调用与写操作，默认 | 完整步骤卡 |
+| `COMPACT` | 确定性本地计算（`calculate`） | 一行紧凑 chip，仍能看到算式 |
+| `EXCLUDED` | 结果被回答管线内部消费、不是用户动作 | 实时与历史都不渲染，`tools` 里仍保留 |
+
+- 策略挂在 `AgentTool.render()`，每轮由 `AiAgentService` 写进 `AgentTrace`，所以实时 `step` 与持久化 `tools` 用同一份策略，不会出现「运行时看不见、刷新后又冒出来」。
+- `EXCLUDED` 只在传输层跳过 `step` 与前端渲染，**不删轨迹**：评测、管理台统计、排障照旧。
+- 三档都不改模型可见的 schema、不改系统提示词、不改 `max-total-tool-calls` 与单工具限额。
+
+### 5.2.2 工具调用限额
 
 - `max-total-tool-calls: 10`：单轮所有工具调用总数。
 - `max-calls-per-tool-default: 3`：单个工具默认上限。

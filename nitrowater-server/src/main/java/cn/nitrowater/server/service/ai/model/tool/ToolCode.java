@@ -39,6 +39,11 @@ public enum ToolCode implements ResponseCode {
     RUN_TIMEOUT("tool.run_timeout", true, true),
     /** The snippet crashed at run time. */
     RUNTIME_ERROR("tool.runtime_error", true, true),
+    /**
+     * The expression is mathematically undefined (division by zero, negative square root). The call
+     * itself was handled, so the model can retry with a corrected expression or explain the limit.
+     */
+    MATH_ERROR("tool.math_error", true, true),
 
     /** This turn has no authenticated user. */
     UNAUTHORIZED("tool.unauthorized", false, false),

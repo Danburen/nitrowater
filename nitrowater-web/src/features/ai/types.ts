@@ -1,4 +1,4 @@
-import type { AiSource, AiToolCall } from '../../api/ai'
+import type { AgentRenderPolicy, AiSource, AiToolCall } from '../../api/ai'
 import type { SlashProfile, SlashQuota, SlashStatus } from '../../api/slash'
 
 /** One rendered live step: the wire marker plus the client-side identity and timing. */
@@ -13,6 +13,8 @@ export interface LiveStep {
   /** Whether the call was handled; {@code null} while it is still running. */
   ok: boolean | null
   resultCount: number | null
+  /** How this call is presented; defaults to a full card when the server omits it. */
+  render: AgentRenderPolicy
   /** Client-side start, used for the elapsed time when the server reported none. */
   startedAt: number
   durationMs: number | null

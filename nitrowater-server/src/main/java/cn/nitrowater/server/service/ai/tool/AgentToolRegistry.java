@@ -2,6 +2,7 @@ package cn.nitrowater.server.service.ai.tool;
 
 import cn.nitrowater.server.service.ai.model.admin.AiSettings;
 import cn.nitrowater.server.service.ai.model.agent.AgentTool;
+import cn.nitrowater.server.service.ai.model.agent.RenderPolicy;
 import cn.nitrowater.server.service.ai.model.agent.ToolFeature;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.stereotype.Component;
@@ -43,13 +44,17 @@ public class AgentToolRegistry {
     private final List<AgentTool> tools;
 
     public AgentToolRegistry(DocTools docTools, SkillTools skillTools, RunCodeTool runCodeTool,
-            MemoryTools memoryTools, WebSearchTool webSearchTool,
+            MemoryTools memoryTools, WebSearchTool webSearchTool, CalculateTool calculateTool,
             WebSearchProvider webSearchProvider) {
         List<AgentTool> registered = new ArrayList<>();
         registered.addAll(scan(docTools, ToolFeature.DOCS, false, RETRIEVAL_TIMEOUT_MS));
         registered.addAll(scan(skillTools, ToolFeature.SKILLS, false, LOOKUP_TIMEOUT_MS));
         registered.addAll(scan(runCodeTool, ToolFeature.CODE, false, OWN_BUDGET));
         registered.addAll(scan(memoryTools, ToolFeature.NONE, false, LOOKUP_TIMEOUT_MS));
+        // Pure CPU evaluator: it cannot block, so it keeps its own (empty) budget instead of paying
+        // for a deadline thread. COMPACT because the value is worth showing but a full card is noise.
+        registered.addAll(scan(calculateTool, ToolFeature.NONE, false, OWN_BUDGET,
+                RenderPolicy.COMPACT));
         // Web search is the one tool whose availability depends on deployment configuration, so it
         // owns a probe instead of being assumed usable. Callers no longer have to fold "provider
         // configured" into the user's opt-in.
@@ -97,22 +102,49 @@ public class AgentToolRegistry {
      */
     private static List<AgentTool> scan(Object bean, ToolFeature feature, boolean optIn,
             int timeoutMs) {
-        return scan(bean, feature, optIn, () -> true, timeoutMs);
+        return scan(bean, feature, optIn, () -> true, timeoutMs, RenderPolicy.FULL);
     }
 
     /**
-     * @param bean tool bean
-     * @param feature administrator switch it belongs to
-     * @param optIn whether the user must opt in per turn
-     * @param probe runtime precondition of the tool
+     * @param bean      tool bean
+     * @param feature   administrator switch it belongs to
+     * @param optIn     whether the user must opt in per turn
+     * @param timeoutMs per-call deadline, or {@code 0} when the tool owns its budget
+     * @param render    how the client presents this tool
+     * @return registered tools for that bean
+     */
+    private static List<AgentTool> scan(Object bean, ToolFeature feature, boolean optIn,
+            int timeoutMs, RenderPolicy render) {
+        return scan(bean, feature, optIn, () -> true, timeoutMs, render);
+    }
+
+    /**
+     * @param bean      tool bean
+     * @param feature   administrator switch it belongs to
+     * @param optIn     whether the user must opt in per turn
+     * @param probe     runtime precondition of the tool
      * @param timeoutMs per-call deadline, or {@code 0} when the tool owns its budget
      * @return registered tools for that bean
      */
     private static List<AgentTool> scan(Object bean, ToolFeature feature, boolean optIn,
             BooleanSupplier probe, int timeoutMs) {
+        return scan(bean, feature, optIn, probe, timeoutMs, RenderPolicy.FULL);
+    }
+
+    /**
+     * @param bean      tool bean
+     * @param feature   administrator switch it belongs to
+     * @param optIn     whether the user must opt in per turn
+     * @param probe     runtime precondition of the tool
+     * @param timeoutMs per-call deadline, or {@code 0} when the tool owns its budget
+     * @param render    how the client presents this tool
+     * @return registered tools for that bean
+     */
+    private static List<AgentTool> scan(Object bean, ToolFeature feature, boolean optIn,
+            BooleanSupplier probe, int timeoutMs, RenderPolicy render) {
         return Arrays.stream(
                         MethodToolCallbackProvider.builder().toolObjects(bean).build().getToolCallbacks())
-                .map(callback -> new AgentTool(callback, feature, optIn, probe, timeoutMs))
+                .map(callback -> new AgentTool(callback, feature, optIn, probe, timeoutMs, render))
                 .toList();
     }
 }

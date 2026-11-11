@@ -16,6 +16,7 @@ import cn.nitrowater.server.service.ai.memory.AiProfileService;
 import cn.nitrowater.server.service.ai.skill.AgentSkillService;
 import cn.nitrowater.server.service.ai.tool.AgentToolRegistry;
 import cn.nitrowater.server.service.ai.model.agent.AgentTool;
+import cn.nitrowater.server.service.ai.model.agent.RenderPolicy;
 import cn.nitrowater.server.service.ai.model.agent.ToolFeature;
 import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 import cn.nitrowater.server.infra.exception.AiTurnTimeoutException;
@@ -29,6 +30,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
@@ -233,6 +235,58 @@ class AiAgentServiceStreamTest {
         assertThat(options.getToolContext()).containsKey(AgentTrace.CONTEXT_KEY);
     }
 
+    /**
+     * The render policy travels with the step markers, so the client can draw a compact chip
+     * instead of a full card without a second lookup table.
+     */
+    @Test
+    void marksACompactToolCallForTheClient() {
+        AssistantMessage round = callMessage("calculate", "{\"expression\":\"0.1 + 0.2\"}");
+        stubToolExecution(round);
+        service = service(new ScriptedChatModel(List.of(
+                Flux.just(new ChatResponse(List.of(new Generation(round)))),
+                chunks("0.3"))), recording("calculate", 1), 0, 150_000L, RenderPolicy.COMPACT);
+
+        PreparedAgent prepared = prepare();
+        List<AiStreamChunk.Step> steps = prepared.chunks()
+                .filter(chunk -> chunk.step() != null)
+                .map(AiStreamChunk::step)
+                .collectList()
+                .block();
+
+        assertThat(steps).filteredOn(step -> step.tool() != null)
+                .extracting(AiStreamChunk.Step::render)
+                .containsOnly(RenderPolicy.COMPACT);
+        assertThat(prepared.trace().calls())
+                .as("the persisted row must carry the same policy as the live marker")
+                .extracting(ToolCall::render)
+                .containsExactly(RenderPolicy.COMPACT);
+    }
+
+    /**
+     * EXCLUDED hides the call from the live timeline only: it must still be recorded, otherwise the
+     * reloaded transcript, the admin statistics and the eval harness would disagree with reality.
+     */
+    @Test
+    void keepsAnExcludedCallOnTheTraceButOffTheStream() {
+        AssistantMessage round = callMessage("calculate", "{\"expression\":\"2 * 3\"}");
+        stubToolExecution(round);
+        service = service(new ScriptedChatModel(List.of(
+                Flux.just(new ChatResponse(List.of(new Generation(round)))),
+                chunks("6"))), recording("calculate", 1), 0, 150_000L, RenderPolicy.EXCLUDED);
+
+        PreparedAgent prepared = prepare();
+        List<String> steps = prepared.chunks()
+                .filter(chunk -> chunk.step() != null)
+                .map(chunk -> chunk.step().phase())
+                .collectList()
+                .block();
+
+        assertThat(steps).containsExactly("thinking", "thinking");
+        assertThat(prepared.trace().calls()).hasSize(1);
+        assertThat(prepared.trace().calls().get(0).render()).isEqualTo(RenderPolicy.EXCLUDED);
+    }
+
     private PreparedAgent prepare() {
         return service.prepare("你好", List.of(), List.of(), false, 7L, null);
     }
@@ -249,7 +303,8 @@ class AiAgentServiceStreamTest {
                     for (AssistantMessage.ToolCall call : round.getToolCalls()) {
                         for (ToolCallback callback : options.getToolCallbacks()) {
                             if (callback.getToolDefinition().name().equals(call.name())) {
-                                callback.call(call.arguments(), null);
+                                callback.call(call.arguments(),
+                                        new ToolContext(options.getToolContext()));
                             }
                         }
                     }
@@ -271,9 +326,15 @@ class AiAgentServiceStreamTest {
 
     private AiAgentService service(ChatModel chatModel, ToolCallback callback, int toolTimeoutMs,
             long turnTimeoutMs) {
+        return service(chatModel, callback, toolTimeoutMs, turnTimeoutMs, RenderPolicy.FULL);
+    }
+
+    private AiAgentService service(ChatModel chatModel, ToolCallback callback, int toolTimeoutMs,
+            long turnTimeoutMs, RenderPolicy render) {
         AgentToolRegistry tools = mock(AgentToolRegistry.class);
         when(tools.forTurn(any(AiSettings.class), anySet(), anyBoolean()))
-                .thenReturn(List.of(new AgentTool(callback, ToolFeature.DOCS, false, toolTimeoutMs)));
+                .thenReturn(List.of(new AgentTool(callback, ToolFeature.DOCS, false, toolTimeoutMs,
+                        render)));
         AgentSkillService skills = mock(AgentSkillService.class);
         when(skills.catalog(any(AiSettings.class))).thenReturn(List.of());
         when(skills.resolveSelected(any(), any(AiSettings.class))).thenReturn(List.of());        AiProfileService profiles = mock(AiProfileService.class);
@@ -287,6 +348,41 @@ class AiAgentServiceStreamTest {
 
     private static ToolCallback searchDocsCallback() {
         return callback("searchDocs", "{\"count\":2}", 0L);
+    }
+
+    /**
+     * A tool that records its own call, so a test can assert the policy the trace picked up.
+     *
+     * @param name    tool name
+     * @param results result count to record
+     * @return a callback that reads the trace from the tool context and records one call
+     */
+    private static ToolCallback recording(String name, int results) {
+        return new ToolCallback() {
+            @Override
+            public org.springframework.ai.tool.definition.ToolDefinition getToolDefinition() {
+                return org.springframework.ai.tool.definition.DefaultToolDefinition.builder()
+                        .name(name)
+                        .description("records one call")
+                        .inputSchema("{\"type\":\"object\"}")
+                        .build();
+            }
+
+            @Override
+            public String call(String toolInput) {
+                return call(toolInput, null);
+            }
+
+            @Override
+            public String call(String toolInput, ToolContext toolContext) {
+                if (toolContext != null
+                        && toolContext.getContext().get(AgentTrace.CONTEXT_KEY)
+                        instanceof AgentTrace trace) {
+                    trace.recordTool(name, toolInput, results);
+                }
+                return "{\"ok\":true}";
+            }
+        };
     }
 
     /**

@@ -323,6 +323,7 @@ public class AiAgentService {
         List<AgentTool> turnTools = toolRegistry.forTurn(runtime, settings.disabledTools(), allowWeb);
         List<String> toolNames = new ArrayList<>(turnTools.size());
         for (AgentTool tool : turnTools) {
+            trace.registerRender(tool.name(), tool.render());
             callbacks.add(track(tool, run, trace));
             toolNames.add(tool.name());
         }
@@ -345,7 +346,8 @@ public class AiAgentService {
      * @return the callback wrapped so it enforces its deadline and publishes step markers
      */
     private static ToolCallback track(AgentTool tool, AgentRun run, AgentTrace trace) {
-        return new StepTrackingToolCallback(tool.callback(), run, trace, tool.timeoutMs());
+        return new StepTrackingToolCallback(tool.callback(), run, trace, tool.timeoutMs(),
+                tool.render());
     }
 
     /**

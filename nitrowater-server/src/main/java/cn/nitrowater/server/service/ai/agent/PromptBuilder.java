@@ -58,7 +58,7 @@ public class PromptBuilder {
 
     /** Tool names this builder knows how to describe, in display order. */
     public static final List<String> ALL_TOOLS = List.of(
-            "searchDocs", "webSearch", "loadSkill", "runCode", "saveMemory");
+            "searchDocs", "webSearch", "loadSkill", "calculate", "runCode", "saveMemory");
 
     /**
      * One routing hint per tool. Deliberately short and free of numbers: the schema already owns
@@ -75,8 +75,11 @@ public class PromptBuilder {
             "loadSkill", """
                     - loadSkill：需要按固定流程完成时加载，一次只加载一个技能。
                     """,
+            "calculate", """
+                    - calculate：用户给出了具体算式（小数、多步乘除、括号、百分比换算后）时先精确求值，不要心算；只写算式，百分比先换成小数。
+                    """,
             "runCode", """
-                    - runCode：需要实际执行才能确认时才用（运行/测试代码、循环、解析、批量数据）；纯算术直接算。
+                    - runCode：需要执行环境才能确认时才用（跑代码、循环、解析、批量数据、读写文件）；纯算术用 calculate。
                     """
     );
 

@@ -218,6 +218,11 @@ export interface AiToolCall {
   summary?: string | null
   /** Whether the call was handled; absent only on rows stored before the code vocabulary. */
   ok?: boolean
+  /**
+   * Display policy recorded with the call, so the settled transcript renders exactly like the live
+   * timeline did. Absent on rows stored before the policy existed → treated as {@code FULL}.
+   */
+  render?: AgentRenderPolicy | null
 }
 
 /** A tool in the admin catalog. */
@@ -261,7 +266,21 @@ export interface AgentStep {
   resultCount?: number | null
   /** Wall-clock duration of the invocation, sent on {@code tool_end}. */
   durationMs?: number | null
+  /**
+   * How the client should present the call: {@code FULL} card, {@code COMPACT} one-line chip, or
+   * {@code EXCLUDED} (traced but not rendered). Transport metadata only — it never changes the
+   * model-facing schema or the budgets. Absent on older servers, which means {@code FULL}.
+   */
+  render?: AgentRenderPolicy | null
 }
+
+/**
+ * Display policy of one tool call.
+ *
+ * <p>A plain string union rather than an enum: the server owns the vocabulary, and an unknown
+ * value must degrade to a full card instead of failing the whole stream.</p>
+ */
+export type AgentRenderPolicy = 'FULL' | 'COMPACT' | 'EXCLUDED'
 
 /** How the model ended the turn. */
 export interface AgentDoneMeta {

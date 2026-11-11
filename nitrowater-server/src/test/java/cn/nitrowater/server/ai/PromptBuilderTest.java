@@ -65,10 +65,19 @@ class PromptBuilderTest {
         String prompt = builder.agentSystem(List.of(), null, null, List.of(), List.of("runCode"));
 
         assertThat(prompt)
-                .contains("纯算术")
+                .contains("执行环境")
                 .doesNotContain("产品/项目自身的事实")
                 .doesNotContain("可核实的外部事实")
                 .doesNotContain("loadSkill");
+    }
+
+    @Test
+    void agentPromptRoutesArithmeticToCalculateAndExecutionToRunCode() {
+        String prompt = builder.agentSystem(List.of(), null);
+
+        assertThat(prompt)
+                .contains("calculate")
+                .contains("纯算术用 calculate");
     }
 
     @Test

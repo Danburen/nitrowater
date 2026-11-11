@@ -1,5 +1,6 @@
 package cn.nitrowater.server.service.ai.agent;
 
+import cn.nitrowater.server.service.ai.model.agent.RenderPolicy;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -36,13 +37,15 @@ public record AiStreamChunk(String text, Usage usage, String finishReason, Step 
      *                    compare code strings), set on {@code tool_end}
      * @param resultCount results produced, set on {@code tool_end}
      * @param durationMs  wall-clock duration of the invocation, set on {@code tool_end}
+     * @param render      how the client presents the call; transport metadata only, so it changes
+     *                    neither the model-facing schema nor the trace
      */
     public record Step(String phase, String tool, String callId, String argument,
-            String status, Boolean ok, Integer resultCount, Long durationMs) {
+            String status, Boolean ok, Integer resultCount, Long durationMs, RenderPolicy render) {
 
         /** @return the marker emitted at the start of a round, before any model token */
         public static Step thinking() {
-            return new Step("thinking", null, null, null, null, null, null, null);
+            return new Step("thinking", null, null, null, null, null, null, null, RenderPolicy.FULL);
         }
 
         /**
@@ -52,7 +55,19 @@ public record AiStreamChunk(String text, Usage usage, String finishReason, Step 
          * @return the marker emitted right before the tool runs
          */
         public static Step toolStart(String tool, String callId, String argument) {
-            return new Step("tool_start", tool, callId, argument, null, null, null, null);
+            return toolStart(tool, callId, argument, RenderPolicy.FULL);
+        }
+
+        /**
+         * @param tool     tool name
+         * @param callId   per-invocation id
+         * @param argument argument summary, or {@code null}
+         * @param render   how the client presents the call
+         * @return the marker emitted right before the tool runs
+         */
+        public static Step toolStart(String tool, String callId, String argument,
+                RenderPolicy render) {
+            return new Step("tool_start", tool, callId, argument, null, null, null, null, render);
         }
 
         /**
@@ -65,8 +80,22 @@ public record AiStreamChunk(String text, Usage usage, String finishReason, Step 
          */
         public static Step toolEnd(String tool, String callId, String status, int resultCount,
                 long durationMs) {
+            return toolEnd(tool, callId, status, resultCount, durationMs, RenderPolicy.FULL);
+        }
+
+        /**
+         * @param tool        tool name
+         * @param callId      per-invocation id matching the start marker
+         * @param status      outcome code
+         * @param resultCount results produced
+         * @param durationMs  wall-clock duration
+         * @param render      how the client presents the call
+         * @return the marker emitted right after the tool returned
+         */
+        public static Step toolEnd(String tool, String callId, String status, int resultCount,
+                long durationMs, RenderPolicy render) {
             return new Step("tool_end", tool, callId, null, status,
-                    ToolCode.isSuccessCode(status), resultCount, durationMs);
+                    ToolCode.isSuccessCode(status), resultCount, durationMs, render);
         }
     }
 
