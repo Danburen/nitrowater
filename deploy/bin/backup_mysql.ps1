@@ -7,8 +7,11 @@ $MYSQL_BIN   = "E:\Program Files\MySQL\MySQL Server 8.0\bin"
 $BACKUP_DIR  = "D:\backup\nitrowater"
 $DB_HOST     = "localhost"
 $DB_PORT     = "3306"
-$DB_USER     = "root"
-$DB_PASS     = "123456"
+$DB_USER     = if ($env:DB_USER) { $env:DB_USER } else { "root" }
+# root 口令改名后优先读 MYSQL_ROOT_PASSWORD；DB_PASS 保留给旧习惯 / 单库账号。
+$DB_PASS     = if ($env:MYSQL_ROOT_PASSWORD) { $env:MYSQL_ROOT_PASSWORD }
+               elseif ($env:DB_PASS) { $env:DB_PASS }
+               else { "123456" }
 $DB_NAME     = "nitrowater_account"
 $RETAIN_DAYS = 30
 

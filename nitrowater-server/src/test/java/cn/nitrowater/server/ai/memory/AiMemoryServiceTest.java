@@ -1,9 +1,9 @@
 package cn.nitrowater.server.ai.memory;
 
-import cn.nitrowater.server.service.ai.AiMemoryService;
-import cn.nitrowater.server.service.ai.AiModerationService;
-import cn.nitrowater.server.service.ai.model.MemorySaveResult;
-import cn.nitrowater.server.service.ai.model.MemoryView;
+import cn.nitrowater.server.service.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.ops.AiModerationService;
+import cn.nitrowater.server.service.ai.model.memory.MemorySaveResult;
+import cn.nitrowater.server.service.ai.model.memory.MemoryView;
 import cn.nitrowater.server.infra.entity.AiMemory;
 import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.infra.enums.MemoryStatus;

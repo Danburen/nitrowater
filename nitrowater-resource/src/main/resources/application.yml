@@ -15,7 +15,7 @@ spring:
   # -------- 资源元数据库（独立于 account/biz）--------
   datasource:
     url: jdbc:mysql://localhost:3306/nitrowater_resource?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true
-    username: root
+    username: "${DB_USERNAME:root}"
     password: "${DB_PASSWORD:123456}"   # 生产用 DB_PASSWORD 覆盖
     driver-class-name: com.mysql.cj.jdbc.Driver
 
@@ -87,7 +87,7 @@ app:
       region: ${COS_REGION:ap-shanghai}
       bucket: ${COS_BUCKET:}
     local:
-      base-path: ${RESOURCE_LOCAL_PATH:./deploy/resource-storage}
+      base-path: ${RESOURCE_LOCAL_PATH:./bin/dev/resource-storage}
     # 内部发布端点（/internal/**）共享密钥；留空则端点禁用。仅运维脚本直连服务端口使用。
     internal:
       token: ${RESOURCE_INTERNAL_TOKEN:}

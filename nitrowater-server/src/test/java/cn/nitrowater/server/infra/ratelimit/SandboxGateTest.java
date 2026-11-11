@@ -1,6 +1,6 @@
 package cn.nitrowater.server.infra.ratelimit;
 
-import cn.nitrowater.server.config.properties.SandboxProperties;
+import cn.nitrowater.server.config.SandboxProperties;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.ExecutorService;

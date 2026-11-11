@@ -2,12 +2,16 @@ package cn.nitrowater.server.web;
 
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
-import cn.nitrowater.server.service.ai.ConversationService;
+import cn.nitrowater.server.service.ai.conversation.AiCompactService;
+import cn.nitrowater.server.service.ai.conversation.ConversationService;
 import cn.nitrowater.server.web.dto.ConversationCreateReq;
 import cn.nitrowater.server.web.dto.ConversationPatchReq;
+import cn.nitrowater.server.web.vo.AiCompactResp;
+import cn.nitrowater.server.web.vo.AiConversationContextResp;
 import cn.nitrowater.server.web.vo.ConversationMessagesResp;
 import cn.nitrowater.server.web.vo.ConversationResp;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,13 +38,11 @@ import java.security.Principal;
  * <p>Every operation is scoped by the authenticated {@code uid}; another user's uuid is a 404.</p>
  */
 @RestController
+@RequiredArgsConstructor
 public class AiConversationController {
 
-    private final ConversationService conversations;
-
-    public AiConversationController(ConversationService conversations) {
-        this.conversations = conversations;
-    }
+    private final ConversationService conversationService;
+    private final AiCompactService compactorService;
 
     /** Login: create an empty conversation. */
     @PostMapping("/api/ai/conversations")
@@ -48,7 +50,9 @@ public class AiConversationController {
             Principal principal) {
         long uid = CurrentUser.requireUid(principal);
         String title = request == null ? null : request.title();
-        return ConversationResp.from(conversations.create(uid, title));
+        return ConversationResp.from(
+                conversationService.create(uid, title)
+        );
     }
 
     /** Login: paged list of the user's conversations, newest first. */
@@ -60,7 +64,7 @@ public class AiConversationController {
             @RequestParam(defaultValue = "20") int size,
             Principal principal) {
         long uid = CurrentUser.requireUid(principal);
-        return ApiResponse.success(conversations.list(uid, keyword, status, page, size)
+        return ApiResponse.success(conversationService.list(uid, keyword, status, page, size)
                 .map(ConversationResp::from));
     }
 
@@ -71,7 +75,28 @@ public class AiConversationController {
             @RequestParam(required = false) Integer limit,
             Principal principal) {
         long uid = CurrentUser.requireUid(principal);
-        return ConversationMessagesResp.from(conversations.messages(uuid, uid, before, limit));
+        return ConversationMessagesResp.from(conversationService.messages(uuid, uid, before, limit));
+    }
+
+    /** Login: what the model currently sees (boundary, summary, pending count). */
+    @GetMapping("/api/ai/conversations/{uuid}/context")
+    public AiConversationContextResp context(@PathVariable String uuid, Principal principal) {
+        long uid = CurrentUser.requireUid(principal);
+        return AiConversationContextResp.from(conversationService.context(uuid, uid));
+    }
+
+    /**
+     * Login: fold old turns into the rolling summary ({@code /compact}).
+     *
+     * <p>This calls the model once per pass, so it goes through the same quota gate as chat
+     * ({@code WebConfig} registers it) instead of the zero-token slash endpoints.</p>
+     */
+    @PostMapping("/api/ai/conversations/{uuid}/compact")
+    public AiCompactResp compact(@PathVariable String uuid, Principal principal) {
+        long uid = CurrentUser.requireUid(principal);
+        return AiCompactResp.from(
+                compactorService.compact(uid, uuid)
+        );
     }
 
     /** Login: rename or archive a conversation. */
@@ -79,12 +104,12 @@ public class AiConversationController {
     public ConversationResp update(@PathVariable String uuid, @Valid @RequestBody ConversationPatchReq request,
             Principal principal) {
         long uid = CurrentUser.requireUid(principal);
-        return ConversationResp.from(conversations.update(uuid, uid, request.title(), request.archived()));
+        return ConversationResp.from(conversationService.update(uuid, uid, request.title(), request.archived()));
     }
 
     /** Login: soft-delete a conversation. */
     @DeleteMapping("/api/ai/conversations/{uuid}")
     public void delete(@PathVariable String uuid, Principal principal) {
-        conversations.delete(uuid, CurrentUser.requireUid(principal));
+        conversationService.delete(uuid, CurrentUser.requireUid(principal));
     }
 }

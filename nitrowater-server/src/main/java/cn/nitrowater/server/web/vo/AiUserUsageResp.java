@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiUserUsageRow;
+import cn.nitrowater.server.service.ai.model.usage.AiUserUsageRow;
 
 /**
  * Administrator-facing row combining one user's UTC-day token usage with its display identity.

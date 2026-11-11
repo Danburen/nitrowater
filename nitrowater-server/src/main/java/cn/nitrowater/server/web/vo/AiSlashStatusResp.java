@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiSlashStatus;
+import cn.nitrowater.server.service.ai.chat.AiSlashStatus;
 
 import java.time.Instant;
 import java.util.List;

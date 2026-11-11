@@ -1,0 +1,222 @@
+# ============================================================
+# NitroWater CD —— 构建 4 个镜像 → 推 GHCR → SSH 到单机部署
+#
+# 触发：**只手动**（Actions → Deploy → Run workflow，或 gh workflow run deploy.yml -f tag=v1.2.3）。
+#       下面的 tag 自动触发先注释掉，需要时再取消。
+#
+# 两个 job：
+#   build   矩阵构建 account / resource / server / bff 四个 target 并推 GHCR（带 sha + tag 双标签）
+#   deploy  SSH 到服务器：同步部署包 → 校验环境 → 按 infra → account → app 顺序 pull + up -d → 探活
+#
+# 与 waterfun 的差异（有意为之）：
+#   - 不走 deploy/bin/deploy.sh 一层封装：门禁与 compose 命令直接写在这里，
+#     和 deploy/README.md §5 的手工命令逐字一致（同一实现，不漂移）。
+#   - 没有前端产物上传：三个 SPA 都烤进了镜像（见根 Dockerfile），服务器不需要 dist。
+#
+# 前置条件（只需一次）：
+#   1. 服务器已按 deploy/README.md §1~§6 完成首次手工部署（含建库建号）。
+#   2. 服务器 `DEPLOY_ROOT`（默认 /opt/nitrowater）是本仓库的 git clone，
+#      deploy/docker/.env（+ 可选 .env.prod.secrets）、deploy/keys/、deploy/content/ 已就位。
+#   3. GitHub 仓库 Secrets：SSH_HOST / SSH_USER / SSH_KEY；
+#      可选 GHCR_USER + GHCR_PAT（GHCR 包为 private 时服务器要 docker login；public 包不需要）。
+#   4. 可选 Variables：DEPLOY_ROOT（默认 /opt/nitrowater）、DEPLOY_BRANCH（默认 main）、
+#      COMPOSE_PROFILE（用自带 edge 就填 edge，占 80/443；自建反代留空）。
+#
+# ⚠ 部署包（compose / 脚本 / 文档）跟 DEPLOY_BRANCH，镜像跟 IMAGE_TAG。
+#   deploy 里会 `git reset --hard origin/<branch>`，服务器上对这些**受版本控制文件**的本地改动会被丢弃
+#   （.env、keys、content 都是 gitignored，不受影响）。
+# ============================================================
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '镜像 tag（默认 latest；回滚时填上一个提交 sha 或旧 tag）'
+        required: false
+        default: 'latest'
+
+  # ---------------- 自动触发（暂不启用：全部改手动，需要时取消注释） ----------------
+  # push:
+  #   tags:
+  #     - 'v*'
+  #   # 想「合进 main 即上线」就再加：
+  #   # branches:
+  #   #   - main
+
+# 部署是全局串行：同一时刻只允许一个上线/回滚在跑。
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # 手动触发时：`tag` 输入即 IMAGE_TAG（默认 latest）
+  IMAGE_TAG: ${{ inputs.tag || github.ref_name }}
+  DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT || '/opt/nitrowater' }}
+  DEPLOY_BRANCH: ${{ vars.DEPLOY_BRANCH || 'main' }}
+  # 用 docker 自带 edge（nginx-proxy + acme，占 80/443）时把它设成 edge；用自建反代就留空。
+  COMPOSE_PROFILE: ${{ vars.COMPOSE_PROFILE || '' }}
+
+jobs:
+  # ================================================================
+  # Job 1: build —— 四个 target 各出一个镜像（同一份 Dockerfile 的 build 阶段由 gha 缓存共享）
+  # ================================================================
+  build:
+    name: build (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [account, resource, server, bff]
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR 要求镜像名全小写
+      - name: Lowercase repo name
+        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: ${{ matrix.service }}
+          push: true
+          # 与 ci.yml 的 scope 一致：main 上预热过的缓存这里直接复用
+          cache-from: type=gha,scope=shared
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ env.IMAGE_TAG }}
+            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ github.sha }}
+
+  # ================================================================
+  # Job 2: deploy —— 服务器上执行与 deploy/README.md §5 完全相同的命令
+  # ================================================================
+  deploy:
+    name: deploy (ssh)
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          # 通过 envs 注入到远端脚本（不要把这些值直接写进 script，密钥会进日志）
+          REGISTRY: ${{ env.REGISTRY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ACCOUNT_IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          APP_IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
+          DEPLOY_BRANCH: ${{ env.DEPLOY_BRANCH }}
+          COMPOSE_PROFILE: ${{ env.COMPOSE_PROFILE }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          timeout: 30s
+          command_timeout: 30m
+          envs: REGISTRY,GITHUB_REPOSITORY,ACCOUNT_IMAGE_TAG,APP_IMAGE_TAG,DEPLOY_ROOT,DEPLOY_BRANCH,COMPOSE_PROFILE,GHCR_USER,GHCR_PAT
+          script: |
+            # 远端一般是 sh：这里只用 POSIX 语法（无数组、无 ${var,,}）。
+            set -eu
+
+            cd "$DEPLOY_ROOT"
+
+            echo "==> deploy kit: origin/${DEPLOY_BRANCH}"
+            git fetch --prune origin
+            git reset --hard "origin/${DEPLOY_BRANCH}"
+
+            # compose 里 image: ${REGISTRY}/${GITHUB_REPOSITORY}/... ，组织名必须全小写
+            GITHUB_REPOSITORY="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+            export GITHUB_REPOSITORY
+            echo "==> images: ${REGISTRY}/${GITHUB_REPOSITORY}/* tag=${ACCOUNT_IMAGE_TAG}"
+
+            if [ -n "${GHCR_PAT:-}" ]; then
+              echo '==> docker login ghcr.io'
+              printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:?GHCR_USER is required when GHCR_PAT is set}" --password-stdin
+            fi
+
+            # 拆两个 env 文件时，两个都要传给 compose（后者覆盖前者）；shell 环境变量优先级最高。
+            ENV_ARGS="--env-file deploy/docker/.env"
+            if [ -f deploy/docker/.env.prod.secrets ]; then
+              ENV_ARGS="$ENV_ARGS --env-file deploy/docker/.env.prod.secrets"
+            fi
+
+            PROFILE_ARGS=""
+            if [ -n "${COMPOSE_PROFILE:-}" ]; then
+              PROFILE_ARGS="--profile ${COMPOSE_PROFILE}"
+            fi
+
+            wait_http() {
+              tries=0
+              limit="${2:-60}"
+              while [ "$tries" -lt "$limit" ]; do
+                if curl -fsS -o /dev/null "$1"; then
+                  echo "    ready: $1"
+                  return 0
+                fi
+                tries=$((tries + 1))
+                sleep 3
+              done
+              echo "    TIMEOUT: $1 (after $((limit * 3))s)"
+              return 1
+            }
+
+            wait_healthy() {
+              tries=0
+              while [ "$tries" -lt 40 ]; do
+                if [ "$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null || echo missing)" = "healthy" ]; then
+                  echo "    healthy: $1"
+                  return 0
+                fi
+                tries=$((tries + 1))
+                sleep 3
+              done
+              echo "    TIMEOUT: $1 never became healthy"
+              docker logs --tail 50 "$1" || true
+              return 1
+            }
+
+            echo '==> gate 1/2: 变量与内容（deploy/bin/check-env.sh）'
+            bash deploy/bin/check-env.sh
+
+            echo '==> gate 2/2: compose 结构 + 插值'
+            for unit in infra account app; do
+              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" config -q
+            done
+
+            # 顺序固定：infra → account（bff 启动要拉 discovery）→ app
+            # 不用 --remove-orphans：profile 不匹配时它会把 nginx-proxy/acme 当孤儿删掉。
+            for unit in infra account app; do
+              echo "==> ${unit}: pull"
+              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" pull
+              echo "==> ${unit}: up -d"
+              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" up -d --no-build
+              if [ "$unit" = "account" ]; then
+                wait_http http://127.0.0.1:8090/.well-known/openid-configuration 60
+              fi
+            done
+
+            echo '==> verify'
+            wait_http http://127.0.0.1:8080/api/public/ping 100
+            wait_healthy nitrowater-bff
+
+            echo '==> prune images older than 24h'
+            docker image prune -af --filter 'until=24h'
+
+            echo "==> done: ${ACCOUNT_IMAGE_TAG}"

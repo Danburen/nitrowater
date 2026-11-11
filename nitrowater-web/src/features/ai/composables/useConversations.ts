@@ -10,6 +10,15 @@ export interface Conversation {
   createdAt: number
   updatedAt: number
   messages: ChatMessage[]
+  /**
+   * Whether `id` is a server uuid the API listed or created.
+   *
+   * <p>Only such an id may be sent as `conversationUuid`: the server answers 404 for a uuid it does
+   * not own, and a locally generated id is exactly that. When the server loses the conversation
+   * (deleted, or a dev database rebuild) this flips to `false` and the next turn starts a new one
+   * with the local transcript as history.</p>
+   */
+  serverSide?: boolean
   /** Server paging state: older pages exist and where to continue from. */
   hasMore?: boolean
   oldestSeq?: number | null
@@ -81,6 +90,7 @@ async function initialize(authenticated: boolean): Promise<void> {
         createdAt: Date.parse(item.createdAt),
         updatedAt: Date.parse(item.lastMessageAt ?? item.createdAt),
         messages: previous?.messages ?? [],
+        serverSide: true,
       }
     })
     mode.value = 'server'
@@ -106,6 +116,7 @@ async function create(title?: string): Promise<Conversation> {
         createdAt: Date.parse(created.createdAt),
         updatedAt: Date.parse(created.lastMessageAt ?? created.createdAt),
         messages: [],
+        serverSide: true,
       }
       conversations.value = [conversation, ...conversations.value]
       persist()

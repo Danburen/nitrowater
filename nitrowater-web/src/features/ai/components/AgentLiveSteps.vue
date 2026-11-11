@@ -10,11 +10,41 @@
  * <p>The list is live-only: it is never persisted, and the collapsed {@code ToolTrace} row takes
  * over once the turn completes.</p>
  */
+import { computed } from 'vue'
 import type { LiveStep } from '../types'
 
-defineProps<{
+const props = defineProps<{
   steps: readonly LiveStep[]
+  /** Whether the turn is still waiting for its first server marker. */
+  awaiting?: boolean
 }>()
+
+/**
+ * Placeholder row shown between the submit and the turn's first marker.
+ *
+ * <p>It mirrors the shape of the server's {@code thinking} row on purpose: the real marker simply
+ * replaces it a few milliseconds later, so the user never sees the timeline appear from nothing.</p>
+ */
+const PENDING: LiveStep = {
+  id: 'pending',
+  phase: 'thinking',
+  tool: null,
+  argument: null,
+  status: null,
+  ok: null,
+  resultCount: null,
+  startedAt: 0,
+  durationMs: null,
+}
+
+/** Whether the turn is still running, i.e. whether a screen reader should announce changes. */
+const live = computed(() =>
+  props.awaiting === true
+  || props.steps.some((step) => step.phase === 'thinking' || step.phase === 'tool_start'))
+
+/** @return the rows to render: real markers, or the pending card while none has arrived */
+const shown = computed<readonly LiveStep[]>(() =>
+  props.steps.length > 0 || props.awaiting !== true ? props.steps : [PENDING])
 
 /** Display names of the agent's tools; unknown tools fall back to their raw id. */
 const TOOL_LABELS: Readonly<Record<string, string>> = {
@@ -69,10 +99,10 @@ function state(step: LiveStep): 'running' | 'failed' | 'done' {
   <ol
     class="live-steps"
     role="status"
-    aria-live="polite"
+    :aria-live="live ? 'polite' : 'off'"
   >
     <li
-      v-for="step in steps"
+      v-for="step in shown"
       :key="step.id"
       class="live-step"
       :class="`is-${state(step)}`"

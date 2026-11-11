@@ -2,7 +2,7 @@ package cn.nitrowater.server.web.vo;
 
 import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.infra.entity.AiMessage;
-import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.model.rag.DocSource;
 import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 import tools.jackson.core.type.TypeReference;
 

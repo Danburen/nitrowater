@@ -1,8 +1,8 @@
 package cn.nitrowater.server.service.ai.tool;
 
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
-import cn.nitrowater.server.service.ai.AiMemoryService;
-import cn.nitrowater.server.service.ai.model.MemorySaveResult;
+import cn.nitrowater.server.service.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.model.memory.MemorySaveResult;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import cn.nitrowater.server.service.ai.model.tool.ToolResponse;
 import cn.nitrowater.server.infra.enums.MemoryKind;

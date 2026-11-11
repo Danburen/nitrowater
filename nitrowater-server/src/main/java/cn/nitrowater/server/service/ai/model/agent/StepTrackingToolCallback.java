@@ -1,7 +1,7 @@
 package cn.nitrowater.server.service.ai.model.agent;
 
 import cn.nitrowater.lib.utils.JsonUtil;
-import cn.nitrowater.server.service.ai.model.AiStreamChunk;
+import cn.nitrowater.server.service.ai.agent.AiStreamChunk;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import cn.nitrowater.server.service.ai.model.tool.ToolResponse;
 import org.jetbrains.annotations.NotNull;

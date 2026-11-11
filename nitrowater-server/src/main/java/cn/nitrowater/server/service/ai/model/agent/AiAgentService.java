@@ -1,22 +1,20 @@
 package cn.nitrowater.server.service.ai.model.agent;
 
-import cn.nitrowater.server.service.ai.AiAdminSettingsService;
-import cn.nitrowater.server.service.ai.model.AiInput;
+import cn.nitrowater.server.service.ai.agent.*;
+import cn.nitrowater.server.service.ai.ops.AiAdminSettingsService;
 import cn.nitrowater.server.infra.exception.AiTurnTimeoutException;
-import cn.nitrowater.server.service.ai.properties.AiProperties;
-import cn.nitrowater.server.service.ai.model.AiStreamChunk;
-import cn.nitrowater.server.service.ai.model.AiTokenUsageMeter;
-import cn.nitrowater.server.service.ai.AiUsageService;
-import cn.nitrowater.server.service.ai.AiUsageTracker;
-import cn.nitrowater.server.service.ai.model.ChatTurn;
-import cn.nitrowater.server.service.ai.PromptBuilder;
-import cn.nitrowater.server.service.ai.AiMemoryService;
-import cn.nitrowater.server.service.ai.AiProfileService;
-import cn.nitrowater.server.service.ai.model.AiSettings;
-import cn.nitrowater.server.service.ai.model.MemoryView;
+import cn.nitrowater.server.config.ai.AiProperties;
+import cn.nitrowater.server.service.ai.model.usage.AiTokenUsageMeter;
+import cn.nitrowater.server.service.ai.ops.AiUsageService;
+import cn.nitrowater.server.service.ai.model.usage.AiUsageTracker;
+import cn.nitrowater.server.service.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.memory.AiProfileService;
+import cn.nitrowater.server.service.ai.model.admin.AiSettings;
+import cn.nitrowater.server.service.ai.model.memory.MemoryView;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
-import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.service.ai.skill.AgentSkillService;
 import cn.nitrowater.server.service.ai.tool.AgentToolRegistry;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClientMessageAggregator;
@@ -45,7 +43,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * NitroBot's general agent.
@@ -74,33 +71,33 @@ public class AiAgentService {
 
     private final ChatModel chatModel;
     private final ToolCallingManager toolCallingManager;
-    private final AgentToolRegistry tools;
-    private final SkillRegistry skills;
+    private final AgentToolRegistry toolRegistry;
+    private final AgentSkillService skillService;
     private final AiProperties properties;
     private final PromptBuilder promptBuilder;
     private final AiAdminSettingsService settings;
-    private final AiUsageService usage;
-    private final AiProfileService profiles;
-    private final AiMemoryService memories;
+    private final AiUsageService usageService;
+    private final AiProfileService profileService;
+    private final AiMemoryService memoryService;
     private final int maxToolRounds;
     private final long turnTimeoutMs;
 
     public AiAgentService(ChatModel chatModel, ToolCallingManager toolCallingManager,
-            AgentToolRegistry tools, SkillRegistry skills,
-            AiProperties properties, PromptBuilder promptBuilder, AiAdminSettingsService settings,
-            AiUsageService usage, AiProfileService profiles, AiMemoryService memories,
-            @Value("${spring.ai.tools.limits.max-total-tool-calls:10}") int maxToolRounds,
-            @Value("${app.ai.agent.turn-timeout-ms:150000}") long turnTimeoutMs) {
+                          AgentToolRegistry toolRegistry, AgentSkillService skillService,
+                          AiProperties properties, PromptBuilder promptBuilder, AiAdminSettingsService settings,
+                          AiUsageService usageService, AiProfileService profileService, AiMemoryService memoryService,
+                          @Value("${spring.ai.tools.limits.max-total-tool-calls:10}") int maxToolRounds,
+                          @Value("${app.ai.agent.turn-timeout-ms:150000}") long turnTimeoutMs) {
         this.chatModel = chatModel;
         this.toolCallingManager = toolCallingManager;
-        this.tools = tools;
-        this.skills = skills;
+        this.toolRegistry = toolRegistry;
+        this.skillService = skillService;
         this.properties = properties;
         this.promptBuilder = promptBuilder;
         this.settings = settings;
-        this.usage = usage;
-        this.profiles = profiles;
-        this.memories = memories;
+        this.usageService = usageService;
+        this.profileService = profileService;
+        this.memoryService = memoryService;
         this.maxToolRounds = Math.max(1, maxToolRounds);
         this.turnTimeoutMs = Math.max(1L, turnTimeoutMs);
     }
@@ -114,22 +111,22 @@ public class AiAgentService {
      *
      * @param question user question
      * @param history previous turns
-     * @param skillName optional selected skill
+     * @param skillNames skills the user selected for this turn (empty = automatic)
      * @param allowWeb whether the user allowed web search for this turn
      * @param uid authenticated user id whose daily token quota is charged
      * @param conversationUuid conversation that owns this turn, used as the memory source
      * @return answer + citations + tool trace
      */
-    public AgentAnswer answer(String question, List<ChatTurn> history, String skillName,
+    public AgentAnswer answer(String question, List<ChatTurn> history, List<String> skillNames,
             boolean allowWeb, long uid, String conversationUuid) {
         AiSettings runtime = requireEnabled();
         String sanitized = AiInput.question(question, properties.maxQuestionChars());
-        Skill skill = resolveSkill(skillName, runtime);
-        AgentTrace trace = traceFor(skill, String.valueOf(uid), conversationUuid);
+        List<Skill> selected = skillService.resolveSelected(skillNames, runtime);
+        AgentTrace trace = createTraceWithSkill(selected, String.valueOf(uid), conversationUuid);
         // No run: this path has no live channel, so the tools publish no steps — but they still get
         // their per-call deadline.
-        AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime, uid, null);
-        AiUsageTracker session = usage.start(uid, request.estimatedInputTokens());
+        AgentRequest request = request(sanitized, history, selected, allowWeb, trace, runtime, uid, null);
+        AiUsageTracker session = usageService.start(uid, request.estimatedInputTokens());
         long deadline = deadlineNanos();
         try {
             Prompt prompt = request.prompt();
@@ -174,7 +171,7 @@ public class AiAgentService {
      *
      * @param question user question
      * @param history previous turns
-     * @param skillName optional selected skill
+     * @param skillNames skills the user selected for this turn (empty = automatic)
      * @param allowWeb whether the user allowed web search for this turn
      * @param uid authenticated user id whose daily token quota is charged
      * @param conversationUuid conversation that owns this turn, used as the memory source
@@ -183,18 +180,19 @@ public class AiAgentService {
     public PreparedAgent prepare(
             String question,
             List<ChatTurn> history,
-            String skillName,
+            List<String> skillNames,
             boolean allowWeb,
             long uid,
             String conversationUuid
     ) {
         AiSettings runtime = requireEnabled();
         String sanitized = AiInput.question(question, properties.maxQuestionChars());
-        Skill skill = resolveSkill(skillName, runtime);
-        AgentTrace trace = traceFor(skill, String.valueOf(uid), conversationUuid);
+        List<Skill> selected = skillService.resolveSelected(skillNames, runtime);
+
+        AgentTrace trace = createTraceWithSkill(selected, String.valueOf(uid), conversationUuid);
         AgentRun run = new AgentRun();
-        AgentRequest request = request(sanitized, history, skill, allowWeb, trace, runtime, uid, run);
-        AiUsageTracker session = usage.start(uid, request.estimatedInputTokens());
+        AgentRequest request = request(sanitized, history, selected, allowWeb, trace, runtime, uid, run);
+        AiUsageTracker session = usageService.start(uid, request.estimatedInputTokens());
         long deadline = deadlineNanos();
         Flux<AiStreamChunk> chunks = run.events()
                 .doOnSubscribe(ignored -> {
@@ -247,8 +245,7 @@ public class AiAgentService {
     /**
      * Decides whether the round ended the turn or asked for tools.
      *
-     * <p>Tool markers are published by the instrumented callbacks ({@link
-     * StepTrackingToolCallback}) one invocation at a time, so this method only has to bracket the
+     * <p>Tool markers are published by the instrumented callbacks ({@link StepTrackingToolCallback}) one invocation at a time, so this method only has to bracket the
      * rounds: next-round {@code thinking}, budget exhaustion, or completion.</p>
      *
      * @param response aggregated round payload
@@ -288,7 +285,9 @@ public class AiAgentService {
     }
 
     private static void emit(AgentRun run, AiStreamChunk chunk) {
-        if (chunk.text().isEmpty() && chunk.usage() == null) {
+        // A frame may carry only the stop reason (empty text, no usage): dropping it lost
+        // `truncated`, so an answer cut by max-tokens offered no "continue" affordance.
+        if (chunk.text().isEmpty() && chunk.usage() == null && chunk.finishReason() == null) {
             return;
         }
         run.emit(chunk);
@@ -296,10 +295,14 @@ public class AiAgentService {
 
     /**
      * Builds the prompt and the tool set of one turn.
-     *
+     * <p>
+     * One settings read for the whole turn: the switches come from the snapshot already loaded
+     * by requireEnabled(), and the administrator's disable list is fetched once instead of once
+     * per tool. `allowWeb` is the user's consent only — whether the provider is configured is
+     * the tool's own business, so it must not be folded in here.
      * @param question  sanitized question
      * @param history   previous turns
-     * @param skill     selected skill, or {@code null}
+     * @param selected  skills the user selected, possibly empty
      * @param allowWeb  whether web search may be offered
      * @param trace     turn trace shared with the tools
      * @param runtime   current admin settings
@@ -307,25 +310,23 @@ public class AiAgentService {
      * @param run       turn stream for live tool markers, or {@code null} on the non-streaming path
      * @return prompt plus the input-token estimate used for quota reservation
      */
-    private AgentRequest request(String question, List<ChatTurn> history, Skill skill,
+    private AgentRequest request(String question, List<ChatTurn> history, List<Skill> selected,
             boolean allowWeb, AgentTrace trace, AiSettings runtime, long uid,
             AgentRun run) {
-        // One settings read for the whole turn: the switches come from the snapshot already loaded
-        // by requireEnabled(), and the administrator's disable list is fetched once instead of once
-        // per tool. `allowWeb` is the user's consent only — whether the provider is configured is
-        // the tool's own business, so it must not be folded in here.
         List<ToolCallback> callbacks = new ArrayList<>();
-        for (AgentTool tool : tools.forTurn(runtime, settings.disabledTools(), allowWeb)) {
+        for (AgentTool tool : toolRegistry.forTurn(runtime, settings.disabledTools(), allowWeb)) {
             callbacks.add(track(tool, run, trace));
         }
         String context = userContext(uid, question);
         String system = promptBuilder.agentSystem(
-                runtime.skillsEnabled() ? skills.list() : List.of(), skill, context,
-                properties.collections());
+                skillService.catalog(runtime), selected, context, properties.collections());
         String user = promptBuilder.agentUser(question, history);
         List<Message> messages = List.of(new SystemMessage(system), new UserMessage(user));
         Prompt prompt = new Prompt(messages, chatOptions(callbacks, trace));
-        return new AgentRequest(prompt, AiTokenUsageMeter.estimateTokens(system + user));
+        return new AgentRequest(
+                prompt,
+                AiTokenUsageMeter.estimateTokens(system + user)
+        );
     }
 
     /**
@@ -371,8 +372,8 @@ public class AiAgentService {
      */
     private String userContext(long uid, String question) {
         try {
-            String profile = profiles.promptBlock(uid);
-            List<MemoryView> recalled = memories.recall(uid, question, 3);
+            String profile = profileService.promptBlock(uid);
+            List<MemoryView> recalled = memoryService.recall(uid, question, 3);
             return promptBuilder.agentContext(profile, recalled);
         } catch (RuntimeException ex) {
             log.warn("Failed to assemble user context for uid {}: {}", uid, ex.getMessage());
@@ -425,28 +426,16 @@ public class AiAgentService {
         return Objects.requireNonNullElse(response.getResult().getOutput().getText(), "");
     }
 
-    private static AgentTrace traceFor(Skill skill, String userId, String conversationUuid) {
+    // Selected skills are inlined into the system prompt, so no loadSkill call occurs;
+    // record them here so the UI can still show which workflows were applied.
+    @NotNull
+    private static AgentTrace createTraceWithSkill(List<Skill> skills, String userId,
+            String conversationUuid) {
         AgentTrace trace = new AgentTrace(userId, conversationUuid);
-        if (skill != null) {
-            // The selected skill is inlined into the system prompt, so no loadSkill call occurs;
-            // record it here so the UI can still show which workflow was applied.
+        for (Skill skill : skills) {
             trace.addSkill(skill.name());
         }
         return trace;
-    }
-
-    private Skill resolveSkill(String skillName, AiSettings runtime) {
-        if (StringUtil.isBlank(skillName)) {
-            return null;
-        }
-        if (!runtime.skillsEnabled()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "AI skills are disabled");
-        }
-        Skill skill = skills.get(skillName);
-        if (skill == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown skill: " + skillName);
-        }
-        return skill;
     }
 
     private AiSettings requireEnabled() {

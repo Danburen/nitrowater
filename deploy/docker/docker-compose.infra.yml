@@ -4,6 +4,7 @@
 #   edge profile  : 公网入口 + 自动 TLS（仅生产启用）
 #
 # 前置（只需一次）：docker network create nitrowater-net
+# 库/账号初始化是手工一步（deploy/README.md §6），这里不挂 initdb 脚本。
 # 启动：docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
 # 带公网：docker compose ... --profile edge up -d
 # ============================================================
@@ -14,8 +15,9 @@ services:
     image: mysql:8.0
     container_name: nitrowater-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
-      MYSQL_DATABASE: nitrowater_account
+      # root 只用于首次手工建库 / 运维；业务连接走 DB_USERNAME（见 deploy/README.md §6）。
+      # 必填：没填时 compose 直接拒绝启动，而不是回落到 123456 / root。
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
     volumes:
       - nitrowater-mysql:/var/lib/mysql
     command: >
@@ -39,19 +41,10 @@ services:
     container_name: nitrowater-redis
     volumes:
       - nitrowater-redis:/data
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    command:
-      - sh
-      - -c
-      - |
-        if [ -n "$$REDIS_PASSWORD" ]; then
-          exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass "$$REDIS_PASSWORD"
-        else
-          exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-        fi
+    # 口令由 compose 从 .env 插值到命令行（不是 sh -c 里再展开一次）；必填。
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

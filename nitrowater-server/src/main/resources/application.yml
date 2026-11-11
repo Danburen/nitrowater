@@ -13,7 +13,7 @@ spring:
   # -------- 业务库（独立于 SSO 库 nitrowater；首次连接自动建库）--------
   datasource:
     url: jdbc:mysql://localhost:3306/nitrowater_biz?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true
-    username: root
+    username: "${DB_USERNAME:root}"
     password: "${DB_PASSWORD:123456}"   # 生产用 DB_PASSWORD 覆盖
     driver-class-name: com.mysql.cj.jdbc.Driver
 
@@ -69,7 +69,9 @@ spring:
         base-url: ${AI_CHAT_BASE_URL:https://api.deepseek.com}
         model: ${AI_CHAT_MODEL:deepseek-chat}
         temperature: ${AI_CHAT_TEMPERATURE:0.2}
-        max-tokens: ${AI_CHAT_MAX_TOKENS:1200}
+        # Answer budget per turn. 1200 cut most technical answers mid-sentence (~900 CJK chars);
+        # 4096 is the safe default for deepseek-chat, which supports more when the deployment does.
+        max-tokens: ${AI_CHAT_MAX_TOKENS:4096}
         # DeepSeek supports stream_options.include_usage; the usage rides on the last content chunk.
         stream-usage: true
         timeout: 90s
@@ -115,8 +117,8 @@ spring:
           jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
   config:
     import:
-      - optional:file:./deploy/config/common.yml
-      - optional:file:./deploy/config/common-dev-secrets.yml
+      - optional:file:./bin/dev/common.yml
+      - optional:file:./bin/dev/common-dev-secrets.yml
 # -------- 本服务的额外 JWT 校验（Spring 默认不校验 aud，这里显式收紧）--------
 # audiences：允许消费的 aud 列表，逗号分隔。必须与 AS 的
 # app.oidc.access-token-audiences 对齐（AS 会额外保留 client_id）。
@@ -124,6 +126,8 @@ app:
   security:
     jwt:
       audiences: nitrowater-server
+    # 浏览器跨域白名单（Bearer-only，不带 Cookie）。生产用 CORS_ALLOWED_ORIGIN_PATTERNS 覆盖。
+    cors-allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn}
   # -------- Documentation assistant: corpus, retrieval and quotas --------
   # The indexer is idempotent: a full re-index deletes the corpus and re-embeds it; deterministic
   # ids keep point ids stable.
@@ -138,6 +142,22 @@ app:
     max-history-turns: ${AI_MAX_HISTORY_TURNS:4}
     ingest-on-startup: ${AI_INGEST_ON_STARTUP:true}
     per-user-per-minute: ${AI_PER_USER_PER_MINUTE:20}
+    # ---- Context window & rolling compaction ----
+    # history-max-tokens is the primary window: history is filled newest-first until the budget is
+    # spent, so a long answer cannot crowd out recent turns. 0 falls back to max-history-turns.
+    # history-hard-max-messages bounds how many rows one turn reads.
+    # Compaction folds the oldest unsummarized turns into ai_conversation.summary once
+    # compact-trigger-messages accumulate (roughly every 8-15 turns at the default), keeping
+    # compact-keep-turns turns verbatim; /compact folds on demand. A smaller trigger means fresher
+    # summaries and more model calls.
+    context:
+      history-max-tokens: ${AI_CONTEXT_HISTORY_MAX_TOKENS:4000}
+      history-hard-max-messages: ${AI_CONTEXT_HARD_MAX_MESSAGES:60}
+      compact-enabled: ${AI_CONTEXT_COMPACT_ENABLED:true}
+      compact-trigger-messages: ${AI_CONTEXT_COMPACT_TRIGGER_MESSAGES:32}
+      compact-keep-turns: ${AI_CONTEXT_COMPACT_KEEP_TURNS:1}
+      summary-max-chars: ${AI_CONTEXT_SUMMARY_MAX_CHARS:800}
+      summary-input-max-chars: ${AI_CONTEXT_SUMMARY_INPUT_MAX_CHARS:8000}
     # Long-term memory lifecycle: unused active entries expire after retention-days; user-deleted
     # and expired rows are hard-deleted after purge-days so audit history stays bounded.
     memory:

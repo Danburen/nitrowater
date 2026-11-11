@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,10 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Admin plugin-center endpoints (CRUD).
  *
- * <p>The whole controller requires {@code ROLE_ADMIN}. {@code pluginKey} is immutable after creation,
+ * <p>The whole controller lives under {@code /api/admin/**} (so the security chain's role rule
+ * applies) and requires {@code ROLE_ADMIN}. {@code pluginKey} is immutable after creation,
  * so the update endpoint ignores the key in the payload.</p>
  */
 @RestController
+@RequestMapping("/api/admin/plugins")
 @PreAuthorize("hasAuthority('ROLE_ADMIN')")
 public class AdminPluginController {
 
@@ -44,7 +47,7 @@ public class AdminPluginController {
      * @param size page size
      * @return one page of plugin rows
      */
-    @GetMapping("/api/plugins")
+    @GetMapping
     public ApiResponse<Page<PluginAdminResp>> listAll(
             @RequestParam(name = "q", required = false) String keyword,
             @RequestParam(required = false) Boolean enabled,
@@ -56,20 +59,20 @@ public class AdminPluginController {
     }
 
     /** Admin: create a plugin. */
-    @PostMapping("/api/plugins")
+    @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PluginAdminResp create(@Valid @RequestBody PluginUpsertReq request) {
         return PluginAdminResp.from(pluginService.create(request.toDraft()));
     }
 
     /** Admin: update a plugin (key is immutable). */
-    @PutMapping("/api/plugins/{id}")
+    @PutMapping("/{id}")
     public PluginAdminResp update(@PathVariable Long id, @Valid @RequestBody PluginUpsertReq request) {
         return PluginAdminResp.from(pluginService.update(id, request.toDraft()));
     }
 
     /** Admin: delete a plugin. */
-    @DeleteMapping("/api/plugins/{id}")
+    @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
         pluginService.delete(id);

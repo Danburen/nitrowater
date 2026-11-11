@@ -287,12 +287,13 @@ VALUES (1, 50000, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1);
 -- Content-moderation audit rows. The matched terms are kept; the surrounding text is not, so a
 -- review row never becomes a second copy of the content the gate removed. `direction` records
 -- whether the hit came from the user (INPUT, the only signal used for risk control), the model
--- answer (OUTPUT) or a memory write (MEMORY).
+-- answer (OUTPUT), a memory write (MEMORY), a profile preference (PROFILE) or a rolling
+-- conversation summary (SUMMARY).
 CREATE TABLE ai_moderation_hit (
   id                BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
   uid               BIGINT UNSIGNED  NOT NULL                    COMMENT 'Logical ref account.user.uid (JWT sub)',
   conversation_uuid CHAR(36)         NULL                        COMMENT 'Conversation that triggered the hit, when known',
-  direction         TINYINT UNSIGNED NOT NULL                    COMMENT '0=INPUT,1=OUTPUT,2=MEMORY,3=PROFILE',
+  direction         TINYINT UNSIGNED NOT NULL                    COMMENT '0=INPUT,1=OUTPUT,2=MEMORY,3=PROFILE,4=SUMMARY',
   action            TINYINT UNSIGNED NOT NULL                    COMMENT '0=LOGGED,1=BLOCKED,2=MASKED',
   words             VARCHAR(255)     NOT NULL                    COMMENT 'Distinct matched terms, comma separated',
   hit_count         INT UNSIGNED     NOT NULL DEFAULT 1          COMMENT 'Number of distinct matched terms',

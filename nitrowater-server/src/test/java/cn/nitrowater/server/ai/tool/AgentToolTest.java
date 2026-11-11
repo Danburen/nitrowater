@@ -1,7 +1,7 @@
 package cn.nitrowater.server.ai.tool;
 
 import cn.nitrowater.server.infra.enums.ModerationMode;
-import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.admin.AiSettings;
 import cn.nitrowater.server.service.ai.model.agent.AgentTool;
 import cn.nitrowater.server.service.ai.model.agent.ToolFeature;
 import org.junit.jupiter.api.Test;

@@ -30,6 +30,40 @@ const copied = ref(false)
 
 const isUser = computed(() => props.message.role === 'user')
 
+/**
+ * Whether the turn has been accepted but has nothing to show yet.
+ *
+ * <p>Two windows need this: the request round trip before the server's first marker (conversation
+ * creation, then the stream opening), and the moment between the first delta and the first painted
+ * characters. Without it the turn looked like it had not started at all.</p>
+ */
+const awaiting = computed(() => props.streaming && props.steps.length === 0 && !props.message.content)
+
+/**
+ * Historical process cards, rebuilt from the persisted tool calls.
+ *
+ * <p>{@code tools_json} already travels with every stored message, so the same timeline the live
+ * turn showed survives a reload without a new column or a client-side copy. Only the per-call
+ * duration is absent, and the card simply omits it.</p>
+ */
+const settledSteps = computed<LiveStep[]>(() => props.message.tools.map((tool, index): LiveStep => ({
+  id: `tool-${index}`,
+  phase: 'tool_end',
+  tool: tool.name,
+  argument: tool.argument || null,
+  status: tool.status ?? null,
+  ok: tool.ok ?? null,
+  resultCount: tool.resultCount,
+  startedAt: 0,
+  durationMs: null,
+})))
+
+/** Live cards while the turn runs, the ones kept on the message afterwards, else the persisted calls. */
+const shownSteps = computed<readonly LiveStep[]>(() => {
+  if (props.streaming) return props.steps
+  return props.message.steps?.length ? props.message.steps : settledSteps.value
+})
+
 async function copy(): Promise<void> {
   if (!props.message.content) return
   try {
@@ -70,8 +104,9 @@ async function copy(): Promise<void> {
       </div>
 
       <AgentLiveSteps
-        v-if="!isUser && steps.length"
-        :steps="steps"
+        v-if="!isUser && (shownSteps.length || awaiting)"
+        :steps="shownSteps"
+        :awaiting="awaiting"
       />
 
       <div
@@ -176,8 +211,7 @@ async function copy(): Promise<void> {
       </div>
 
       <ToolTrace
-        v-if="!isUser && (message.tools.length || message.skills.length)"
-        :tools="message.tools"
+        v-if="!isUser && message.skills.length"
         :skills="message.skills"
       />
 

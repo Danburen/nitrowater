@@ -5,6 +5,8 @@ import cn.nitrowater.server.infra.enums.SkillOrigin;
 import cn.nitrowater.server.infra.repository.AiSkillRepository;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
 import cn.nitrowater.server.service.ai.model.skill.SkillExport;
+import cn.nitrowater.server.service.ai.skill.SkillRegistry;
+import cn.nitrowater.server.service.ai.skill.SkillService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;

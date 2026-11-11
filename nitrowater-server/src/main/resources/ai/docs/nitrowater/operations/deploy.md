@@ -33,6 +33,10 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app
 `docker-compose.app.yml` / `docker-compose.account.yml` 使用外部网络 `nitrowater-net`，需要先创建。
 Piston 只连 `nitrowater-runner-net`（app compose 内创建），server 同时连两个网络。
 
+`mysql` 容器**不挂 initdb 脚本**：首次部署要在 infra 起来之后，按 `deploy/README.md` §6
+手工建 `nitrowater_{account,biz,resource}` 三个库和业务账号，再起 account / app（顺序反了会 `Access denied`）。
+表结构由 Flyway 首次启动从基线重放。
+
 ## 2. 环境变量
 
 | 变量 | 使用者 | 说明 |
@@ -41,7 +45,7 @@ Piston 只连 `nitrowater-runner-net`（app compose 内创建），server 同时
 | `NITROWATER_KEK` | account | 32 字节 AES KEK 的 Base64，缺失即启动失败 |
 | `DEVICE_SALT` | account | 设备指纹盐 |
 | `BFF_CLIENT_SECRET` | account / bff | OIDC 机密客户端密钥，yml 无默认值 |
-| `DB_PASSWORD` | 全部 | MySQL 密码（compose 默认 `123456`） |
+| `DB_USERNAME` / `DB_PASSWORD` | 全部 | 业务连库账号，手工创建（`deploy/README.md` §6）；compose 无默认值，缺失即启动失败 |
 | `SPRING_DATASOURCE_URL` | 全部 | 含 `connectionTimeZone=UTC&preserveInstants=true` |
 | `RESOURCE_INTERNAL_TOKEN` | resource / server | `/internal/**` 共享密钥 |
 | `S3_ENDPOINT` / `S3_PUBLIC_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` | resource | S3 后端；`S3_PUBLIC_ENDPOINT` 是浏览器可达地址 |
@@ -83,7 +87,7 @@ BFF 启动时会拉 account 的 discovery；account 未就绪时 BFF 会启动�
 ```
 
 - 三个库一起备份；Qdrant 的向量索引可以重建，不必备份（语料在仓库里）。
-- `deploy/bin/reset-sso-db.ps1` 只用于重置 SSO 库，生产慎用。
+- 清库重建只在开发期做：`bin\dev\reset-db.ps1`（`deploy/bin/` 里不再放这类脚本）。
 
 ## 6. 发布流程
 

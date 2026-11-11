@@ -38,10 +38,10 @@ account 提供标准 OIDC 端点：`/oauth2/authorize`、`/oauth2/token`、`/oau
 |---|---|---|---|
 | GET | `/api/public/plugins` | 匿名 | 公开插件列表 |
 | GET | `/api/public/plugins/{key}` | 匿名 | 插件详情 |
-| GET | `/api/plugins` | 登录 | 管理视角列表 |
-| POST | `/api/plugins` | 管理员 | 新增插件 |
-| PUT | `/api/plugins/{id}` | 管理员 | 更新插件 |
-| DELETE | `/api/plugins/{id}` | 管理员 | 删除插件 |
+| GET | `/api/admin/plugins` | 管理员 | 管理视角列表 |
+| POST | `/api/admin/plugins` | 管理员 | 新增插件 |
+| PUT | `/api/admin/plugins/{id}` | 管理员 | 更新插件 |
+| DELETE | `/api/admin/plugins/{id}` | 管理员 | 删除插件 |
 | GET | `/api/admin/plugin-resources/{key}` | 管理员 | 插件产物（JAR）列表 |
 | POST | `/api/admin/plugin-resources/{key}` | 管理员 | 上传/替换 JAR |
 | DELETE | `/api/admin/plugin-resources/{key}/{uuid}` | 管理员 | 删除 JAR |
@@ -105,14 +105,15 @@ account 提供标准 OIDC 端点：`/oauth2/authorize`、`/oauth2/token`、`/oau
   "question": "如何配置跨服频道？",
   "conversationUuid": "6f1c...",
   "history": [{ "role": "user", "content": "..." }],
-  "skill": "config-walkthrough",
+  "skills": ["config-walkthrough"],
   "allowWeb": false
 }
 ```
 
 - `question` 必填，上限 `app.ai.max-question-chars`（默认 2000）。
-- `skill` 为空时由模型按需加载技能。
+- `skills` 是用户显式选择的技能名数组（上限 8 个，按优先级排序）；为空时由模型按需 `loadSkill`。多个技能会一起内联进系统提示词，冲突时以顺序靠前者为准。旧的单值 `skill` 字段仍兼容，仅在 `skills` 缺省时生效。
 - `allowWeb` 只影响 `webSearch` 工具是否注册（还需服务端配置 provider key）。
+- `continueGeneration` 让服务端沿用一个被截断的回答继续写，此时忽略 `question` 且不落库用户消息。
 
 ### 7.3 SSE 事件
 
@@ -144,9 +145,10 @@ event: done    data: {}
 
 | 状态 | 场景 |
 |---|---|
-| 400 | 参数校验失败、未知技能、未知沙箱语言 |
+| 400 | 参数校验失败、未知技能（`skill_unknown`）、未知沙箱语言 |
 | 401 | 未登录 / 会话过期 / token 刷新失败 |
 | 403 | 权限不足、CSRF 校验失败、audience 不匹配 |
 | 404 | 会话/资源/插件不存在，或不属于当前用户 |
 | 429 | 限流、队列满、排队超时 |
+| 503 | AI 或某项能力被管理员关闭（如选择技能但技能已关：`ai_skills_disabled`） |
 | 503 | AI 关闭、Piston 不可用 |

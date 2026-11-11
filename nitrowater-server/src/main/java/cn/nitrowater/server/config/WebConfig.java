@@ -1,6 +1,6 @@
 package cn.nitrowater.server.config;
 
-import cn.nitrowater.server.service.ai.AiRateLimitInterceptor;
+import cn.nitrowater.server.infra.ratelimit.AiRateLimitInterceptor;
 import cn.nitrowater.server.infra.ratelimit.SandboxRateLimitInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -29,6 +29,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(sandboxRateLimitInterceptor)
                 .addPathPatterns("/api/sandbox/**");
         registry.addInterceptor(aiRateLimitInterceptor)
-                .addPathPatterns("/api/ai/agent/chat", "/api/ai/agent/chat/stream");
+                .addPathPatterns("/api/ai/agent/chat", "/api/ai/agent/chat/stream",
+                        "/api/ai/conversations/*/compact");
     }
 }

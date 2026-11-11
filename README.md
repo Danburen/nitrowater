@@ -70,6 +70,7 @@ See [`bin/README.md`](bin/README.md) for start/stop flags and the `bin/dev/` dat
 | Gitee | https://gitee.com/blackwallet/nitrowarer |
 
 - Requirements / design: [`docs/PRD.md`](docs/PRD.md)
+- Deployment (Docker, single host): [`deploy/README.md`](deploy/README.md)
 - Architecture notes & project understanding: `.ai/PROJECT.md`
 
 ## License

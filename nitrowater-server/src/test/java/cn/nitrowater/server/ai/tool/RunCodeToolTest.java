@@ -2,7 +2,7 @@ package cn.nitrowater.server.ai.tool;
 
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.agent.ToolCall;
-import cn.nitrowater.server.config.properties.SandboxProperties;
+import cn.nitrowater.server.config.SandboxProperties;
 import cn.nitrowater.server.infra.exception.SandboxException;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
 import cn.nitrowater.server.service.ai.tool.RunCodeTool;

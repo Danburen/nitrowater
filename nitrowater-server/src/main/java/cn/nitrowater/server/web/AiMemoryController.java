@@ -2,7 +2,7 @@ package cn.nitrowater.server.web;
 
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.infra.enums.MemoryKind;
-import cn.nitrowater.server.service.ai.AiMemoryService;
+import cn.nitrowater.server.service.ai.memory.AiMemoryService;
 import cn.nitrowater.server.web.vo.AiMemoryResp;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.DeleteMapping;

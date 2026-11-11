@@ -38,14 +38,14 @@ nitrowater-server :8081  nitrowater-resource :8093  nitrowater-account :8090
 ### 2.2 业务 API
 
 ```text
-SPA -> BFF /api/plugins
+SPA -> BFF /api/admin/plugins
         -> OAuth2AuthorizedClientManager 取当前会话 token
         -> 有效：注入 Authorization: Bearer <AT>
         -> 过期：服务端 refresh_token，刷新后继续
         -> 转发到 server :8081（按前缀路由到 server 或 resource）
 ```
 
-- 路由规则：`/api/ai/**`、`/api/plugins/**`、`/api/sandbox/**` 等业务前缀走 server；`/api/resource/**`、`/api/public/resource/**` 走 resource；`/api/public/plugins` 走 server。
+- 路由规则：`/api/ai/**`、`/api/admin/plugins/**`、`/api/sandbox/**` 等业务前缀走 server；`/api/resource/**`、`/api/public/resource/**` 走 resource；`/api/public/plugins` 走 server。
 - 响应流式回传：`ApiProxyController` 使用 `InputStreamResource` 双向转发，避免把大文件（插件 jar）读进 BFF 堆。
 
 ### 2.3 文件上传（预签名）

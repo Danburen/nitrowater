@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.MessagePage;
+import cn.nitrowater.server.service.ai.model.memory.MessagePage;
 
 import java.util.List;
 

@@ -7,8 +7,9 @@
 # 密钥、端口。
 #
 # 用法：
-#   bash deploy/bin/check-env.sh              # Docker 上线
-#   bash deploy/bin/check-env.sh --local      # 本地 dev（额外检查端口）
+#   bash deploy/bin/check-env.sh                       # Docker 上线
+#   bash deploy/bin/check-env.sh --local               # 本地 dev（额外检查端口）
+#   bash deploy/bin/check-env.sh a.env b.env           # 多个 env 文件，后者覆盖前者
 #   ENV_FILE=deploy/docker/.env bash deploy/bin/check-env.sh
 #
 # 退出码：0 = 无 FAIL；1 = 存在 FAIL
@@ -21,12 +22,23 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 
 LOCAL=0
+ENV_FILES=()
 for arg in "$@"; do
     case "$arg" in
         --local) LOCAL=1 ;;
         -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+        *) ENV_FILES+=("$arg") ;;
     esac
 done
+# Default deploy layout: non-secret values in .env, secrets in .env.prod.secrets. compose gets
+# both (--env-file a --env-file b), so this gate reads the same pair in the same order.
+if [ ${#ENV_FILES[@]} -eq 0 ]; then
+    if [ -n "${ENV_FILE:-}" ]; then
+        ENV_FILES=("$ENV_FILE")
+    else
+        ENV_FILES=("$ROOT/docker/.env" "$ROOT/docker/.env.prod.secrets")
+    fi
+fi
 
 PASS=0
 WARN=0
@@ -44,22 +56,31 @@ fail() { FAIL=$((FAIL + 1)); printf '  %s[FAIL]%s %s -- %s\n' "$C_RED" "$C_RST" 
 info() { printf '  %s[INFO]%s %s -- %s\n' "$C_GRY" "$C_RST" "$1" "$2"; }
 
 # ---------- 1. .env ----------
-ENV_PATH="${ENV_FILE:-$ROOT/docker/.env}"
-if [ -f "$ENV_PATH" ]; then
+# Keys this script exported itself: a variable from the real process environment must keep
+# winning (compose behaves the same), while among files the last one wins.
+declare -A DOTENV_KEYS=()
+ENV_PATHS=()
+for env_file in "${ENV_FILES[@]}"; do
+    [ -f "$env_file" ] || continue
     while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"    # 容忍 CRLF：Windows 上编辑过的 .env 不能让值尾带 \r
         trimmed="${line#"${line%%[![:space:]]*}"}"
         case "$trimmed" in ''|'#'*) continue ;; esac
         key="${trimmed%%=*}"
         case "$key" in ''|*[!A-Za-z0-9_]*) continue ;; esac
         value="${trimmed#*=}"
         value="${value%\"}"; value="${value#\"}"; value="${value%\'}"; value="${value#\'}"
-        if [ -z "${!key:-}" ]; then
+        if [ -z "${!key:-}" ] || [ -n "${DOTENV_KEYS[$key]:-}" ]; then
             export "$key=$value"
+            DOTENV_KEYS[$key]=1
         fi
-    done < "$ENV_PATH"
-    info '.env' "已加载 $ENV_PATH"
+    done < "$env_file"
+    ENV_PATHS+=("$env_file")
+done
+if [ ${#ENV_PATHS[@]} -gt 0 ]; then
+    info '.env' "已加载 ${ENV_PATHS[*]}"
 else
-    warn '.env' "未找到 $ENV_PATH（仅用进程环境变量；Docker 上线应存在）"
+    warn '.env' "未找到 ${ENV_FILES[*]}（仅用进程环境变量；Docker 上线应存在）"
 fi
 
 CONTENT_ROOT="${CONTENT_ROOT:-$ROOT/content}"
@@ -100,22 +121,136 @@ echo '--------------------------------------------------------------------'
 # 模板占位值（YOUR_*_HERE）必须阻断：把 .env.prod.example 原样复制过来时，
 # 以下逐项规则只认空值 / 已知弱默认，占位值会一路 PASS（评估 M3）。
 PLACEHOLDERS=''
-if [ -f "$ENV_PATH" ]; then
+for env_file in "${ENV_PATHS[@]}"; do
     while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
         trimmed="${line#"${line%%[![:space:]]*}"}"
         case "$trimmed" in ''|'#'*) continue ;; esac
         key="${trimmed%%=*}"
         case "$key" in ''|*[!A-Za-z0-9_]*) continue ;; esac
         value="${!key:-}"
         if [ -n "$value" ] && is_placeholder "$value"; then
-            PLACEHOLDERS="$PLACEHOLDERS $key"
+            case " $PLACEHOLDERS " in *" $key "*) ;; *) PLACEHOLDERS="$PLACEHOLDERS $key" ;; esac
         fi
-    done < "$ENV_PATH"
-fi
+    done < "$env_file"
+done
 if [ -n "$PLACEHOLDERS" ]; then
     fail 'placeholders' "仍是模板占位值，需换成真实值：$PLACEHOLDERS"
 else
     pass 'placeholders' '未发现 YOUR_*_HERE 占位值'
+fi
+
+# ---------- 2.1 compose -> .env 覆盖 ----------
+# 上面的规则只覆盖"有人记得加"的键；这里从 compose 反推：默认值是 URL/端口这类无害值就允许留空，
+# 默认值是凭据或 dev 默认值就必须在 .env 里显式给值，否则就成了"复制模板改几个字就上线"。
+# 两级严重度：`.env 没给值` = FAIL（部署不可能安全）；`给了但仍是 dev 值` = WARN（单机内部署可接受）。
+DEV_DEFAULT_VALUES=' 123456 change-me device-salt-dev nitrowater-bff-secret root dev not-configured '
+COMPOSE_DIR="$ROOT/docker"
+declare -A COMPOSE_KEYS=()
+declare -A REFERENCED=()
+UNFILLED=''
+DEV_DEFAULTED=''
+FROM_ENV=0
+FROM_DEFAULT=0
+LITERAL=0
+
+is_dev_default() {
+    case " $DEV_DEFAULT_VALUES " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+
+for compose_file in "$COMPOSE_DIR"/docker-compose.*.yml; do
+    [ -f "$compose_file" ] || continue
+    while IFS= read -r ref; do
+        [ -n "$ref" ] || continue
+        REFERENCED[$ref]=1
+    done <<EOF
+$(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*' "$compose_file" | sed 's/^\${//' | sort -u)
+EOF
+    while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        key="${entry%%:*}"
+        key="${key#"${key%%[![:space:]]*}"}"
+        raw="${entry#*:}"
+        raw="${raw#"${raw%%[![:space:]]*}"}"
+        if [ -n "${COMPOSE_KEYS[$key]:-}" ]; then continue; fi
+        COMPOSE_KEYS[$key]=1
+        case "$raw" in
+            *'${'*) ;;
+            *) LITERAL=$((LITERAL + 1)); continue ;;
+        esac
+
+        # 单个 ${VAR...} 表达式：要看的是 VAR 的值，不是 compose 里的键名。
+        if [[ "$raw" =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)(:[^}]*)?\}$ ]]; then
+            var="${BASH_REMATCH[1]}"
+            value="${!var:-}"
+            if [ -n "$value" ]; then
+                # 占位值交给上面的 placeholders 检查，这里只抓真实 dev 值。
+                if ! is_placeholder "$value" && is_dev_default "$value"; then
+                    DEV_DEFAULTED="$DEV_DEFAULTED $var=$value"
+                else
+                    FROM_ENV=$((FROM_ENV + 1))
+                fi
+            elif [[ "$raw" == *':?'* || "$raw" =~ ^\$\{[A-Za-z_][A-Za-z0-9_]*\}$ ]]; then
+                UNFILLED="$UNFILLED $var"
+            elif [[ "$raw" =~ 123456|change-me|device-salt-dev|bff-secret|not-configured|:-root ]]; then
+                UNFILLED="$UNFILLED $var"
+            else
+                FROM_DEFAULT=$((FROM_DEFAULT + 1))
+            fi
+            continue
+        fi
+
+        # 混合表达式（URL / healthcheck）：只有显式必填标记才算阻塞。
+        if [[ "$raw" == *':?'* ]] && [ -z "${!key:-}" ]; then
+            UNFILLED="$UNFILLED $key"
+        else
+            FROM_DEFAULT=$((FROM_DEFAULT + 1))
+        fi
+    done <<EOF
+$(grep -E '^      [A-Z][A-Z0-9_]*:' "$compose_file")
+EOF
+done
+
+if [ -n "$UNFILLED" ]; then UNFILLED="$(printf '%s\n' $UNFILLED | sort -u | tr '\n' ' ')"; fi
+if [ -n "$DEV_DEFAULTED" ]; then DEV_DEFAULTED="$(printf '%s\n' $DEV_DEFAULTED | sort -u | tr '\n' ' ')"; fi
+# The compose inventory only describes the Docker path; local dev talks to the host MySQL/Redis
+# with its own (root) credentials, so reporting it there would be pure noise.
+if [ "$LOCAL" -eq 1 ]; then
+    info 'compose-coverage' '本地 dev 跳过（仅 Docker 上线检查 compose 覆盖）'
+elif [ -n "$UNFILLED" ]; then
+    fail 'compose-coverage' ".env 缺这些值，compose 会回落到空值或 dev 默认值：$UNFILLED"
+else
+    pass 'compose-coverage' "compose 变量都已覆盖（.env=$FROM_ENV 安全默认=$FROM_DEFAULT 字面量=$LITERAL）"
+fi
+if [ "$LOCAL" -eq 1 ]; then
+    info 'compose-defaults' '本地 dev 跳过'
+elif [ -n "$DEV_DEFAULTED" ]; then
+    warn 'compose-defaults' "仍是 dev 默认值（单机可接受，公网必须换）：$DEV_DEFAULTED"
+else
+    pass 'compose-defaults' '没有使用 dev 默认值'
+fi
+
+# 反向：.env 写了但没有任何 compose 引用 -> 不会进容器（"配了但没生效"比"没配"更糟）。
+ENV_ONLY=''
+for env_file in "${ENV_PATHS[@]}"; do
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        case "$trimmed" in ''|'#'*) continue ;; esac
+        key="${trimmed%%=*}"
+        case "$key" in ''|*[!A-Za-z0-9_]*) continue ;; esac
+        if [ -z "${REFERENCED[$key]:-}" ]; then
+            case " $ENV_ONLY " in *" $key "*) ;; *) ENV_ONLY="$ENV_ONLY $key" ;; esac
+        fi
+    done < "$env_file"
+done
+if [ "$LOCAL" -eq 1 ]; then
+    info '.env-unused' '本地 dev 跳过'
+elif [ -n "$ENV_ONLY" ]; then
+    warn '.env-unused' "这些键没有任何 compose 引用，不会进容器：$ENV_ONLY"
+else
+    pass '.env-unused' '.env 的键都被 compose 引用'
 fi
 
 if [ -z "${NITROWATER_KEK:-}" ]; then
@@ -157,6 +292,39 @@ elif [ "$LOCAL" -eq 0 ] && [ "$DB_PASSWORD" = '123456' ]; then
     fail 'DB_PASSWORD' '仍是 dev 默认值 123456'
 else
     pass 'DB_PASSWORD' '已设置'
+fi
+
+# The app account is created by hand once (deploy/README.md §6); root is bootstrap-only. A pool
+# credential that owns every schema turns any SQL injection into a full-database compromise.
+DB_USERNAME="${DB_USERNAME:-}"
+if [ "$LOCAL" -eq 1 ]; then
+    info 'DB_USERNAME' '本地 dev 用宿主机账号（Docker 上线必须是专用账号）'
+elif [ -z "$DB_USERNAME" ]; then
+    fail 'DB_USERNAME' '未设置（业务连库账号，见 deploy/README.md §6）'
+elif [ "$DB_USERNAME" = 'root' ]; then
+    fail 'DB_USERNAME' 'root：改用 README §6 建的专用账号'
+elif is_placeholder "$DB_USERNAME"; then
+    fail 'DB_USERNAME' '仍是模板占位值'
+elif ! printf '%s' "$DB_USERNAME" | grep -Eq '^[A-Za-z0-9_]{1,32}$'; then
+    fail 'DB_USERNAME' "只能是 [A-Za-z0-9_]：$DB_USERNAME"
+else
+    pass 'DB_USERNAME' "$DB_USERNAME"
+fi
+
+# MySQL root password is only used by the one-time manual bootstrap and by admin work.
+MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-}"
+if [ "$LOCAL" -eq 1 ]; then
+    info 'MYSQL_ROOT_PASSWORD' '本地 dev 不跑 infra 容器，跳过'
+elif [ -z "$MYSQL_ROOT_PASSWORD" ]; then
+    fail 'MYSQL_ROOT_PASSWORD' '未设置（infra 初始化 MySQL 需要）'
+elif is_placeholder "$MYSQL_ROOT_PASSWORD"; then
+    fail 'MYSQL_ROOT_PASSWORD' '仍是模板占位值'
+elif [ "$MYSQL_ROOT_PASSWORD" = '123456' ]; then
+    fail 'MYSQL_ROOT_PASSWORD' '仍是 dev 默认值 123456'
+elif [ "$MYSQL_ROOT_PASSWORD" = "$DB_PASSWORD" ]; then
+    warn 'MYSQL_ROOT_PASSWORD' '与 DB_PASSWORD 相同（建议分成两个）'
+else
+    pass 'MYSQL_ROOT_PASSWORD' '已设置'
 fi
 
 BFF_SECRET="${BFF_CLIENT_SECRET:-}"
@@ -442,7 +610,7 @@ echo ''
 echo "Pass: $PASS | Warn: $WARN | Fail: $FAIL"
 if [ "$FAIL" -gt 0 ]; then
     echo ''
-    echo '  [FAIL] 存在阻断项，修好再上线。变量含义见 deploy/env-vars-reference.md'
+    echo '  [FAIL] 存在阻断项，修好再上线。变量与拓扑见 deploy/README.md'
     echo '         内容挂载见 deploy/content/README.md'
     exit 1
 fi

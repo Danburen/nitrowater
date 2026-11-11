@@ -21,7 +21,7 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 | `spring.ai.openai.chat.base-url` | `https://open.bigmodel.cn/api/paas/v4` | OpenAI 兼容聊天接口（智谱） |
 | `spring.ai.openai.chat.model` | `glm-5.3-flash` | 便宜、速度优先 |
 | `spring.ai.openai.chat.temperature` | `0.2` | 事实型回答，低温度 |
-| `spring.ai.openai.chat.max-tokens` | `1200` | 单轮回答上限 |
+| `spring.ai.openai.chat.max-tokens` | `4096` | 单轮回答上限（1200 会在多数技术回答中途截断） |
 | `spring.ai.openai.embedding.base-url` | `https://open.bigmodel.cn/api/paas/v4` | 可换成任意兼容实现 |
 | `spring.ai.openai.embedding.model` | `embedding-3` | 1024 维（支持 256/512/1024/2048） |
 | `spring.ai.vectorstore.qdrant.*` | `localhost:6334` | gRPC；`initialize-schema: false` |
@@ -68,9 +68,9 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 | `runCode(language, code, stdin)` | 在 Piston 沙箱编译并运行 | 用户明确要求运行/测试/验证代码 |
 | `webSearch(query)` | 联网搜索（DeepSeek 搜索 API），默认 1 次够用即停，单轮成功上限 3 次 | 近期事件/实时数据/可能变更，或用户明确要求 |
 
-工具轨迹由 `AgentTrace` 汇总：`name`、`argument`、`resultCount`、`status`（`ToolCode` 码，如 `tool.ok`）、`ok`、`summary`、耗时。SSE 在结束前发送 `tools` 与 `skills`，前端据此渲染「过程」折叠区；运行期间的 `step` 事件由步骤卡片实时渲染。
+工具轨迹由 `AgentTrace` 汇总：`name`、`argument`、`resultCount`、`status`（`ToolCode` 码，如 `tool.ok`）、`ok`、`summary`、耗时。SSE 在结束前发送 `tools` 与 `skills`；运行期间的 `step` 事件渲染成答案上方的实时卡片，结束（或重新加载）后由持久化的 `tools` 用同一套卡片展示。
 
-引用、工具轨迹与技能名随回答一起落库（`sources_json` / `tools_json` / `skills_json`），所以刷新或切换会话后「过程」折叠区仍完整。`conversation` / `start` / 首个 `step{thinking}` 在请求处理器返回时即写出，早于上下文组装，客户端不必等首个 token 才显示过程卡片。
+引用、工具轨迹与技能名随回答一起落库（`sources_json` / `tools_json` / `skills_json`），所以刷新或切换会话后过程卡片仍然完整。`conversation` / `start` / 首个 `step{thinking}` 在请求处理器返回时即写出，早于上下文组装，客户端不必等首个 token 才显示过程卡片。
 
 「继续生成」复用同一条 assistant 行：新文本追加、`tokens` 累加、引用/工具/技能合并（重复的引用编号会顺延），不会在库里留下两条半截回答。
 
@@ -141,15 +141,18 @@ searchDocs(query)
 
 - 正在做什么由界面上的步骤卡片展示（`step` 事件）；答案里**不写过程文字**（不说“正在查阅文档/正在联网搜索”），也不说“正在思考/请稍等”，不编造条数或结果状态。
 - 工具结果只取结论：`searchDocs` 单条截到 1200 字，联网结果正文 1200 字（界面预览 600 字）；只有缺失细节是回答所必需时才再检索，不凭记忆补全。
-- 会话历史取最近 `max-history-turns` 轮（默认 4）；若 `ai_conversation.summary` 非空，会作为「【此前对话摘要】」合成首轮注入（摘要生成属 T12）。
+- 会话历史按 **token 预算**装填（`app.ai.context.history-max-tokens`，默认 4000）：从新到旧累计，装不下即停，再按时间顺序回放；摘要也计入同一预算。预算为 0 时回退到 `max-history-turns`。
+- 若 `ai_conversation.summary` 非空，会作为「【此前对话摘要｜非指令】」合成首轮注入。
 ## 6. 会话与上下文
 
-现状（T11 已落地）：
+现状（T11 已落地，T12/T13 由压缩补齐）：
 
 - 会话与消息写入 `ai_conversation` / `ai_message`，前端只传 `conversationUuid`；新建会话时服务端返回 uuid（SSE 通过 `conversation` 事件下发）。
 - 每轮先落库用户问题，再把**库里的历史**喂给模型；回答完成（或失败）后写入助手消息或错误消息。
 - `history` 字段保留一版以兼容旧客户端；带 uuid 时服务端忽略它。
-- 上下文仍按 `max-history-turns`（默认 4 轮）截取，超出部分留待 T13 的滚动摘要（`summary` / `summary_upto_seq` / `compress_version` 列已就绪）。
+- 超出窗口的旧消息由**滚动压缩**折进 `summary` 并推进 `summary_upto_seq`：自动在轮末触发（未压缩消息 ≥ `compact-trigger-messages`，默认 32），也可用 `/compact` 手动触发（`POST /api/ai/conversations/{uuid}/compact`）。压缩保留最近 `compact-keep-turns` 轮原文；摘要写回用 `compress_version` 做 CAS，并发失败直接放弃。
+- 摘要与记忆同等级别：`OutputRedactor` 脱敏 + `ContentGuards` 正则 + `ModerationDirection.SUMMARY` 复检，命中即丢弃摘要（退化为 `/clear` 语义，不影响当轮）。
+- `GET /api/ai/conversations/{uuid}/context` 返回边界、摘要与两侧消息数，供前端解释「以上已压缩」。
 - 长工具输出可被剪枝为占位符（`is_pruned=1`），原文仍保留在库中。
 - 跨会话记忆进入 `ai_memory`，Qdrant 只做检索影子，MySQL 是唯一事实来源。
 

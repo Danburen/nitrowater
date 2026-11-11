@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AgentTurnResult;
-import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.model.agent.AgentTurnResult;
+import cn.nitrowater.server.service.ai.model.rag.DocSource;
 import cn.nitrowater.server.service.ai.model.agent.ToolCall;
 
 import java.util.List;

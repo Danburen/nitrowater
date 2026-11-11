@@ -2,7 +2,7 @@ package cn.nitrowater.server.service.ai.tool;
 
 import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
-import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.config.ai.WebSearchProperties;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;

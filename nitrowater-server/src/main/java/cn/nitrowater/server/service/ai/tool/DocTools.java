@@ -1,16 +1,16 @@
 package cn.nitrowater.server.service.ai.tool;
 
-import cn.nitrowater.server.service.ai.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.ops.AiAdminSettingsService;
 import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
-import cn.nitrowater.server.service.ai.properties.AiProperties;
-import cn.nitrowater.server.service.ai.DocRetriever;
-import cn.nitrowater.server.service.ai.model.DocSource;
-import cn.nitrowater.server.service.ai.model.DocSourceMapper;
+import cn.nitrowater.server.config.ai.AiProperties;
+import cn.nitrowater.server.service.ai.rag.DocRetriever;
+import cn.nitrowater.server.service.ai.model.rag.DocSource;
+import cn.nitrowater.server.service.ai.model.rag.DocSourceMapper;
 import cn.nitrowater.server.service.ai.model.agent.AgentDoc;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import cn.nitrowater.server.service.ai.model.tool.ToolResponse;
-import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.config.ai.WebSearchProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;

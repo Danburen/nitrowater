@@ -1,7 +1,7 @@
 # ============================================================
 # nitrowater-account（SSO 认证中心）— 本地扁平配置
 # Phase 1：不引入 shared config，所有项平铺于此。
-# 配置项来源：复用 waterfun deploy/config/common.yml 的值（见注释）。
+# 配置项来源：复用 waterfun bin/dev/common.yml 的值（见注释）。
 # ============================================================
 
 server:
@@ -35,15 +35,15 @@ spring:
   # -------- 数据源（SSO 库：nitrowater_account，与业务库 nitrowater_biz 物理隔离；首次连接自动建库）--------
   datasource:
     url: jdbc:mysql://localhost:3306/nitrowater_account?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true
-    username: root
+    username: "${DB_USERNAME:root}"
     password: "${DB_PASSWORD:123456}"   # 生产用 DB_PASSWORD 覆盖
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   # -------- Redis --------
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
       database: 0
       username: default
       password: "${REDIS_PASSWORD:}"
@@ -85,8 +85,8 @@ spring:
         period: 0
   config:
     import:
-      - optional:file:./deploy/config/common.yml
-      - optional:file:./deploy/config/common-dev-secrets.yml
+      - optional:file:./bin/dev/common.yml
+      - optional:file:./bin/dev/common-dev-secrets.yml
 
   jackson:
     mapper:
@@ -180,7 +180,8 @@ app:
   csp:
     form-action-origins: "${SSO_FORM_ACTION_ORIGINS:http://localhost:5173,http://localhost:8080,https://nitrowater.cn}"
   cors:
-    allowed-origin-patterns: "http://localhost:5173,http://localhost:5175,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5175,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn"
+    # 生产用 CORS_ALLOWED_ORIGIN_PATTERNS 覆盖为真实站点/账号域名；默认值只服务本地开发。
+    allowed-origin-patterns: "${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://localhost:5175,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5175,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn}"
   # 头像：OIDC picture claim 由 user.avatar_resource_uuid 派生（稳定读路径，非存储URL）。
   # 此处为资源服务对外的稳定基址；生产设 https://files.nitrowater.cn（或网关域名）。
   avatar:

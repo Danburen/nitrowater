@@ -60,7 +60,9 @@ services:
       PISTON_RUN_MEMORY_LIMIT: "268435456"
       PISTON_COMPILE_MEMORY_LIMIT: "536870912"
       PISTON_OUTPUT_MAX_SIZE: "1048576"
-      PISTON_MAX_CONCURRENT_JOBS: "8"
+      # 2 concurrent jobs at 512 MB compile each keeps the sandbox inside its 1 GB budget;
+      # 8 (upstream default) let a single burst OOM the whole box.
+      PISTON_MAX_CONCURRENT_JOBS: "2"
     healthcheck:
       test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://127.0.0.1:2000/api/v2/runtimes',x=>process.exit(x.statusCode===200?0:1));r.on('error',()=>process.exit(1));"]
       interval: 30s
@@ -95,13 +97,18 @@ services:
     container_name: nitrowater-resource
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8093:8093"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_resource?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-root}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       RESOURCE_BACKEND: ${RESOURCE_BACKEND:-s3}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:8333}
@@ -136,13 +143,21 @@ services:
     container_name: nitrowater-server
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8081:8081"
+    # 只有 bff 带 healthcheck（唯一对外入口）；本服务靠 restart 策略 + 日志。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
+      # 浏览器跨域白名单（Bearer-only，不带 Cookie）。生产写真实站点域名。
+      CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn}
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_biz?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-root}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       PISTON_BASE_URL: ${PISTON_BASE_URL:-http://piston:2000}
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6334"
@@ -192,6 +207,20 @@ services:
     container_name: nitrowater-bff
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8080:8080"
+      # 管理端口（只跑 health）默认不发布：healthcheck 在容器内探测，公网/宿主机都到不了。
+      # 需要从宿主机 curl 时才取消下一行（仍只绑回环，绝不改 0.0.0.0）。
+      # - "${OPS_BIND:-127.0.0.1}:9080:9080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:${MANAGEMENT_PORT:-9080}/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       VIRTUAL_HOST: ${WEB_DOMAIN:-}
       VIRTUAL_PORT: 8080
@@ -202,12 +231,14 @@ services:
       RESOURCE_BASE_URL: http://resource:8093
       ACCOUNT_BASE_URL: http://account:8090
       SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:-nitrowater-bff-secret}
       # 每次发布换新值：epoch 不同的旧会话会被丢弃。
       APP_SESSION_EPOCH: ${APP_SESSION_EPOCH:-dev}
       POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI:-http://localhost:5173}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      # 与 management.server.port 同源：改这个值，健康探测地址自动跟着变。
+      MANAGEMENT_PORT: ${MANAGEMENT_PORT:-9080}
       PLUGIN_DOCS_UPSTREAM: http://docs:80
     depends_on:
       - server

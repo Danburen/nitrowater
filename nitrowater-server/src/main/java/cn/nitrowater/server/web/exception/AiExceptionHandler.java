@@ -2,6 +2,7 @@ package cn.nitrowater.server.web.exception;
 
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.infra.exception.CodedException;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -15,6 +16,11 @@ import java.util.Objects;
  * stable code, so this advice has one rule instead of one method per type. Adding a rejection
  * therefore touches the exception class only, while the composer keeps switching on {@code code}
  * ({@code token_quota}, {@code content_blocked}, {@code content_cooldown}, {@code turn_timeout}).</p>
+ *
+ * <p>The content type is preset (not negotiated): the streaming endpoint declares
+ * {@code produces=text/event-stream} and its clients send {@code Accept: text/event-stream}, so a
+ * negotiated JSON body would fail with {@code HttpMediaTypeNotAcceptableException} and the browser
+ * would only see the status.</p>
  */
 @RestControllerAdvice(basePackages = "cn.nitrowater.server.web")
 public class AiExceptionHandler {
@@ -30,6 +36,8 @@ public class AiExceptionHandler {
     }
 
     private static ResponseEntity<ApiResponse<Void>> body(int status, String code, String message) {
-        return ResponseEntity.status(status).body(ApiResponse.reject(code, message, null));
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ApiResponse.reject(code, message, null));
     }
 }

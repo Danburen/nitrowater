@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiProfile;
+import cn.nitrowater.server.service.ai.model.memory.AiProfile;
 
 import java.time.Instant;
 import java.util.List;

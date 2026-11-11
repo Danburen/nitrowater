@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -29,6 +30,13 @@ import java.util.List;
  * exception (resource/storage failures, AI quota, sandbox errors, Spring Security denials) wins by
  * exception-type specificity, and this class only picks up the rest. Services opt in with
  * {@code @Import(GlobalExceptionHandler.class)}.</p>
+ *
+ * <p>Every reply pins {@code Content-Type: application/json} instead of negotiating it. An SSE
+ * client sends {@code Accept: text/event-stream} and nothing else, so negotiation used to fail with
+ * {@code HttpMediaTypeNotAcceptableException} and the browser saw a bare status (a 404 with no body
+ * and no message) instead of the envelope. A preset content type makes the converter skip
+ * negotiation, which is what keeps the documented error shape reachable from streaming endpoints
+ * (a rejection raised before the stream opens - unknown conversation, disabled mode, quota).</p>
  */
 @RestControllerAdvice
 @Order(Ordered.LOWEST_PRECEDENCE)
@@ -57,7 +65,9 @@ public class GlobalExceptionHandler {
                 .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .toList();
         String message = errors.isEmpty() ? "请求参数不合法" : String.join("; ", errors);
-        return ResponseEntity.badRequest().body(ApiResponse.reject("invalid_request", message, errors));
+        return ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ApiResponse.reject("invalid_request", message, errors));
     }
 
     /**
@@ -69,7 +79,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Object>> handleNotReadable(HttpMessageNotReadableException ex) {
         log.warn("Malformed request body: {}", ex.getMessage());
-        return ResponseEntity.badRequest().body(ApiResponse.reject("invalid_request", "请求体格式错误", null));
+        return ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ApiResponse.reject("invalid_request", "请求体格式错误", null));
     }
 
     /**
@@ -88,6 +100,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleMultipart(MultipartException ex) {
         log.warn("Malformed multipart request: {} | cause chain: {}", ex.getMessage(), describeCauseChain(ex));
         return ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.reject("invalid_multipart", "上传内容无法解析，请重试", null));
     }
 
@@ -102,6 +115,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleUploadTooLarge(MaxUploadSizeExceededException ex) {
         log.warn("Upload rejected, size limit exceeded: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.reject("upload_too_large", "上传文件超过大小限制", null));
     }
 
@@ -117,6 +131,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleErrorResponse(ErrorResponseException ex) {
         String detail = ex.getBody().getDetail();
         return ResponseEntity.status(ex.getStatusCode())
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.reject("http_" + ex.getStatusCode().value(), detail, null));
     }
 
@@ -130,6 +145,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<Object>> handleNotFound(NoResourceFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.reject("not_found", "接口不存在", null));
     }
 
@@ -149,6 +165,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleUpstreamUnavailable(ResourceAccessException ex) {
         log.warn("Upstream call failed: {} | cause chain: {}", ex.getMessage(), describeCauseChain(ex));
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.reject("upstream_unavailable", "上游服务不可用，请稍后重试", null));
     }
 
@@ -189,6 +206,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleRuntime(RuntimeException ex) {
         log.error("Unhandled exception: ", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.reject("internal_error", "服务器内部错误", null));
     }
 }

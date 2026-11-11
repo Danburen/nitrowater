@@ -1,7 +1,7 @@
 package cn.nitrowater.server.ai.memory;
 
-import cn.nitrowater.server.service.ai.AiMemoryMaintenance;
-import cn.nitrowater.server.service.ai.AiMemoryService;
+import cn.nitrowater.server.service.ai.memory.AiMemoryMaintenance;
+import cn.nitrowater.server.service.ai.memory.AiMemoryService;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;

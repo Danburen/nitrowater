@@ -4,7 +4,7 @@ import cn.nitrowater.lib.utils.StringUtil;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import cn.nitrowater.server.service.ai.model.tool.ToolResponse;
-import cn.nitrowater.server.config.properties.SandboxProperties;
+import cn.nitrowater.server.config.SandboxProperties;
 import cn.nitrowater.server.infra.exception.SandboxException;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
 import cn.nitrowater.server.service.sandbox.SandboxExecutionGuard;

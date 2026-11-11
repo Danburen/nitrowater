@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiSlashQuota;
+import cn.nitrowater.server.service.ai.chat.AiSlashQuota;
 
 import java.time.Instant;
 import java.time.LocalDate;

@@ -21,6 +21,24 @@ server:
         # the browser will happily send the session cookie over http as well.
         secure: ${SESSION_COOKIE_SECURE:false}
 
+# -------- Actuator：只有 health，且只落在独立的管理端口 --------
+# `server.port` (8080) is the only surface the reverse proxy may reach. Health lives on its own
+# connector (9080) that compose does NOT publish — it is reachable from inside the container
+# (that is where the healthcheck runs) and from nowhere else. Only `health` is exposed; never
+# `env`/`configprops`/`heapdump`, which leak secrets and live credentials.
+management:
+  server:
+    port: ${MANAGEMENT_PORT:9080}
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
 spring:
   application:
     name: nitrowater-bff
@@ -41,8 +59,8 @@ spring:
   # -------- Redis（会话存储；无数据库）--------
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
       database: 0
       username: default
       password: "${REDIS_PASSWORD:}"

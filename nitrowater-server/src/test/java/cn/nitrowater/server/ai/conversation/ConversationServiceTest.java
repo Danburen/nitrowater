@@ -1,13 +1,15 @@
 package cn.nitrowater.server.ai.conversation;
 
 import cn.nitrowater.lib.utils.JsonUtil;
-import cn.nitrowater.server.service.ai.ConversationService;
-import cn.nitrowater.server.service.ai.properties.AiProperties;
-import cn.nitrowater.server.service.ai.model.AiTokenUsage;
-import cn.nitrowater.server.service.ai.model.ChatTurn;
-import cn.nitrowater.server.service.ai.model.ContextReset;
-import cn.nitrowater.server.service.ai.model.DocSource;
-import cn.nitrowater.server.service.ai.AiModerationService;
+import cn.nitrowater.server.service.ai.conversation.ConversationService;
+import cn.nitrowater.server.config.ai.AiProperties;
+import cn.nitrowater.server.config.ai.ContextProperties;
+import cn.nitrowater.server.service.ai.model.usage.AiTokenUsage;
+import cn.nitrowater.server.service.ai.model.agent.ChatTurn;
+import cn.nitrowater.server.service.ai.model.agent.ContextReset;
+import cn.nitrowater.server.service.ai.model.agent.ConversationContext;
+import cn.nitrowater.server.service.ai.model.rag.DocSource;
+import cn.nitrowater.server.service.ai.ops.AiModerationService;
 import cn.nitrowater.server.infra.entity.AiConversation;
 import cn.nitrowater.server.infra.entity.AiMessage;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
@@ -36,8 +38,10 @@ class ConversationServiceTest {
     private final AiMessageRepository messages = mock(AiMessageRepository.class);
     private final AiProperties properties = mock(AiProperties.class);
     private final AiModerationService moderation = mock(AiModerationService.class);
+    /** Budget disabled: these tests exercise the legacy turn-count rule and the boundary. */
+    private final ContextProperties context = new ContextProperties(0, 60, true, 32, 1, 800, 8000);
     private final ConversationService service =
-            new ConversationService(conversations, messages, properties, moderation);
+            new ConversationService(conversations, messages, properties, context, moderation);
 
     @Test
     void historyReadsOnlyMessagesAfterTheContextBoundary() {
@@ -57,8 +61,60 @@ class ConversationServiceTest {
         List<ChatTurn> history = service.history(conversation);
 
         assertThat(history).hasSize(2);
-        assertThat(history.get(0).content()).isEqualTo("【此前对话摘要】earlier turns");
+        assertThat(history.get(0).content())
+                .isEqualTo(ConversationService.SUMMARY_PREFIX + "earlier turns");
         assertThat(history.get(1).content()).isEqualTo("after boundary");
+    }
+
+    @Test
+    void historyStopsAtTheTokenBudgetKeepingTheNewestTurns() {
+        ConversationService budgeted = new ConversationService(conversations, messages, properties,
+                new ContextProperties(40, 60, true, 32, 1, 800, 8000), moderation);
+        AiConversation conversation = mock(AiConversation.class);
+        when(conversation.getId()).thenReturn(1L);
+        when(conversation.getSummaryUptoSeq()).thenReturn(0);
+        when(conversation.getSummary()).thenReturn(null);
+
+        // 100 ASCII chars ≈ 25 tokens + 4 overhead = 29 each, so only one fits a 40-token budget.
+        String filler = "x".repeat(100);
+        AiMessage newest = message(6, MessageRole.ASSISTANT, "newest " + filler);
+        AiMessage older = message(5, MessageRole.USER, "older " + filler);
+        when(messages.findByConversationIdAndSeqGreaterThanOrderBySeqDesc(eq(1L), eq(0), any(Limit.class)))
+                .thenReturn(List.of(newest, older));
+
+        List<ChatTurn> history = budgeted.history(conversation);
+
+        assertThat(history).hasSize(1);
+        assertThat(history.get(0).content()).startsWith("newest ");
+    }
+
+    @Test
+    void contextSummarizesBothSidesOfTheBoundary() {
+        AiConversation conversation = mock(AiConversation.class);
+        when(conversations.findByUuidAndUid("c-1", 7L)).thenReturn(Optional.of(conversation));
+        when(conversation.getStatus()).thenReturn(ConversationStatus.ACTIVE);
+        when(conversation.getId()).thenReturn(1L);
+        when(conversation.getSummaryUptoSeq()).thenReturn(4);
+        when(conversation.getSummary()).thenReturn("  earlier turns  ");
+        when(messages.countByConversationIdAndSeqLessThanEqual(1L, 4)).thenReturn(4L);
+        when(messages.countByConversationIdAndSeqGreaterThan(1L, 4)).thenReturn(3L);
+
+        ConversationContext view = service.context("c-1", 7L);
+
+        assertThat(view.boundarySeq()).isEqualTo(4);
+        assertThat(view.summary()).isEqualTo("earlier turns");
+        assertThat(view.summarizedMessages()).isEqualTo(4);
+        assertThat(view.pendingMessages()).isEqualTo(3);
+        assertThat(view.compactTriggerMessages()).isEqualTo(32);
+        assertThat(view.keepMessages()).isEqualTo(2);
+    }
+
+    private static AiMessage message(int seq, MessageRole role, String content) {
+        AiMessage message = mock(AiMessage.class);
+        when(message.getSeq()).thenReturn(seq);
+        when(message.getRole()).thenReturn(role);
+        when(message.getContent()).thenReturn(content);
+        return message;
     }
 
     @Test

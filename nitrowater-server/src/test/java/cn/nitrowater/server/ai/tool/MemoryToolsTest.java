@@ -1,9 +1,9 @@
 package cn.nitrowater.server.ai.tool;
 
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
-import cn.nitrowater.server.service.ai.AiMemoryService;
-import cn.nitrowater.server.service.ai.model.MemorySaveResult;
-import cn.nitrowater.server.service.ai.model.MemoryView;
+import cn.nitrowater.server.service.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.model.memory.MemorySaveResult;
+import cn.nitrowater.server.service.ai.model.memory.MemoryView;
 import cn.nitrowater.server.infra.enums.MemoryKind;
 import cn.nitrowater.server.service.ai.tool.MemoryTools;
 import org.junit.jupiter.api.Test;

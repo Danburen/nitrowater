@@ -52,6 +52,15 @@ export interface ChatMessage {
   sources: AiSource[]
   tools: AiToolCall[]
   skills: string[]
+  /**
+   * Process cards of a finished turn, kept in the local cache only.
+   *
+   * <p>The server stores the tool calls themselves ({@code tools}), which is enough to rebuild the
+   * timeline after a reload; keeping the live cards here as well preserves the durations and the
+   * exact list the user watched, so finishing a turn does not visibly rewrite it. Absent on
+   * messages restored from another device.</p>
+   */
+  steps?: LiveStep[]
   grounded: boolean | null
   /** Fatal stream error, rendered under the bubble. */
   error: string | null

@@ -37,6 +37,17 @@ RUN pnpm --filter admin-ui build
 FROM ui-base AS auth-ui
 RUN pnpm --filter auth-ui build
 
+# ==================== web SPA (nitrowater-web) ====================
+# The BFF serves the built SPA from classpath:/static/ (see WebConfig + the processResources
+# hook in nitrowater-bff/build.gradle). Build it here and overlay the output into the gradle
+# stage, so the bff image is self-contained — no host-side `npm run build`, no bind mount.
+FROM node:24-alpine AS web-ui
+WORKDIR /build/nitrowater-web
+COPY nitrowater-web/package.json nitrowater-web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY nitrowater-web/ ./
+RUN npm run build
+
 # ==================== build (gradle, all modules) ====================
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
@@ -53,35 +64,42 @@ COPY nitrowater-resource/ nitrowater-resource/
 # Overlay the freshly built SPAs (context excludes any stale local copies via .dockerignore).
 COPY --from=admin-ui /build/nitrowater-account/src/main/resources/static/admin nitrowater-account/src/main/resources/static/admin
 COPY --from=auth-ui /build/nitrowater-account/src/main/resources/static/auth nitrowater-account/src/main/resources/static/auth
+# SPA for the BFF: processResources maps nitrowater-web/dist → classpath:/static/.
+# Without this the image ships a jar with no index.html and the catch-all returns 404.
+COPY --from=web-ui /build/nitrowater-web/dist nitrowater-web/dist
 
 RUN chmod +x gradlew && ./gradlew --no-daemon -x test -PskipAdminUi -PskipAuthUi \
       :nitrowater-account:bootJar :nitrowater-bff:bootJar \
       :nitrowater-server:bootJar :nitrowater-resource:bootJar
 
-# ==================== Runtime: account (SSO) ====================
-FROM eclipse-temurin:25-jre AS account
+# ==================== Runtime base ====================
+FROM eclipse-temurin:25-jre AS runtime-base
 WORKDIR /app
+
+# ==================== Runtime: account (SSO) ====================
+FROM runtime-base AS account
 COPY --from=build /app/nitrowater-account/build/libs/app.jar app.jar
 EXPOSE 8090
 ENTRYPOINT ["java", "-jar", "app.jar"]
 
 # ==================== Runtime: resource ====================
-FROM eclipse-temurin:25-jre AS resource
-WORKDIR /app
+FROM runtime-base AS resource
 COPY --from=build /app/nitrowater-resource/build/libs/app.jar app.jar
 EXPOSE 8093
 ENTRYPOINT ["java", "-jar", "app.jar"]
 
 # ==================== Runtime: server (business API) ====================
-FROM eclipse-temurin:25-jre AS server
-WORKDIR /app
+FROM runtime-base AS server
 COPY --from=build /app/nitrowater-server/build/libs/app.jar app.jar
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]
 
 # ==================== Runtime: bff ====================
-FROM eclipse-temurin:25-jre AS bff
-WORKDIR /app
+# Only the bff carries a healthcheck, so only it needs curl (the JRE image ships without it).
+FROM runtime-base AS bff
+RUN apt-get update \
+      && apt-get install -y --no-install-recommends curl \
+      && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/nitrowater-bff/build/libs/app.jar app.jar
-EXPOSE 8080
+EXPOSE 8080 9080
 ENTRYPOINT ["java", "-jar", "app.jar"]

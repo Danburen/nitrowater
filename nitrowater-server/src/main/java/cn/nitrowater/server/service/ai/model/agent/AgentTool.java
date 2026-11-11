@@ -1,6 +1,6 @@
 package cn.nitrowater.server.service.ai.model.agent;
 
-import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.admin.AiSettings;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.util.Set;

@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.dto;
 
-import cn.nitrowater.server.service.ai.model.AiProfileUpdate;
+import cn.nitrowater.server.service.ai.model.memory.AiProfileUpdate;
 import cn.nitrowater.server.infra.enums.Expertise;
 import cn.nitrowater.server.infra.enums.ReplyStyle;
 import jakarta.validation.constraints.Size;

@@ -1,6 +1,6 @@
 package cn.nitrowater.server.infra.ratelimit;
 
-import cn.nitrowater.server.config.properties.SandboxProperties;
+import cn.nitrowater.server.config.SandboxProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;

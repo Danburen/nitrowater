@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.MemoryView;
+import cn.nitrowater.server.service.ai.model.memory.MemoryView;
 
 import java.time.Instant;
 

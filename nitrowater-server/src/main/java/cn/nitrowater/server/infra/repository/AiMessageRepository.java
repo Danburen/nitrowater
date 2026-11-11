@@ -50,9 +50,25 @@ public interface AiMessageRepository extends JpaRepository<AiMessage, Long> {
     /**
      * @param conversationId internal conversation id
      * @param seq exclusive lower bound
+     * @param limit page size
+     * @return the oldest messages above the context boundary, so a compaction folds them in order
+     *         and never starves the messages right after the boundary
+     */
+    List<AiMessage> findByConversationIdAndSeqGreaterThanOrderBySeqAsc(Long conversationId, Integer seq, Limit limit);
+
+    /**
+     * @param conversationId internal conversation id
+     * @param seq exclusive lower bound
      * @return number of messages after the given seq
      */
     long countByConversationIdAndSeqGreaterThan(Long conversationId, Integer seq);
+
+    /**
+     * @param conversationId internal conversation id
+     * @param seq inclusive upper bound
+     * @return number of messages already folded into the summary (or dropped by {@code /clear})
+     */
+    long countByConversationIdAndSeqLessThanEqual(Long conversationId, Integer seq);
 
     /**
      * @param conversationId internal conversation id

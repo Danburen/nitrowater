@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiDailyUsage;
+import cn.nitrowater.server.service.ai.model.usage.AiDailyUsage;
 
 import java.time.LocalDate;
 

@@ -1,6 +1,6 @@
 package cn.nitrowater.server.service.ai.model.agent;
 
-import cn.nitrowater.server.service.ai.model.AiStreamChunk;
+import cn.nitrowater.server.service.ai.agent.AiStreamChunk;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -59,7 +59,7 @@ public final class AgentRun {
     /**
      * @param step progress marker to publish
      */
-    void step(AiStreamChunk.Step step) {
+    public void step(AiStreamChunk.Step step) {
         emit(new AiStreamChunk("", null, null, step));
     }
 

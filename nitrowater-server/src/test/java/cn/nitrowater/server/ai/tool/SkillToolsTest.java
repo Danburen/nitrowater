@@ -1,7 +1,7 @@
 package cn.nitrowater.server.ai.tool;
 
 import cn.nitrowater.server.infra.repository.AiSkillRepository;
-import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.service.ai.skill.SkillRegistry;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.tool.SkillTools;

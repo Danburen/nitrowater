@@ -1,7 +1,7 @@
 package cn.nitrowater.server.service.ai.model.agent;
 
-import cn.nitrowater.server.service.ai.model.AiStreamChunk;
-import cn.nitrowater.server.service.ai.AiUsageTracker;
+import cn.nitrowater.server.service.ai.agent.AiStreamChunk;
+import cn.nitrowater.server.service.ai.model.usage.AiUsageTracker;
 import reactor.core.publisher.Flux;
 
 /**

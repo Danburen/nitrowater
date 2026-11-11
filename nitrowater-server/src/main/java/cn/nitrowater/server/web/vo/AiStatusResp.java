@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiGlobalQuota;
-import cn.nitrowater.server.service.ai.model.AiStatusSnapshot;
+import cn.nitrowater.server.service.ai.model.usage.AiGlobalQuota;
+import cn.nitrowater.server.service.ai.model.admin.AiStatusSnapshot;
 
 import java.time.Instant;
 

@@ -1,5 +1,5 @@
 /**
- * Plugin administration: metadata CRUD (`/api/plugins`) and the jar publish/list/delete calls used
+ * Plugin administration: metadata CRUD (`/api/admin/plugins`) and the jar publish/list/delete calls used
  * by the inline editor on `/plugins/:key`.
  *
  * Uploads go through the BFF proxy as a raw body (`Content-Length` is required by the server, which
@@ -44,7 +44,7 @@ function pluginQuery(query: PluginAdminQuery): string {
  * @returns one page of rows, newest sort order first by default
  */
 export async function listPlugins(query: PluginAdminQuery = {}): Promise<Page<PluginAdmin>> {
-  return readJson<Page<PluginAdmin>>(await apiFetch(`/api/plugins?${pluginQuery(query)}`))
+  return readJson<Page<PluginAdmin>>(await apiFetch(`/api/admin/plugins?${pluginQuery(query)}`))
 }
 
 /**
@@ -63,17 +63,17 @@ export async function findPluginAdmin(key: string): Promise<PluginAdmin | null> 
 }
 
 export async function createPlugin(payload: PluginUpsert): Promise<PluginAdmin> {
-  return readJson<PluginAdmin>(await apiFetch('/api/plugins', jsonBody(payload)))
+  return readJson<PluginAdmin>(await apiFetch('/api/admin/plugins', jsonBody(payload)))
 }
 
 export async function updatePlugin(id: number, payload: PluginUpsert): Promise<PluginAdmin> {
   return readJson<PluginAdmin>(
-    await apiFetch(`/api/plugins/${id}`, { ...jsonBody(payload), method: 'PUT' }),
+    await apiFetch(`/api/admin/plugins/${id}`, { ...jsonBody(payload), method: 'PUT' }),
   )
 }
 
 export async function deletePlugin(id: number): Promise<void> {
-  return readVoid(await apiFetch(`/api/plugins/${id}`, { method: 'DELETE' }))
+  return readVoid(await apiFetch(`/api/admin/plugins/${id}`, { method: 'DELETE' }))
 }
 
 /** Lists one page of a plugin's published jars (admin view; the public list hides non-active rows). */

@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.lib.utils.JsonUtil;
-import cn.nitrowater.server.service.ai.AgentTurnService;
+import cn.nitrowater.server.service.ai.agent.AgentTurnService;
 import cn.nitrowater.server.service.ai.model.agent.AgentEventSink;
 import cn.nitrowater.server.service.ai.model.agent.AgentStreamHandle;
 import cn.nitrowater.server.web.dto.AiAgentReq;
@@ -39,22 +39,30 @@ public class AiAgentController {
     /** Upper bound on a streamed turn, after which the turn keeps persisting without writing. */
     private static final long STREAM_TIMEOUT_MS = 180_000L;
 
-    private final AgentTurnService turns;
+    private final AgentTurnService turnService;
 
-    public AiAgentController(AgentTurnService turns) {
-        this.turns = turns;
+    public AiAgentController(AgentTurnService turnService) {
+        this.turnService = turnService;
     }
 
     /** Login: list skills for the chat picker. */
     @GetMapping("/api/ai/skills")
     public List<AiSkillResp> listSkills() {
-        return turns.pickerSkills().stream().map(AiSkillResp::fromPicker).toList();
+        return turnService
+                .pickerSkills().stream()
+                .map(AiSkillResp::fromPicker)
+                .toList();
     }
 
     /** Login: one complete agent turn (no streaming). */
     @PostMapping("/api/ai/agent/chat")
     public AiAgentResp chat(@Valid @RequestBody AiAgentReq request, Principal principal) {
-        return AiAgentResp.from(turns.chat(CurrentUser.requireUid(principal), request.toCommand()));
+        return AiAgentResp.from(
+                turnService.chat(
+                        CurrentUser.requireUid(principal),
+                        request.toCommand()
+                )
+        );
     }
 
     /**
@@ -70,7 +78,7 @@ public class AiAgentController {
     @PostMapping(value = "/api/ai/agent/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@Valid @RequestBody AiAgentReq request, Principal principal) {
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
-        AgentStreamHandle handle = turns.stream(
+        AgentStreamHandle handle = turnService.stream(
                 CurrentUser.requireUid(principal),
                 request.toCommand(),
                 new SseAgentSink(emitter)

@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiModerationReport;
+import cn.nitrowater.server.service.ai.model.moderation.AiModerationReport;
 import org.springframework.data.domain.Page;
 
 /**

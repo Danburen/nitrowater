@@ -196,6 +196,12 @@ public class AuthorizationServerConfig {
                         .csrfTokenRequestHandler(csrfRequestHandler)
                         .ignoringRequestMatchers(UNPROTECTED_PATHS))
                 .authorizeHttpRequests(a -> a
+                        // The public auth API (captcha / send-code / register / login-by-code) is
+                        // anonymous, but the self-service account center is NOT: keep the two apart so
+                        // "unauthenticated" can never read or mutate someone's account data. Both
+                        // prefixes share UNPROTECTED_PATHS for CSRF, which is a separate concern.
+                        .requestMatchers("/api/auth/account", "/api/auth/account/**")
+                        .authenticated()
                         .requestMatchers(UNPROTECTED_PATHS)
                         .permitAll()
                         // Admin SPA shell: requiring a session makes an anonymous hit 302 to /login

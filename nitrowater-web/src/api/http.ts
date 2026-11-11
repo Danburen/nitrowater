@@ -45,6 +45,24 @@ export function isQuotaRejection(text: string): boolean {
 }
 
 /**
+ * Reads the envelope `code` from a rejected body.
+ *
+ * <p>Callers branch on it (an unknown conversation is recoverable, a 500 is not), so the transport
+ * must not flatten the envelope into a message string.</p>
+ *
+ * @param text raw response body
+ * @returns the machine-readable code, or `null` when the body is not the envelope
+ */
+export function codeFor(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text) as { code?: string }
+    return parsed.code ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Status + body → user-facing message. The envelope's {@code message} always wins; the status
  * fallbacks only apply when the body is empty or not JSON.
  */

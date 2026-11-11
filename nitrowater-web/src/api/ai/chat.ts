@@ -7,7 +7,8 @@
  * access token.
  */
 import { apiFetch } from '../../auth/bff'
-import { getJson, isQuotaRejection, messageFor } from '../http'
+import { ResponseCode } from '../codes'
+import { codeFor, getJson, isQuotaRejection, messageFor } from '../http'
 import type {
   AiDailyUsage,
   AiSource,
@@ -18,10 +19,30 @@ import type {
   ChatTurn,
 } from './types'
 
-/** Raised when the daily token budget is exhausted (HTTP 429 with {@code token_quota}). */
-export class AiQuotaError extends Error {
-  constructor(message: string) {
+/**
+ * A rejected stream request, keeping the status and the envelope code.
+ *
+ * <p>The caller decides what is recoverable: a `404` only means this conversation is gone on the
+ * server (deleted elsewhere, or the dev database was rebuilt while the tab stayed open), while a
+ * `500` is a real failure. Flattening both into an `Error` message left the page unable to tell
+ * them apart.</p>
+ */
+export class AiStreamRejectedError extends Error {
+  readonly status: number
+  readonly code: string | null
+
+  constructor(message: string, status: number, code: string | null) {
     super(message)
+    this.name = 'AiStreamRejectedError'
+    this.status = status
+    this.code = code
+  }
+}
+
+/** Raised when the daily token budget is exhausted (HTTP 429 with {@code token_quota}). */
+export class AiQuotaError extends AiStreamRejectedError {
+  constructor(message: string, status = 429, code: string | null = ResponseCode.TokenQuota) {
+    super(message, status, code)
     this.name = 'AiQuotaError'
   }
 }
@@ -46,7 +67,7 @@ export async function fetchAiUsage(): Promise<AiDailyUsage> {
  * @param question user question
  * @param conversationUuid server-side conversation to continue; blank starts a new one
  * @param history previous turns (ignored by the server when a uuid is supplied)
- * @param skill optional selected skill name
+ * @param skills selected skill names, in priority order (empty = the agent chooses)
  * @param allowWeb whether the user allows web search for this turn
  * @param continueGeneration continue a truncated answer instead of asking a new question
  * @param handlers stream callbacks
@@ -56,7 +77,7 @@ export async function streamAgent(
   question: string,
   conversationUuid: string | null,
   history: ChatTurn[],
-  skill: string,
+  skills: string[],
   allowWeb: boolean,
   continueGeneration: boolean,
   handlers: AgentStreamHandlers,
@@ -72,7 +93,7 @@ export async function streamAgent(
       question,
       conversationUuid,
       history,
-      skill: skill || null,
+      skills,
       allowWeb,
       continueGeneration,
     }),
@@ -168,5 +189,8 @@ function dispatchAgent(event: string, payload: string, handlers: AgentStreamHand
 async function reject(response: Response): Promise<never> {
   const text = await response.text().catch(() => '')
   const message = messageFor(response.status, text)
-  throw isQuotaRejection(text) ? new AiQuotaError(message) : new Error(message)
+  const code = codeFor(text)
+  throw isQuotaRejection(text)
+    ? new AiQuotaError(message, response.status, code)
+    : new AiStreamRejectedError(message, response.status, code)
 }

@@ -1,6 +1,6 @@
 package cn.nitrowater.server.service.ai.model.agent;
 
-import cn.nitrowater.server.service.ai.model.DocSource;
+import cn.nitrowater.server.service.ai.model.rag.DocSource;
 import org.springframework.ai.document.Document;
 
 /**

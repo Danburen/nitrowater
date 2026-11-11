@@ -2,13 +2,15 @@
  * Slash-command catalogue and parser.
  *
  * <p>Commands are application shortcuts, not prompts: the page resolves them against dedicated
- * endpoints and never sends them to the model, so they cost zero tokens and cannot be
- * hallucinated. Only whitelisted single-word commands are intercepted — anything else starting
- * with {@code /} (a pasted path, for example) stays ordinary text — and {@code //} escapes a
- * literal leading slash.</p>
+ * endpoints instead of sending them to the model, so they cannot be hallucinated. The one
+ * exception is {@code /compact}, which asks the model to summarise old turns and therefore costs
+ * tokens; it is still a shortcut because the page, not the conversation, decides when it runs.
+ * Only whitelisted single-word commands are intercepted — anything else starting with {@code /}
+ * (a pasted path, for example) stays ordinary text — and {@code //} escapes a literal leading
+ * slash.</p>
  */
 
-export type SlashName = 'quota' | 'status' | 'profile' | 'clear'
+export type SlashName = 'quota' | 'status' | 'profile' | 'clear' | 'compact'
 
 export interface SlashCommand {
   name: SlashName
@@ -22,6 +24,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: 'status', label: '/status', description: '系统自检：模型、索引、工具' },
   { name: 'profile', label: '/profile', description: '查看已保存的用户画像' },
   { name: 'clear', label: '/clear', description: '重置上下文（保留聊天记录）' },
+  { name: 'compact', label: '/compact', description: '压缩上下文：把旧对话总结成摘要（消耗 token）' },
 ]
 
 export type ParsedSlash =

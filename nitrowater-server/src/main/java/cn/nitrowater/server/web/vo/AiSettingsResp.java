@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web.vo;
 
 import cn.nitrowater.server.infra.enums.ModerationMode;
-import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.admin.AiSettings;
 
 /**
  * Administrator-visible AI settings snapshot.

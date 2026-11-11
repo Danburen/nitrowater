@@ -34,7 +34,7 @@ const error = ref('')
 const total = ref(0)
 const totalPages = ref(1)
 
-/** Filters mirror `GET /api/plugins`; `enabled` is a tri-state select (`all` = both). */
+/** Filters mirror `GET /api/admin/plugins`; `enabled` is a tri-state select (`all` = both). */
 const query = reactive({
   q: '',
   enabled: 'all' as 'all' | 'true' | 'false',

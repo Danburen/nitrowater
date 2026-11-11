@@ -27,6 +27,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     // --- Security：BFF 是 Cookie 会话认证 → 必须开 CSRF ---
     implementation 'org.springframework.boot:spring-boot-starter-security'
+    // Health only, on a separate management port (see application.yml); nothing else is exposed.
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     // --- OIDC Client（confidential：服务端持 AT/RT，可合法换 refresh_token）---
     implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
     // --- Redis：Spring Session 会话存储（本模块无数据库）---

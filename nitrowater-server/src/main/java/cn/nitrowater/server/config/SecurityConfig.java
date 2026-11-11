@@ -77,6 +77,11 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/api/public/**", "/docs/**", "/error").permitAll()
+                        // Every admin surface lives under /api/admin/**; enforcing the role here
+                        // means a new admin controller cannot be exposed by forgetting @PreAuthorize
+                        // (method security stays as defence in depth).
+                        .requestMatchers("/api/admin/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
                         .decoder(jwtDecoder())
@@ -157,13 +162,14 @@ public class SecurityConfig {
         return List.of();
     }
 
-    /** CORS for the SPA (dev) and the nitrowater.cn sites. */
+    /** CORS for the SPA and the public sites; override with CORS_ALLOWED_ORIGIN_PATTERNS. */
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.security.cors-allowed-origin-patterns:"
+                    + "http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn}")
+            List<String> allowedOriginPatterns) {
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOriginPatterns(List.of(
-                "http://localhost:*", "http://127.0.0.1:*",
-                "https://nitrowater.cn", "https://*.nitrowater.cn"));
+        cfg.setAllowedOriginPatterns(allowedOriginPatterns);
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
         // Bearer-token API: the browser never attaches cookies here, so credentialed CORS is

@@ -1,9 +1,9 @@
 package cn.nitrowater.server.ai;
 
-import cn.nitrowater.server.service.ai.model.ChatTurn;
-import cn.nitrowater.server.service.ai.model.DocCollection;
+import cn.nitrowater.server.service.ai.model.agent.ChatTurn;
+import cn.nitrowater.server.service.ai.model.rag.DocCollection;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
-import cn.nitrowater.server.service.ai.PromptBuilder;
+import cn.nitrowater.server.service.ai.agent.PromptBuilder;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -48,9 +48,25 @@ class PromptBuilderTest {
         Skill selected = new Skill("troubleshooting", "排查流程", "用户报错时", "1. 先看日志",
                 "builtin");
 
-        String prompt = builder.agentSystem(List.of(selected), selected);
+        String prompt = builder.agentSystem(List.of(selected), List.of(selected));
 
         assertThat(prompt).contains("可用技能").contains("troubleshooting").contains("1. 先看日志");
+    }
+
+    @Test
+    void agentPromptInlinesEverySelectedSkillInPriorityOrder() {
+        Skill first = new Skill("troubleshooting", "排查流程", "用户报错时", "1. 先看日志", "builtin");
+        Skill second = new Skill("command-reference", "命令参考", "查命令时", "1. 查命令表", "builtin");
+
+        String prompt = builder.agentSystem(List.of(first, second), List.of(first, second));
+
+        assertThat(prompt)
+                .contains("用户已选择以下 2 个技能")
+                .contains("以列表顺序靠前的技能为准")
+                .contains("### troubleshooting")
+                .contains("### command-reference");
+        assertThat(prompt.indexOf("### troubleshooting"))
+                .isLessThan(prompt.indexOf("### command-reference"));
     }
 
     @Test

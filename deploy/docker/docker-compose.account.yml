@@ -17,6 +17,12 @@ services:
     container_name: nitrowater-account
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8090:8090"
+    # 只有 bff 带 healthcheck；本服务靠 restart 策略 + 日志。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       # 空值 = 未启用 edge 时不参与 nginx-proxy 的 vhost 发现。
       VIRTUAL_HOST: ${AUTH_DOMAIN:-}
@@ -25,10 +31,10 @@ services:
       LETSENCRYPT_EMAIL: ${SSL_EMAIL:-}
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_account?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-root}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-123456}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       NITROWATER_KEK: ${NITROWATER_KEK:?set NITROWATER_KEK in deploy/docker/.env}
       DEVICE_SALT: ${DEVICE_SALT:-device-salt-dev}
       BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:-nitrowater-bff-secret}
@@ -39,6 +45,11 @@ services:
       SSO_FORM_ACTION_ORIGINS: ${SSO_FORM_ACTION_ORIGINS:-http://localhost:5173,http://localhost:8080}
       # 走 HTTPS 时必须 true。
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      # 浏览器跨域白名单（带会话 Cookie，务必显式列出真实域名，不要用通配符）。
+      CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:5173,http://localhost:5175,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5175,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn}
+      # OIDC picture claim / avatar 的稳定基址（resource 的公开只读地址）。
+      # 留默认值会让生产头像指向 http://localhost:8093 —— 换域名必须同步这里。
+      AVATAR_PICTURE_BASE_URL: ${AVATAR_PICTURE_BASE_URL:-http://localhost:8093}
       COMMUNICATION_MODE: ${COMMUNICATION_MODE:-mock}
       MAIL_HOST: ${MAIL_HOST:-}
       MAIL_PORT: ${MAIL_PORT:-587}

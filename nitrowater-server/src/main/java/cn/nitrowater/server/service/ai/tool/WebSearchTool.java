@@ -5,7 +5,7 @@ import cn.nitrowater.server.service.ai.model.agent.AgentDoc;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import cn.nitrowater.server.service.ai.model.tool.ToolResponse;
-import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.config.ai.WebSearchProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;

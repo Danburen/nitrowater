@@ -40,6 +40,18 @@ export interface ServerMessagePage {
   hasMore: boolean
 }
 
+/** Result of `POST /api/ai/conversations/{uuid}/compact`. */
+export interface ServerCompaction {
+  /** False when there was nothing to fold, the feature is off, or the pass lost a race. */
+  compacted: boolean
+  summarizedMessages: number
+  boundarySeq: number
+  summaryChars: number
+  remainingMessages: number
+  /** `ok`, `nothing_to_compact`, `below_trigger`, `disabled`, `concurrent`, `summary_rejected`. */
+  reason: string
+}
+
 /** Lists active conversations, newest first. */
 export async function listConversations(cursor?: string | null, limit = 50): Promise<ServerConversation[]> {
   const params = new URLSearchParams({ limit: String(limit) })
@@ -71,6 +83,16 @@ export async function patchConversation(
 export async function deleteConversation(uuid: string): Promise<void> {
   const response = await apiFetch(`/api/ai/conversations/${encodeURIComponent(uuid)}`, { method: 'DELETE' })
   if (!response.ok) throw new Error(await errorMessage(response))
+}
+
+/**
+ * Folds old turns into the rolling summary (`/compact`).
+ *
+ * Unlike the other slash commands this one calls the model, so the server charges it against the
+ * same daily quota as a chat turn.
+ */
+export async function compactConversation(uuid: string): Promise<ServerCompaction> {
+  return sendJson<ServerCompaction>(`/api/ai/conversations/${encodeURIComponent(uuid)}/compact`, 'POST', {})
 }
 
 async function getJson<T>(url: string): Promise<T> {

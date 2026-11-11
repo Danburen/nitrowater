@@ -8,6 +8,7 @@
 .playwright-mcp/
 docs/
 deploy/
+bin/
 **/build/
 **/node_modules/
 **/dist/

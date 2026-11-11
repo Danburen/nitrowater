@@ -1,7 +1,7 @@
 package cn.nitrowater.server.ai.tool;
 
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
-import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.config.ai.WebSearchProperties;
 import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
 import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
 import cn.nitrowater.server.service.ai.tool.WebSearchTool;

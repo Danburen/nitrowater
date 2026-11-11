@@ -46,10 +46,14 @@ export const ResponseCode = {
   AiDisabled: 'ai_disabled',
   /** The requested AI mode is switched off. */
   AiModeDisabled: 'ai_mode_disabled',
-  /** The content gate blocked the request. */
+  /** The AI content gate blocked the request. */
   ContentBlocked: 'content_blocked',
   /** The content gate put the caller on cooldown. */
   ContentCooldown: 'content_cooldown',
+  /** The requested skill is not in the catalog (stale picker / removed skill). */
+  SkillUnknown: 'skill_unknown',
+  /** A skill was selected while the administrator switched skills off. */
+  SkillsDisabled: 'ai_skills_disabled',
   /** One AI turn exceeded its wall-clock budget (504). */
   TurnTimeout: 'turn_timeout',
   /** User uploads are disabled on this deployment. */

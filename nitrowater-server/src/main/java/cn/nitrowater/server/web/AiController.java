@@ -1,10 +1,11 @@
 package cn.nitrowater.server.web;
 
-import cn.nitrowater.server.service.ai.AiStatusService;
-import cn.nitrowater.server.service.ai.AiUsageService;
+import cn.nitrowater.server.service.ai.ops.AiStatusService;
+import cn.nitrowater.server.service.ai.ops.AiUsageService;
 import cn.nitrowater.server.web.vo.AiStatusResp;
 import cn.nitrowater.server.web.vo.AiUsageResp;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
@@ -21,6 +22,7 @@ import java.security.Principal;
  * question the model answers without calling any tool is simply a single-round agent turn.</p>
  */
 @RestController
+@RequestMapping("/api/ai")
 public class AiController {
 
     private final AiStatusService statusService;
@@ -32,7 +34,7 @@ public class AiController {
     }
 
     /** Login: report whether the corpus is indexed and which models are configured. */
-    @GetMapping("/api/ai/status")
+    @GetMapping("/status")
     public AiStatusResp status() {
         return AiStatusResp.from(
                 statusService.status()
@@ -40,7 +42,7 @@ public class AiController {
     }
 
     /** Login: return the current user's UTC-day token usage. */
-    @GetMapping("/api/ai/usage")
+    @GetMapping("/usage")
     public AiUsageResp currentUsage(Principal principal) {
         return AiUsageResp.from(
                 usage.forUser(

@@ -1,6 +1,6 @@
 package cn.nitrowater.server.ai.profile;
 
-import cn.nitrowater.server.service.ai.AiModerationService;
+import cn.nitrowater.server.service.ai.ops.AiModerationService;
 import cn.nitrowater.server.infra.exception.ContentBlockedException;
 import cn.nitrowater.server.infra.entity.AiProfileChange;
 import cn.nitrowater.server.infra.entity.AiUserProfile;
@@ -10,9 +10,9 @@ import cn.nitrowater.server.infra.enums.ProfileChangeSource;
 import cn.nitrowater.server.infra.enums.ReplyStyle;
 import cn.nitrowater.server.infra.repository.AiProfileChangeRepository;
 import cn.nitrowater.server.infra.repository.AiUserProfileRepository;
-import cn.nitrowater.server.service.ai.AiProfileService;
-import cn.nitrowater.server.service.ai.model.AiProfile;
-import cn.nitrowater.server.service.ai.model.AiProfileUpdate;
+import cn.nitrowater.server.service.ai.memory.AiProfileService;
+import cn.nitrowater.server.service.ai.model.memory.AiProfile;
+import cn.nitrowater.server.service.ai.model.memory.AiProfileUpdate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

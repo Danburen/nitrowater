@@ -4,7 +4,7 @@ import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
 import cn.nitrowater.server.service.ai.model.tool.ToolCode;
 import cn.nitrowater.server.service.ai.model.tool.ToolResponse;
-import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.service.ai.skill.SkillRegistry;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;

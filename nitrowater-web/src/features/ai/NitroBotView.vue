@@ -16,6 +16,7 @@ import { useRoute } from 'vue-router'
 import { useAuth } from '../../auth/useAuth'
 import {
   AiQuotaError,
+  AiStreamRejectedError,
   fetchAiStatus,
   fetchAiUsage,
   streamAgent,
@@ -26,6 +27,7 @@ import {
   type ChatTurn,
 } from '../../api/ai'
 import { useConversations, type Conversation } from './composables/useConversations'
+import { compactConversation } from '../../api/conversations'
 import { parseSlash, type SlashCommand } from './slash'
 import {
   clearSlashContext,
@@ -99,6 +101,13 @@ const scrollEl = ref<HTMLElement | null>(null)
 const loadingOlder = ref(false)
 /** User message currently at the top of the viewport (drives the timeline highlight). */
 const activeAnchor = ref<string | null>(null)
+/**
+ * Whether the transcript should follow new content.
+ *
+ * <p>Flips to false as soon as the reader scrolls up, so a streaming answer never yanks the
+ * viewport back to the bottom mid-sentence; the "回到底部" pill re-attaches it.</p>
+ */
+const followBottom = ref(true)
 let anchorFrame: number | null = null
 const composer = ref<InstanceType<typeof ChatComposer> | null>(null)
 let controller: AbortController | null = null
@@ -204,6 +213,10 @@ function onTranscriptScroll(): void {
       }
     }
     activeAnchor.value = active
+    // 32px is the "still at the bottom" band: wide enough to absorb sub-pixel and momentum jitter,
+    // narrow enough that a deliberate scroll up detaches immediately.
+    followBottom.value =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 32
   })
 }
 
@@ -255,6 +268,12 @@ async function loadStatus(): Promise<void> {
 /**
  * Refreshes the UTC-day token snapshot. Failures are silent: the snapshot is advisory, and the
  * transcript must stay usable when only the usage endpoint is down.
+ *
+ * <p>Deliberately <b>not</b> called after every turn. Enforcement is server-side and happens when a
+ * turn is admitted ({@code AiUsageService.reserve} answers {@code 429 token_quota}), so polling
+ * after each answer only adds a request per message without changing whether the next one is
+ * allowed. The snapshot is refreshed on load, when the auth state flips, and whenever the server
+ * rejects a turn (see {@link markQuotaExhausted}); {@code /quota} fetches its own fresh numbers.</p>
  */
 async function loadUsage(): Promise<void> {
   if (!authenticated.value) {
@@ -278,6 +297,17 @@ async function loadUsage(): Promise<void> {
 /** Marks the current UTC day as exhausted after the backend answered {@code token_quota}. */
 function markQuotaExhausted(): void {
   exhaustedDate.value = usage.value?.date ?? new Date().toISOString().slice(0, 10)
+}
+
+/**
+ * Whether a rejected turn means "the server does not have this conversation".
+ *
+ * <p>A 404 from the stream endpoint is never transient: the uuid is unknown for this user (deleted
+ * elsewhere, or the dev database was rebuilt). Editing the local transcript cannot fix it, but
+ * continuing as a new conversation can, so the caller recovers instead of showing a dead bubble.</p>
+ */
+function isConversationGone(error: unknown): boolean {
+  return error instanceof AiStreamRejectedError && error.status === 404
 }
 
 /** Hides the warning for the rest of the UTC day it belongs to. */
@@ -308,8 +338,9 @@ async function send(preset?: string): Promise<void> {
     return
   }
 
-  // Slash commands are application shortcuts: they never create a conversation and never reach
-  // the model, so they are answered before any chat state is touched.
+  // Slash commands are application shortcuts: they are answered before any chat state is touched.
+  // Most are zero-token lookups; `/compact` is the exception and calls the model to summarise old
+  // turns, so it is a deliberate, user-triggered spend.
   const parsed = parseSlash(raw)
   if (parsed?.kind === 'command') {
     input.value = ''
@@ -334,14 +365,37 @@ async function send(preset?: string): Promise<void> {
     return
   }
 
-  const conversation = await ensureConversation(question)
-  // Signed in: the server replays history from its own store, so the client sends none.
+  // Signed in: the server replays history from its own store, so the client sends none. Local mode
+  // must capture it before this question joins the transcript, otherwise the model would read the
+  // question twice.
   const history = mode.value === 'local' ? toTurns(messages.value) : []
+
+  // Optimistic start: the turn has to look live from the keypress, not from the first network
+  // frame. Creating the conversation is one round trip and opening the stream is another, and the
+  // page used to look completely idle during both (no bubble, no stop button).
   input.value = ''
   messages.value.push(newMessage('user', question))
-  // The bubble only exists after Vue renders; scrolling now would use the previous scrollHeight.
+  messages.value.push(newMessage('assistant', ''))
+  // Read the bubble back out of the array: `messages` is a reactive ref, so only the proxy it hands
+  // out is tracked. Mutating the raw object from `newMessage()` accumulates text without a single
+  // re-render, and the whole answer then appears at once when the turn settles.
+  const reply = messages.value[messages.value.length - 1]
+  streamingId.value = reply.id
+  liveSteps.value = []
+  controller = new AbortController()
   void scrollToBottomSoon()
-  await startTurn(conversation, question, history)
+
+  try {
+    const conversation = await ensureConversation(question)
+    await streamInto(reply, conversation, question, history, false)
+  } catch (error) {
+    // ensureConversation only throws when the conversation itself is unusable; stream failures are
+    // reported on the bubble by streamInto.
+    reply.error = error instanceof Error ? error.message : '发送失败，请稍后重试'
+  } finally {
+    streamingId.value = null
+    controller = null
+  }
 }
 
 /** Runs a deterministic shortcut; the result is rendered as an ephemeral system card. */
@@ -359,6 +413,9 @@ async function runSlash(command: SlashCommand): Promise<void> {
         return
       case 'clear':
         await clearContext()
+        return
+      case 'compact':
+        await compactContext()
         return
     }
   } catch (error) {
@@ -378,7 +435,31 @@ async function clearContext(): Promise<void> {
   pushNotice(result.droppedMessages > 0
     ? `上下文已重置：${result.droppedMessages} 条消息不再发送给模型，聊天记录仍保留`
     : '上下文已重置（当前没有可清理的消息）', 'info')
-  void loadUsage()
+}
+
+/** `/compact` keeps the transcript but folds the old turns into the rolling summary. */
+async function compactContext(): Promise<void> {
+  const conversation = activeConversation.value
+  if (!conversation) {
+    pushNotice('当前没有进行中的对话，无需压缩', 'info')
+    return
+  }
+  if (busy.value) {
+    pushNotice('回答还在生成，等这一轮结束再压缩上下文', 'warn')
+    return
+  }
+  const result = await compactConversation(conversation.id)
+  if (!result.compacted) {
+    pushNotice(result.reason === 'disabled'
+      ? '上下文压缩未启用'
+      : '当前没有需要压缩的内容', 'info')
+    return
+  }
+  pushNotice(
+    `上下文已压缩：${result.summarizedMessages} 条消息折叠为摘要（${result.summaryChars} 字），`
+      + `后续仍保留最近 ${result.remainingMessages} 条原文`,
+    'info',
+  )
 }
 
 /** Appends a display-only card; system messages are never persisted or sent to the model. */
@@ -444,6 +525,9 @@ function mergeSkills(base: string[], extra: string[]): string[] {
  * may deliver several characters per chunk, and painting them in equal slices per frame keeps the
  * visible cadence smooth regardless of upstream burst size. Scrolling happens inside the same
  * frame, so the forced layout is paid at most once per frame.</p>
+ *
+ * @param recovered set on the retry after the server rejected the conversation uuid; at most one
+ *                  retry is attempted, so a persistent failure still surfaces to the user
  */
 async function streamInto(
   reply: ChatMessage,
@@ -451,10 +535,13 @@ async function streamInto(
   question: string,
   history: ChatTurn[],
   continueGeneration: boolean,
+  recovered = false,
 ): Promise<void> {
   streamingId.value = reply.id
   liveSteps.value = []
-  controller = new AbortController()
+  // `send()` opens one so Stop works during the conversation round trip; turns started without a
+  // request (continue / regenerate) create it here instead.
+  if (!controller) controller = new AbortController()
   void scrollToBottomSoon()
 
   /** Whether a tool is still running; the answer bubble waits for the process to settle. */
@@ -490,6 +577,9 @@ async function streamInto(
         carry -= step
         reply.content += received.slice(shown, shown + step)
         shown += step
+        // The pre-answer row is a placeholder: drop it once real text is on screen rather than when
+        // the first delta reaches the buffer, which would leave the bubble visually empty.
+        if (liveSteps.value.at(-1)?.phase === 'thinking') liveSteps.value.pop()
         scrollToBottom()
       }
     }
@@ -502,9 +592,10 @@ async function streamInto(
   try {
     await streamAgent(
       question,
-      conversation.id,
+      // Only a server uuid may be sent: the API answers 404 for an id it never issued.
+      conversation.serverSide === true ? conversation.id : null,
       history,
-      '',
+      [],
       status.value?.webSearchEnabled === true && webSearch.value,
       continueGeneration,
       {
@@ -570,12 +661,9 @@ async function streamInto(
           if (firstDeltaAt === 0) firstDeltaAt = performance.now()
           received += text
           // The process timeline owns everything up to the final round; the answer bubble starts
-          // with the first token that arrives while no tool is running.
-          if (!toolRunning()) {
-            // A trailing "thinking" row only describes the pre-answer phase; the bubble replaces it.
-            if (liveSteps.value.at(-1)?.phase === 'thinking') liveSteps.value.pop()
-            ensurePump()
-          }
+          // with the first token that arrives while no tool is running. The trailing "thinking"
+          // row is dropped by the pump once text is actually painted.
+          if (!toolRunning()) ensurePump()
         },
         onModeration: (text) => {
           // Tokens that already reached the browser cannot be recalled. Replace the bubble with the
@@ -602,6 +690,18 @@ async function streamInto(
     } else if (error instanceof AiQuotaError) {
       markQuotaExhausted()
       reply.error = error.message
+    } else if (!recovered && !continueGeneration && isConversationGone(error)) {
+      // The server no longer knows this conversation: it was deleted elsewhere, or the dev database
+      // was rebuilt while this tab stayed open. The transcript lives here, so continue as a fresh
+      // conversation (the API replays client history for a uuid-less turn) instead of leaving a
+      // dead 404 bubble. The next `conversation` frame re-adopts the new server uuid.
+      conversation.serverSide = false
+      pushNotice('原对话在服务端已不存在，已在当前记录基础上新建对话继续。', 'warn')
+      reply.error = null
+      // Drop the pending question and its empty reply: they are this turn, not history.
+      const replay = toTurns(messages.value.slice(0, Math.max(0, messages.value.length - 2)))
+      await streamInto(reply, conversation, question, replay, continueGeneration, true)
+      return
     } else {
       reply.error = error instanceof Error ? error.message : '请求失败，请稍后重试'
     }
@@ -613,13 +713,20 @@ async function streamInto(
     }
     // Flush whatever the pump had not revealed yet (also covers abort/failure).
     if (shown < received.length) reply.content += received.slice(shown)
+    // Keep the cards on the message before dropping the live state: they carry the per-call
+    // durations the persisted tool calls lack, so settling does not visibly rewrite the timeline.
+    // Thinking rows are pure progress noise and are not kept.
+    const settled = liveSteps.value.filter((step) => step.phase !== 'thinking')
+    if (settled.length) {
+      reply.steps = continueGeneration ? [...(reply.steps ?? []), ...settled] : settled
+    }
     liveSteps.value = []
     streamingId.value = null
     controller = null
-    void loadUsage()
     persist(conversation)
     await nextTick()
-    scrollToBottom(true)
+    // Not forced: a reader who scrolled up during the answer stays where they are.
+    scrollToBottom()
     composer.value?.focus()
   }
 }
@@ -717,6 +824,9 @@ async function ensureConversation(question: string): Promise<Conversation> {
 
 /** Adopts the server uuid when the backend created the conversation for this turn. */
 function adoptConversationId(conversation: Conversation, uuid: string): void {
+  // A server uuid arrived, so this conversation is server-backed from now on (the flag also
+  // survives a reload through the local cache).
+  conversation.serverSide = true
   if (conversation.id === uuid) return
   const previous = conversation.id
   conversation.id = uuid
@@ -750,6 +860,7 @@ function newMessage(role: ChatMessage['role'], content: string): ChatMessage {
     sources: [],
     tools: [],
     skills: [],
+    steps: [],
     grounded: null,
     error: null,
   }
@@ -761,6 +872,7 @@ function cloneMessage(message: ChatMessage): ChatMessage {
     sources: [...message.sources],
     tools: [...message.tools],
     skills: [...message.skills],
+    steps: [...(message.steps ?? [])],
   }
 }
 
@@ -770,11 +882,25 @@ async function scrollToBottomSoon(): Promise<void> {
   scrollToBottom(true)
 }
 
+/**
+ * Pins the transcript to the newest content.
+ *
+ * @param force scroll even while the reader is detached (sending a message, opening a conversation)
+ */
 function scrollToBottom(force = false): void {
   const element = scrollEl.value
   if (!element) return
-  const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 140
-  if (force || nearBottom) element.scrollTop = element.scrollHeight
+  if (!force && !followBottom.value) return
+  element.scrollTop = element.scrollHeight
+  followBottom.value = true
+}
+
+/** Re-attaches the transcript and returns to the newest message. */
+function jumpToBottom(): void {
+  const element = scrollEl.value
+  if (!element) return
+  followBottom.value = true
+  element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
 }
 
 function titleFrom(question: string): string {
@@ -990,6 +1116,26 @@ function newId(): string {
           :active-id="activeAnchor"
           @select="jumpToMessage"
         />
+
+        <button
+          v-if="!followBottom"
+          type="button"
+          class="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-[12px] font-medium text-dim shadow-lg transition hover:text-ink"
+          @click="jumpToBottom"
+        >
+          <svg
+            class="size-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          回到底部
+        </button>
       </div>
 
       <GlobalQuotaNotice

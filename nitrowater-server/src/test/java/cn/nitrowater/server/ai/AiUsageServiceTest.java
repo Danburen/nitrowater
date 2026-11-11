@@ -1,17 +1,17 @@
 package cn.nitrowater.server.ai;
 
-import cn.nitrowater.server.service.ai.AiAdminSettingsService;
-import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.ops.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.model.admin.AiSettings;
 import cn.nitrowater.server.infra.entity.AiDailyUsageEntity;
 import cn.nitrowater.server.infra.entity.AiDailyUsageId;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.infra.repository.AiDailyUsageRepository;
 import cn.nitrowater.server.infra.specification.AiUsageSpec;
 import cn.nitrowater.server.infra.exception.AiQuotaExceededException;
-import cn.nitrowater.server.service.ai.AiUsageService;
-import cn.nitrowater.server.service.ai.model.AiGlobalUsage;
-import cn.nitrowater.server.service.ai.model.AiUsageReservation;
-import cn.nitrowater.server.service.ai.model.AiUserUsage;
+import cn.nitrowater.server.service.ai.ops.AiUsageService;
+import cn.nitrowater.server.service.ai.model.usage.AiGlobalUsage;
+import cn.nitrowater.server.service.ai.model.usage.AiUsageReservation;
+import cn.nitrowater.server.service.ai.model.usage.AiUserUsage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -31,8 +31,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Verifies the platform-wide (all users) quota: the sentinel row blocks a turn once the shared
- * ceiling is gone, stays inert while switched off, and never leaks into the per-user admin list.
+ * Verifies the daily token quota: the platform-wide (all users) sentinel row blocks a turn once the
+ * shared ceiling is spent, stays inert while switched off, and never leaks into the per-user admin
+ * list.
+ *
+ * <p>Admission is a soft gate, so the ceiling is compared against consumption alone: a turn whose
+ * own reservation would overflow the limit is still admitted, because refusing it left the user
+ * without an answer after paying for the prompt.</p>
  */
 class AiUsageServiceTest {
 
@@ -52,9 +57,9 @@ class AiUsageServiceTest {
     @Test
     void blocksTheTurnWhenThePlatformCeilingIsGone() {
         when(settings.get()).thenReturn(runtime(true, 1_000L));
-        // 950 of 1000 used, and this turn would reserve 100 + 100 = 200 more.
+        // The whole platform budget is spent, including the reservation this turn would add.
         when(repository.findByIdUidAndIdUsageDate(eq(AiUsageSpec.GLOBAL_UID), eq(TODAY)))
-                .thenReturn(Optional.of(row(AiUsageSpec.GLOBAL_UID, 900L, 50L, 0L)));
+                .thenReturn(Optional.of(row(AiUsageSpec.GLOBAL_UID, 900L, 100L, 0L)));
 
         assertThatThrownBy(() -> service.reserve(7L, 100))
                 .isInstanceOfSatisfying(AiQuotaExceededException.class, ex -> {
@@ -64,6 +69,19 @@ class AiUsageServiceTest {
 
         // The per-user row must not be touched when the platform budget is already gone.
         verify(repository, never()).findByIdUidAndIdUsageDate(eq(7L), any());
+    }
+
+    @Test
+    void admitsTheLastTurnEvenWhenItsReservationOverflowsTheBudget() {
+        when(settings.get()).thenReturn(runtime(1_000L, false, 1_000L));
+        // 950 of 1000 used; this turn reserves 100 + 100 = 200, so the *reservation* overflows but
+        // consumption has not reached the ceiling yet: the answer must still be generated.
+        when(repository.findByIdUidAndIdUsageDate(eq(7L), eq(TODAY)))
+                .thenReturn(Optional.of(row(7L, 900L, 50L, 0L)));
+
+        AiUsageReservation reservation = service.reserve(7L, 100);
+
+        assertThat(reservation.reservedTokens()).isEqualTo(200L);
     }
 
     @Test
@@ -117,7 +135,11 @@ class AiUsageServiceTest {
     }
 
     private static AiSettings runtime(boolean globalEnabled, long globalLimit) {
-        return new AiSettings(50_000L, true, true, true, true, true, true, true, ModerationMode.LOG,
+        return runtime(50_000L, globalEnabled, globalLimit);
+    }
+
+    private static AiSettings runtime(long dailyLimit, boolean globalEnabled, long globalLimit) {
+        return new AiSettings(dailyLimit, true, true, true, true, true, true, true, ModerationMode.LOG,
                 globalLimit, globalEnabled);
     }
 

@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.service.ai.skill.SkillRegistry;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
 import cn.nitrowater.server.service.ai.model.skill.SkillRow;
 

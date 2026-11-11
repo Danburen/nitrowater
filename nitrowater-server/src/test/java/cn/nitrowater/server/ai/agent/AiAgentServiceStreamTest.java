@@ -1,19 +1,19 @@
 package cn.nitrowater.server.ai.agent;
 
-import cn.nitrowater.server.service.ai.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.ops.AiAdminSettingsService;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.agent.AiAgentService;
 import cn.nitrowater.server.service.ai.model.agent.PreparedAgent;
-import cn.nitrowater.server.service.ai.properties.AiProperties;
-import cn.nitrowater.server.service.ai.model.AiStreamChunk;
-import cn.nitrowater.server.service.ai.model.AiTokenUsage;
-import cn.nitrowater.server.service.ai.AiUsageService;
-import cn.nitrowater.server.service.ai.model.AiSettings;
-import cn.nitrowater.server.service.ai.AiUsageTracker;
-import cn.nitrowater.server.service.ai.PromptBuilder;
-import cn.nitrowater.server.service.ai.AiMemoryService;
-import cn.nitrowater.server.service.ai.AiProfileService;
-import cn.nitrowater.server.service.ai.SkillRegistry;
+import cn.nitrowater.server.config.ai.AiProperties;
+import cn.nitrowater.server.service.ai.agent.AiStreamChunk;
+import cn.nitrowater.server.service.ai.model.usage.AiTokenUsage;
+import cn.nitrowater.server.service.ai.ops.AiUsageService;
+import cn.nitrowater.server.service.ai.model.admin.AiSettings;
+import cn.nitrowater.server.service.ai.model.usage.AiUsageTracker;
+import cn.nitrowater.server.service.ai.agent.PromptBuilder;
+import cn.nitrowater.server.service.ai.memory.AiMemoryService;
+import cn.nitrowater.server.service.ai.memory.AiProfileService;
+import cn.nitrowater.server.service.ai.skill.AgentSkillService;
 import cn.nitrowater.server.service.ai.tool.AgentToolRegistry;
 import cn.nitrowater.server.service.ai.model.agent.AgentTool;
 import cn.nitrowater.server.service.ai.model.agent.ToolFeature;
@@ -234,7 +234,7 @@ class AiAgentServiceStreamTest {
     }
 
     private PreparedAgent prepare() {
-        return service.prepare("你好", List.of(), "", false, 7L, null);
+        return service.prepare("你好", List.of(), List.of(), false, 7L, null);
     }
 
     /**
@@ -274,9 +274,9 @@ class AiAgentServiceStreamTest {
         AgentToolRegistry tools = mock(AgentToolRegistry.class);
         when(tools.forTurn(any(AiSettings.class), anySet(), anyBoolean()))
                 .thenReturn(List.of(new AgentTool(callback, ToolFeature.DOCS, false, toolTimeoutMs)));
-        SkillRegistry skills = mock(SkillRegistry.class);
-        when(skills.list()).thenReturn(List.of());
-        AiProfileService profiles = mock(AiProfileService.class);
+        AgentSkillService skills = mock(AgentSkillService.class);
+        when(skills.catalog(any(AiSettings.class))).thenReturn(List.of());
+        when(skills.resolveSelected(any(), any(AiSettings.class))).thenReturn(List.of());        AiProfileService profiles = mock(AiProfileService.class);
         when(profiles.promptBlock(anyLong())).thenReturn(null);
         AiMemoryService memories = mock(AiMemoryService.class);
         when(memories.recall(anyLong(), any(), anyInt())).thenReturn(List.of());

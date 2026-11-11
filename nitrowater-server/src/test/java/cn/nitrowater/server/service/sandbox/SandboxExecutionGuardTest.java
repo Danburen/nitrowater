@@ -1,6 +1,6 @@
 package cn.nitrowater.server.service.sandbox;
 
-import cn.nitrowater.server.config.properties.SandboxProperties;
+import cn.nitrowater.server.config.SandboxProperties;
 import cn.nitrowater.server.infra.ratelimit.RedisRateLimiter;
 import cn.nitrowater.server.infra.ratelimit.SandboxGate;
 import cn.nitrowater.server.service.sandbox.model.RunCommand;

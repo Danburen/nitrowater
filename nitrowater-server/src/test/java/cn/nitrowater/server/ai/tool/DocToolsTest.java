@@ -1,15 +1,15 @@
 package cn.nitrowater.server.ai.tool;
 
-import cn.nitrowater.server.service.ai.AiAdminSettingsService;
-import cn.nitrowater.server.service.ai.properties.AiProperties;
-import cn.nitrowater.server.service.ai.DocRetriever;
+import cn.nitrowater.server.service.ai.ops.AiAdminSettingsService;
+import cn.nitrowater.server.config.ai.AiProperties;
+import cn.nitrowater.server.service.ai.rag.DocRetriever;
 import cn.nitrowater.server.service.ai.model.agent.AgentTrace;
 import cn.nitrowater.server.service.ai.model.agent.ToolCall;
-import cn.nitrowater.server.service.ai.properties.WebSearchProperties;
+import cn.nitrowater.server.config.ai.WebSearchProperties;
 import cn.nitrowater.server.infra.enums.ModerationMode;
 import cn.nitrowater.server.service.ai.tool.DocTools;
 import cn.nitrowater.server.service.ai.tool.WebSearchProvider;
-import cn.nitrowater.server.service.ai.model.AiSettings;
+import cn.nitrowater.server.service.ai.model.admin.AiSettings;
 import cn.nitrowater.server.service.ai.model.tool.WebSearchResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

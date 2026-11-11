@@ -12,7 +12,7 @@
 # 用法：
 #   .\deploy\bin\check-env.ps1                 # Docker 上线
 #   .\deploy\bin\check-env.ps1 -Local          # 本地 dev（额外检查端口）
-#   .\deploy\bin\check-env.ps1 -EnvFile .\deploy\docker\.env
+#   .\deploy\bin\check-env.ps1 -EnvFile .\deploy\docker\.env,.\deploy\docker\.env.prod.secrets
 #
 # 退出码：0 = 无 FAIL；1 = 存在 FAIL
 # ============================================================
@@ -20,7 +20,7 @@
 [CmdletBinding()]
 param(
     [switch]$Local,
-    [string]$EnvFile
+    [string[]]$EnvFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,6 +40,11 @@ function Get-EnvValue {
     return [Environment]::GetEnvironmentVariable($Name, 'Process')
 }
 
+# Keys this script exported itself. A variable that came from the real process environment must
+# keep winning (compose behaves the same way); among files the last one wins, so that
+# `.env` + `.env.prod.secrets` composes the way `docker compose --env-file a --env-file b` does.
+$script:dotenvKeys = @{}
+
 function Import-DotEnv {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
@@ -48,9 +53,9 @@ function Import-DotEnv {
         if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
             $key = $matches[1]
             $value = $matches[2].Trim() -replace '^["'']|["'']$', ''
-            if (-not (Get-EnvValue $key)) {
-                [Environment]::SetEnvironmentVariable($key, $value, 'Process')
-            }
+            if ((Get-EnvValue $key) -and -not $script:dotenvKeys.ContainsKey($key)) { continue }
+            [Environment]::SetEnvironmentVariable($key, $value, 'Process')
+            $script:dotenvKeys[$key] = $true
         }
     }
     return $true
@@ -114,22 +119,126 @@ Write-Host ("mode: {0}" -f $(if ($Local) { 'local (dev)' } else { 'docker (prod)
 Write-Host ''
 
 # ---------- 1. .env ----------
-$resolvedEnv = if ($EnvFile) { $EnvFile } else { Join-Path $root 'docker\.env' }
-if (Import-DotEnv $resolvedEnv) {
-    Add-Result 'INFO' '.env' "已加载 $resolvedEnv"
+# Deploy keeps non-secret values in .env and secrets in .env.prod.secrets; compose is given both
+# (--env-file a --env-file b), so this gate has to read the same pair in the same order.
+$envFiles = @(if ($EnvFile) { $EnvFile } else {
+        @((Join-Path $root 'docker\.env'), (Join-Path $root 'docker\.env.prod.secrets'))
+    })
+$resolvedEnv = @($envFiles | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+$loadedEnv = @($envFiles | Where-Object { Import-DotEnv $_ })
+if ($loadedEnv.Count -gt 0) {
+    Add-Result 'INFO' '.env' ("已加载 " + ($loadedEnv -join ' + '))
 } else {
-    Add-Result 'WARN' '.env' "未找到 $resolvedEnv（仅用进程环境变量；Docker 上线应存在）"
+    Add-Result 'WARN' '.env' ("未找到 " + ($envFiles -join ' / ') + "（仅用进程环境变量；Docker 上线应存在）")
 }
 
 # ---------- 2. 必需变量 / 占位值 ----------
 # Template placeholders (YOUR_*_HERE) must block: copying .env.prod.example verbatim used to
 # yield "Fail: 0" because the per-variable rules only knew about empty values and known weak
 # defaults (assessment M3).
-$placeholders = @(Get-PlaceholderKeys $resolvedEnv)
+$placeholders = @($resolvedEnv | ForEach-Object { Get-PlaceholderKeys $_ } | Select-Object -Unique)
 if ($placeholders.Count -gt 0) {
     Add-Result 'FAIL' 'placeholders' ('仍是模板占位值，需换成真实值：' + ($placeholders -join ', '))
 } else {
     Add-Result 'PASS' 'placeholders' '未发现 YOUR_*_HERE 占位值'
+}
+
+# ---------- 2.1 compose → .env 覆盖 ----------
+# The hand-written rules above only cover keys someone remembered to add here. This section derives
+# the set from the compose files instead: a key whose fallback is harmless (URL, port, number) may
+# stay unset, but one that carries a credential or a dev default must be filled in by hand —
+# otherwise "复制模板 → 改几个字 → 上线" silently runs on 123456 / root / change-me.
+# Two severities on purpose: "没给值" is a FAIL (the deploy cannot be safe), "给了但仍是 dev 值" is
+# a WARN (a deliberate single-tenant choice must stay possible).
+$devDefaultValues = @('123456', 'change-me', 'device-salt-dev', 'nitrowater-bff-secret', 'root', 'dev', 'not-configured')
+
+$composeDir = Join-Path $root 'docker'
+$composeKeys = @{}    # keys declared in an environment: block (what actually enters a container)
+$referenced = @{}     # every ${VAR} interpolated anywhere, including binds/healthchecks
+$unfilled = New-Object System.Collections.ArrayList
+$devDefaulted = New-Object System.Collections.ArrayList
+$fromEnv = 0
+$fromDefault = 0
+$literalValues = 0
+foreach ($composeFile in (Get-ChildItem -LiteralPath $composeDir -Filter 'docker-compose.*.yml' | Sort-Object Name)) {
+    $text = Get-Content -LiteralPath $composeFile.FullName -Raw
+    foreach ($m in [regex]::Matches($text, '\$\{(?<name>[A-Za-z_][A-Za-z0-9_]*)')) {
+        $referenced[$m.Groups['name'].Value] = $true
+    }
+    foreach ($line in ($text -split "`n")) {
+        if ($line -cnotmatch '^      (?<key>[A-Z][A-Z0-9_]*):\s*(?<raw>.*)$') { continue }
+        $key = $matches['key']
+        $raw = $matches['raw'].Trim()
+        if ($composeKeys.ContainsKey($key)) { continue }
+        $composeKeys[$key] = $raw
+        if ($raw -notmatch '\$\{') { $literalValues++; continue }
+
+        # Single `${VAR...}` expression: the value that matters is VAR, not the compose key name.
+        if ($raw -match '^\$\{(?<var>[A-Za-z_][A-Za-z0-9_]*)(?::[^}]*)?\}$') {
+            $var = $matches['var']
+            $value = Get-EnvValue $var
+            if (-not [string]::IsNullOrEmpty($value)) {
+                # Placeholders are the `placeholders` check's business; only real dev values here.
+                if (-not (Test-Placeholder $value) -and ($devDefaultValues -ccontains $value.Trim())) {
+                    [void]$devDefaulted.Add("$var=$value")
+                } else {
+                    $fromEnv++
+                }
+            } elseif ($raw -match ':\?' -or $raw -match '^\$\{[A-Za-z_][A-Za-z0-9_]*\}$') {
+                [void]$unfilled.Add($var)                                   # no default at all
+            } elseif ($raw -match '(?i)(123456|change-me|device-salt-dev|bff-secret|not-configured|:-root)') {
+                [void]$unfilled.Add($var)                                   # unsafe built-in fallback
+            } else {
+                $fromDefault++
+            }
+            continue
+        }
+
+        # Mixed expression (URLs, healthcheck command): only an explicit required marker blocks.
+        if ($raw -match ':\?' -and [string]::IsNullOrEmpty((Get-EnvValue $key))) {
+            [void]$unfilled.Add($key)
+        } else {
+            $fromDefault++
+        }
+    }
+}
+$unfilled = @($unfilled | Select-Object -Unique)
+$devDefaulted = @($devDefaulted | Select-Object -Unique)
+# The compose inventory only describes the Docker path; local dev talks to the host MySQL/Redis
+# with its own (root) credentials, so reporting it there would be pure noise.
+if ($Local) {
+    Add-Result 'INFO' 'compose-coverage' '本地 dev 跳过（仅 Docker 上线检查 compose 覆盖）'
+} elseif ($unfilled.Count -gt 0) {
+    Add-Result 'FAIL' 'compose-coverage' ('.env 缺这些值，compose 会回落到空值或 dev 默认值：' + ($unfilled -join ', '))
+} else {
+    Add-Result 'PASS' 'compose-coverage' ("compose 变量都已覆盖（.env $fromEnv / 安全默认 $fromDefault / 字面量 $literalValues）")
+}
+if ($Local) {
+    Add-Result 'INFO' 'compose-defaults' '本地 dev 跳过'
+} elseif ($devDefaulted.Count -gt 0) {
+    Add-Result 'WARN' 'compose-defaults' ('仍是 dev 默认值（单机可接受，公网必须换）：' + ($devDefaulted -join ', '))
+} else {
+    Add-Result 'PASS' 'compose-defaults' '没有使用 dev 默认值'
+}
+
+# The reverse direction: a key written in .env that no compose file interpolates never reaches a
+# container — "配了但没生效" is worse than "没配", because it looks configured.
+$envOnly = New-Object System.Collections.ArrayList
+foreach ($envPath in $resolvedEnv) {
+    foreach ($line in Get-Content -LiteralPath $envPath) {
+        if ($line.Trim() -eq '' -or $line.Trim().StartsWith('#')) { continue }
+        if ($line -match '^\s*(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=') {
+            $key = $matches['name']
+            if (-not $referenced.ContainsKey($key) -and -not $envOnly.Contains($key)) { [void]$envOnly.Add($key) }
+        }
+    }
+}
+if ($Local) {
+    Add-Result 'INFO' '.env-unused' '本地 dev 跳过'
+} elseif ($envOnly.Count -gt 0) {
+    Add-Result 'WARN' '.env-unused' ('这些键没有任何 compose 引用，不会进容器：' + ($envOnly -join ', '))
+} else {
+    Add-Result 'PASS' '.env-unused' '.env 的键都被 compose 引用'
 }
 
 $kek = Get-EnvValue 'NITROWATER_KEK'
@@ -174,6 +283,39 @@ if ([string]::IsNullOrEmpty($dbPassword)) {
     Add-Result 'FAIL' 'DB_PASSWORD' '仍是 dev 默认值 123456'
 } else {
     Add-Result 'PASS' 'DB_PASSWORD' '已设置'
+}
+
+# The app account is created by hand once (deploy/README.md §6); root is bootstrap-only. A pool
+# credential that owns every schema turns any SQL injection into a full-database compromise.
+$dbUser = Get-EnvValue 'DB_USERNAME'
+if ($Local) {
+    Add-Result 'INFO' 'DB_USERNAME' '本地 dev 用宿主机账号（Docker 上线必须是专用账号）'
+} elseif ([string]::IsNullOrEmpty($dbUser)) {
+    Add-Result 'FAIL' 'DB_USERNAME' '未设置（业务连库账号，见 deploy/README.md §6）'
+} elseif ($dbUser.Trim() -eq 'root') {
+    Add-Result 'FAIL' 'DB_USERNAME' 'root：改用 README §6 建的专用账号'
+} elseif (Test-Placeholder $dbUser) {
+    Add-Result 'FAIL' 'DB_USERNAME' '仍是模板占位值'
+} elseif ($dbUser -notmatch '^[A-Za-z0-9_]{1,32}$') {
+    Add-Result 'FAIL' 'DB_USERNAME' "只能是 [A-Za-z0-9_]：$dbUser"
+} else {
+    Add-Result 'PASS' 'DB_USERNAME' $dbUser
+}
+
+# MySQL root password is only used by the one-time manual bootstrap and by admin work.
+$rootPassword = Get-EnvValue 'MYSQL_ROOT_PASSWORD'
+if ($Local) {
+    Add-Result 'INFO' 'MYSQL_ROOT_PASSWORD' '本地 dev 不跑 infra 容器，跳过'
+} elseif ([string]::IsNullOrEmpty($rootPassword)) {
+    Add-Result 'FAIL' 'MYSQL_ROOT_PASSWORD' '未设置（infra 初始化 MySQL 需要）'
+} elseif (Test-Placeholder $rootPassword) {
+    Add-Result 'FAIL' 'MYSQL_ROOT_PASSWORD' '仍是模板占位值'
+} elseif ($rootPassword -eq '123456') {
+    Add-Result 'FAIL' 'MYSQL_ROOT_PASSWORD' '仍是 dev 默认值 123456'
+} elseif ($rootPassword -eq $dbPassword) {
+    Add-Result 'WARN' 'MYSQL_ROOT_PASSWORD' '与 DB_PASSWORD 相同（建议分成两个）'
+} else {
+    Add-Result 'PASS' 'MYSQL_ROOT_PASSWORD' '已设置'
 }
 
 $bffSecret = Get-EnvValue 'BFF_CLIENT_SECRET'
@@ -481,7 +623,7 @@ Write-Host ''
 Write-Host "Pass: $pass | Warn: $warn | Fail: $fail" -ForegroundColor White
 if ($fail -gt 0) {
     Write-Host ''
-    Write-Host '  [FAIL] 存在阻断项，修好再上线。变量含义见 deploy/env-vars-reference.md' -ForegroundColor Red
+    Write-Host '  [FAIL] 存在阻断项，修好再上线。变量与拓扑见 deploy/README.md' -ForegroundColor Red
     Write-Host '         内容挂载见 deploy/content/README.md' -ForegroundColor Red
     exit 1
 }

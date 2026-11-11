@@ -26,6 +26,7 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
 import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -39,7 +40,8 @@ import java.io.IOException;
  *   <li>The SPA is public (anonymous browsing is allowed); only {@code /api/**} requires a
  *       session, and it answers {@code 401} (not a redirect) so the SPA can react. All data
  *       endpoints MUST live under {@code /api/**}; the reserved {@code /actuator/**} and
- *       {@code /internal/**} prefixes are denied as a fail-closed backstop.</li>
+ *       {@code /internal/**} prefixes are denied as a fail-closed backstop (only the health probe
+ *       is permitted, and it is served by the separate management connector).</li>
  *   <li>CSRF is mandatory for cookie auth: the token is exposed through the readable
  *       {@code XSRF-TOKEN} cookie so the SPA can echo it in {@code X-XSRF-TOKEN}.</li>
  *   <li>Logout destroys the BFF session (which is what holds the tokens), revokes the refresh
@@ -81,11 +83,14 @@ public class SecurityConfig {
                         // Anonymous tool endpoints (e.g. the code sandbox runner) are public here;
                         // abuse is bounded by rate limiting on the resource server.
                         .requestMatchers("/api/public/**").permitAll()
-                        // Defence-in-depth backstop: reserved sensitive namespaces are never public,
-                        // even if a handler is added under them later. Actuator is not on the classpath
-                        // today; this blocks the prefix structurally so a future dependency cannot
-                        // silently expose it through the catch-all below. (If a probe endpoint must
-                        // ever be public, permit it explicitly here, above the catch-all.)
+                        // Probe endpoint only. It is served by the separate management connector
+                        // (management.server.port=9080) which compose does not publish, so it never
+                        // reaches the browser; permitting it here keeps the healthcheck working if
+                        // the two ports are ever collapsed into one.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**")
+                        .permitAll()
+                        // Everything else under /actuator/** plus /internal/** stays denied as the
+                        // structural backstop — a new handler under those prefixes cannot leak.
                         .requestMatchers("/actuator/**", "/internal/**").denyAll()
                         // Convention: ALL data endpoints live under /api/** (gated above). Everything
                         // else is the public SPA surface (index.html, hashed /assets bundles, history-mode

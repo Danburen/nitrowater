@@ -21,7 +21,12 @@ public enum ModerationDirection {
      * Free-form text the user stored in their own profile ({@code ai_user_profile.preferences}).
      * It is re-injected into every later turn, so it gets the same treatment as a memory.
      */
-    PROFILE(3);
+    PROFILE(3),
+    /**
+     * A rolling conversation summary produced by compaction. It replaces earlier turns in every
+     * later prompt, so it is a stored-injection point just like a memory.
+     */
+    SUMMARY(4);
 
     private final short value;
 

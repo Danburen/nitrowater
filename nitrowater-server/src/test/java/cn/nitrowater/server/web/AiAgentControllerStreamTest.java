@@ -1,14 +1,15 @@
 package cn.nitrowater.server.web;
 
 import cn.nitrowater.server.infra.entity.AiConversation;
-import cn.nitrowater.server.service.ai.AgentTurnService;
-import cn.nitrowater.server.service.ai.AiAdminSettingsService;
-import cn.nitrowater.server.service.ai.AiModerationService;
-import cn.nitrowater.server.service.ai.ConversationService;
-import cn.nitrowater.server.service.ai.SkillRegistry;
-import cn.nitrowater.server.service.ai.model.ConversationTurn;
+import cn.nitrowater.server.service.ai.agent.AgentTurnService;
+import cn.nitrowater.server.service.ai.ops.AiAdminSettingsService;
+import cn.nitrowater.server.service.ai.conversation.AiCompactService;
+import cn.nitrowater.server.service.ai.ops.AiModerationService;
+import cn.nitrowater.server.service.ai.conversation.ConversationService;
+import cn.nitrowater.server.service.ai.skill.AgentSkillService;
+import cn.nitrowater.server.service.ai.model.agent.ConversationTurn;
 import cn.nitrowater.server.service.ai.model.agent.AiAgentService;
-import cn.nitrowater.server.service.ai.properties.AiProperties;
+import cn.nitrowater.server.config.ai.AiProperties;
 import cn.nitrowater.server.web.dto.AiAgentReq;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -34,12 +35,12 @@ class AiAgentControllerStreamTest {
 
     private final AiAgentService agentService = mock(AiAgentService.class);
     private final ConversationService conversations = mock(ConversationService.class);
-    private final SkillRegistry skills = mock(SkillRegistry.class);
-    private final AiProperties properties = mock(AiProperties.class);
+    private final AgentSkillService skills = mock(AgentSkillService.class);    private final AiProperties properties = mock(AiProperties.class);
     private final AiAdminSettingsService adminSettings = mock(AiAdminSettingsService.class);
     private final AiModerationService moderation = mock(AiModerationService.class);
+    private final AiCompactService compactor = mock(AiCompactService.class);
     private final AgentTurnService turns = new AgentTurnService(agentService, conversations, moderation,
-            skills, adminSettings, properties, "test-model", false);
+            skills, adminSettings, compactor, properties, "test-model", false);
     private final AiAgentController controller = new AiAgentController(turns);
 
     @Test
@@ -61,7 +62,7 @@ class AiAgentControllerStreamTest {
                 });
 
         SseEmitter emitter = controller.stream(
-                new AiAgentReq("hi", null, List.of(), null, false, false),
+                new AiAgentReq("hi", null, List.of(), null, List.of(), false, false),
                 (Principal) () -> "7");
 
         try {

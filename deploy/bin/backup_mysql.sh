@@ -15,7 +15,8 @@ BACKUP_DIR="${BACKUP_DIR:-/data/backup/nitrowater}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-3306}"
 DB_USER="${DB_USER:-root}"
-DB_PASS="${DB_PASS:-123456}"
+# root 口令改名后优先读 MYSQL_ROOT_PASSWORD；DB_PASS 保留给旧习惯 / 单库账号。
+DB_PASS="${MYSQL_ROOT_PASSWORD:-${DB_PASS:-123456}}"
 DB_NAME="${DB_NAME:-nitrowater_account}"
 RETAIN_DAYS="${RETAIN_DAYS:-30}"
 # -----------------------------

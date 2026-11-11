@@ -1,6 +1,6 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiModerationHitView;
+import cn.nitrowater.server.service.ai.model.moderation.AiModerationHitView;
 
 import java.time.Instant;
 

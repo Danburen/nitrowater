@@ -1,23 +1,18 @@
 <script setup lang="ts">
 /**
- * Collapsible "process" row: which skills were applied and which tools ran.
+ * Collapsible "which skills were applied" row.
  *
- * <p>Hidden by default so the transcript reads like a normal chat; the detail stays one click away
- * for anyone who wants to audit retrieval / sandbox usage.</p>
+ * <p>Tool calls are not listed here anymore: they render as the process timeline above the answer
+ * (live cards while the turn runs, rebuilt from {@code tools_json} once it settles), so a second
+ * list of chips would only duplicate it. Skills have no card of their own, so they keep this row.</p>
  */
 import { computed, ref } from 'vue'
-import type { AiToolCall } from '../../../api/ai'
 
-const props = defineProps<{ tools: AiToolCall[]; skills: string[] }>()
+const props = defineProps<{ skills: string[] }>()
 
 const open = ref(false)
 
-const summary = computed(() => {
-  const parts: string[] = []
-  if (props.skills.length) parts.push(`${props.skills.length} 个技能`)
-  if (props.tools.length) parts.push(`${props.tools.length} 次工具调用`)
-  return `过程 · ${parts.join(' · ')}`
-})
+const summary = computed(() => `技能 · ${props.skills.length} 个`)
 </script>
 
 <template>
@@ -38,7 +33,9 @@ const summary = computed(() => {
         stroke-linecap="round"
         stroke-linejoin="round"
       >
-        <polyline points="9 18 15 12 9 6" />
+        <polyline
+          points="9 18 15 12 9 6"
+        />
       </svg>
       {{ summary }}
     </button>
@@ -52,15 +49,6 @@ const summary = computed(() => {
         :key="`skill-${skill}`"
         class="tag border-accent/30 text-accent"
       >skill: {{ skill }}</span>
-      <span
-        v-for="(tool, index) in tools"
-        :key="`tool-${index}`"
-        class="tag"
-        :class="tool.ok === false ? 'border-warn/40 text-warn' : ''"
-        :title="tool.summary || tool.argument"
-      >
-        {{ tool.name }}<template v-if="tool.resultCount"> · {{ tool.resultCount }}</template>
-      </span>
     </div>
   </div>
 </template>

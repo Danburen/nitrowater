@@ -96,7 +96,7 @@ export interface PluginUpsert {
 /** Ordering accepted by the admin plugin list. */
 export type PluginAdminSort = 'default' | 'updated' | 'name'
 
-/** Filters for the admin plugin list (`GET /api/plugins`). */
+/** Filters for the admin plugin list (`GET /api/admin/plugins`). */
 export interface PluginAdminQuery {
   /** Case-insensitive key / name / tagline / summary substring. */
   q?: string

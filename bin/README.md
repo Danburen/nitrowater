@@ -71,17 +71,20 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
 | docs（插件文档 nginx） | 8085 | `/plugin/**`（经 BFF 访问） |
 | Vite dev（可选） | 5173 | http://localhost:5173 |
 
-## dev/ — 数据与同步（不参与日常启动）
+## dev/ — 数据、密钥与同步（不参与日常启动）
 
-| 脚本 | 用途 |
+| 文件 / 脚本 | 用途 |
 |------|------|
 | `bin\dev\dev-seed.ps1` | 一键：reset → 播种用户 / 资源（`-Skip*` 分段；幂等） |
 | `bin\dev\reset-db.ps1` | **破坏性**：drop 库让 Flyway 从 V1 重放（`-Restart` 顺带重启归属服务） |
+| `bin\dev\reset-sso-db.{ps1,sh}` | 老版本：只清 SSO 表（`reset-db.ps1` 已覆盖，保留兼容） |
 | `bin\dev\seed-test-users.ps1` | 测试用户 `testadmin` / `testuser1` / `testuser`（密码 `Passw0rd123`） |
 | `bin\dev\seed-res.ps1` | 经 `/internal/resource/publish` 发资源夹具（`smoke-plugin`、`samples`） |
 | `bin\dev\sync-docs.ps1` | 构建 VeloChatX 文档站（VitePress），同时镜像到 `deploy\plugin-docs\velochatx\docs`（/plugin/**）与 `static\docs\velochatx`（/docs/**） |
 | `bin\dev\sync-res.ps1` | 把插件 jar 发布到资源服务（`:8093` 直连，不经 BFF） |
 | `bin\dev\install-piston-langs.ps1` | 给 Piston **一次性**装语言运行时（经 `ghproxy.net`） |
+| `bin\dev\common-dev-secrets.yml` | 开发密钥（KEK / DEVICE_SALT / 短信 / Resend），被 account·server 的 `spring.config.import` 读取（**gitignored**） |
+| `bin\dev\resource-storage\` | `RESOURCE_BACKEND=local` 的上传落盘目录（开发数据，**gitignored**） |
 
 > ⚠ `dev-seed.ps1` / `reset-db.ps1 -Restart` 用 `java -jar build\libs\app.jar` 起服务，
 > 所以**先跑一次 `bin\start-all.ps1`**（或 `gradlew :<module>:bootJar`）把 jar 产出，否则报 `jar missing`。
@@ -113,5 +116,6 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
 
 ## 相关目录
 
-- `deploy\bin\` — 运维/部署脚本（gen-keys / check-env / backup_mysql / reset-sso-db / deploy）。
+- `deploy\bin\` — **只放上线/运维**脚本（gen-keys / check-env / backup_mysql / ops-tunnel）。
 - `deploy\docker\` — Docker Compose（infra / app / piston）与根 `Dockerfile`。
+- `bin\dev\` — 开发期脚本与数据（清库 / 种子 / 同步 / 开发密钥 / 本地存储）。

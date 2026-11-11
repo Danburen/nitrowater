@@ -1,7 +1,7 @@
 package cn.nitrowater.server.web.vo;
 
-import cn.nitrowater.server.service.ai.model.AiUsageDay;
-import cn.nitrowater.server.service.ai.model.AiUsageSummary;
+import cn.nitrowater.server.service.ai.model.usage.AiUsageDay;
+import cn.nitrowater.server.service.ai.model.usage.AiUsageSummary;
 
 import java.time.LocalDate;
 import java.util.List;

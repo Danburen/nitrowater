@@ -79,11 +79,14 @@ go.work.sum
 # secrets / keys
 **/src/main/resources/keys/*.key
 **/keys/*.key
-deploy/config/common-dev-secrets.yml
 # Production values kept outside deploy/docker/.env; pass them with `docker compose --env-file <path>`.
 .env.prod.secrets
+# Anything else dropped next to the compose files (.env.local, .env.prod, .env.bak, .env.prod.secrets)
+# is a copy of live credentials. Only the template is tracked.
+deploy/docker/.env*
+!deploy/docker/.env.prod.example
 
-# Scripts tracked: root bin/ (launch start-* + bin/test smoke) and deploy/bin/ (ops/deploy).
+# Scripts tracked: root bin/ (launch start-* + bin/dev dev tooling) and deploy/bin/ (ops/deploy).
 # The generic `bin/` rule above ignores ANY `bin` directory, so re-include both explicitly
 # (anchored patterns). Passwords in these scripts are initial/default dev values (safe to expose).
 !/bin/
@@ -92,6 +95,10 @@ deploy/config/common-dev-secrets.yml
 !deploy/bin/**
 # Runtime state written by the launch scripts (window PIDs) - never tracked.
 bin/.run/
+# Dev-only assets under bin/dev/ (dev keys, LOCAL backend storage). The `!/bin/**` negation above
+# re-included them, so they must be ignored again *after* it.
+bin/dev/common-dev-secrets.yml
+bin/dev/resource-storage/
 # Python E2E/AI test course scripts (bin/test): local venv, caches, run artifacts - never tracked.
 bin/test/.venv/
 bin/test/__pycache__/
@@ -113,9 +120,8 @@ demo/__pycache__/
 # docs repo's pipeline) - not source. Keep deploy/plugin-docs/README.md (the mount<->base contract).
 /deploy/plugin-docs/*/
 
-# LOCAL storage backend (nitrowater-resource, app.resource.backend=local) writes
-# uploaded objects here at runtime - generated data, never source.
-/deploy/resource-storage/
+# LOCAL storage backend (nitrowater-resource, app.resource.backend=local) writes uploaded objects to
+# bin/dev/resource-storage/ at runtime - generated dev data, ignored above.
 # Docs are never build inputs for the jar: NitroWater is a markdown-only corpus (ai/docs), and
 # published sites are deploy artifacts handled dynamically. Anything under static/docs is a stale
 # local build - never commit it. See deploy/plugin-docs/ + bin/dev/sync-docs.ps1.
