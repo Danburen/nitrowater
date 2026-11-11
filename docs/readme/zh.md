@@ -1,73 +1,89 @@
 # NitroWater
 
 [![GitHub](https://img.shields.io/badge/GitHub-danburen%2Fnitrowater-181717?logo=github)](https://github.com/danburen/nitrowater)
-[![Gitee](https://img.shields.io/badge/Gitee-blackwallet%2Fnitrowarer-c71d23?logo=gitee)](https://gitee.com/blackwallet/nitrowarer)
+[![Gitee](https://img.shields.io/badge/Gitee-blackwallet%2Fnitrowater-c71d23?logo=gitee)](https://gitee.com/blackwallet/nitrowater)
 ![Java](https://img.shields.io/badge/Java-25-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen)
-![Spring Security](https://img.shields.io/badge/Spring%20Security-7.1-6DB33F)
-![License](https://img.shields.io/badge/License-see%20LICENSE-lightgrey)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-> 🌐 [English](../../README.md) | 简体中文
+[English](../../README.md) | 简体中文
 
-一个面向 **Minecraft 腐竹与插件 / 服务器社区**的**多模块平台**，包含一套**一站式开服工具箱**（MOTD、server.properties、server-icon、启动脚本）与门户、插件中心、文档，以及独立的 **SSO / OIDC 身份中心**。
-
-## 基本功能
-
-- **统一 SSO / OIDC** —— 独立身份中心（`nitrowater-account`），提供登录 / 注册 / 验证码，以及 OpenID Connect 提供方（授权码、refresh token、RP-initiated 登出），并带管理控制台。
-- **BFF（Token Handler）** —— 浏览器**零 token**；confidential OIDC 客户端在服务端持有并自动续期 access/refresh token，并代理业务、资源与插件文档流量。
-- **业务 API / 资源服务器** —— 基于 JWKS 校验 SSO 签发的 JWT，承载插件中心与开服 / 服务器工具。
-- **代码运行器** —— 登录用户经后端「编译 → 沙箱 → 运行」链路（自托管 **Piston**）执行片段，带单用户/全局并发、有界队列与分钟/日配额；匿名访客仍走浏览器 WASM。
-- **资源服务** —— 独立 `nitrowater-resource`，提供可插拔存储（SeaweedFS/S3 · COS · 本地）、presigned 访问、可见性/归属规则与管理端文件管理，并托管插件 JAR。
-- **工具箱** —— 11 个工具分两栏：**开服工具在前**（MOTD、server.properties、server-icon、启动脚本），**通用功能在后**（代码运行器、插件 ZIP、插件树、列表树、Java→TS、MP4→GIF、Markdown→Word）。
-- **复合展示站** —— 门户、开服工具箱、插件中心与文档合一、同源的前端。
+面向 Minecraft 腐竹的多模块平台：开服工具箱、插件中心与 AI 助手，背后是一套独立的 SSO / OIDC 身份中心。浏览器不保存任何 token——BFF 在服务端持有凭据并代理所有 API。
 
 ## 模块
 
 | 模块 | 职责 |
 |---|---|
-| `nitrowater-lib` | 通用工具与值类型。 |
-| `nitrowater-core` | 共享库：实体、仓库、认证服务、安全工具。 |
-| `nitrowater-account` | SSO / OIDC 身份中心（认证 API + OIDC 提供方 + 托管登录页 + 管理控制台）。 |
-| `nitrowater-bff` | BFF / Token Handler（confidential OIDC 客户端 + 会话 + `/api/**` 代理）。 |
-| `nitrowater-server` | 业务 API + OAuth2 资源服务器（插件中心、服务器工具、沙箱运行器）。 |
-| `nitrowater-resource` | 资源服务（文件上传/读取/管理 + 插件 JAR 托管）。 |
-| `nitrowater-web` | 前端（Vue 3 + TypeScript + Vite + Tailwind）。 |
+| `nitrowater-web` | Vue 3 + Vite 前端：门户、工具箱、插件中心、NitroBot 对话 |
+| `nitrowater-bff` | confidential OIDC 客户端、会话、`/api/**` 代理，并托管 SPA |
+| `nitrowater-account` | SSO / OIDC 身份中心，自带登录页与管理端 |
+| `nitrowater-server` | 业务 API：插件中心、AI Agent、沙箱代码运行 |
+| `nitrowater-resource` | 文件服务与插件 JAR 托管 |
+| `nitrowater-core`、`nitrowater-lib` | 共享持久化/安全基础件、无框架依赖的工具类 |
 
-## 技术栈
+工具箱包含 MOTD、`server.properties`、`server-icon`、启动脚本，以及代码运行、ZIP、树形视图、Java→TypeScript、MP4→GIF、Markdown→Word。NitroBot 基于检索到的文档语料（Qdrant）作答，可联网核实、执行代码并保留长期记忆。
 
-- **后端** —— Java 25、Spring Boot 4.1.1、Spring Security 7 + Spring Authorization Server 7（OIDC）、JPA + MySQL 8、Redis、Flyway、Jackson 3。
-- **沙箱** —— 自托管 [Piston](https://github.com/engineer-man/piston)（Docker），负责编译/运行。
-- **存储** —— 自托管 SeaweedFS（S3 兼容）+ 可选腾讯 COS / 本地后端。
-- **前端** —— Vue 3 + TypeScript + Vite、**Tailwind CSS v4**（`@tailwindcss/vite`）负责样式、vue-router；Element Plus 保留用于复杂组件；ESLint（flat config）。
-- **文档** —— VitePress（`velochatx-docs`）。
+## 本地运行
 
-## 快速开始
-
-前置：**JDK 25**、**Docker**（用于基础设施与 Piston）、**MySQL 8**、**Redis**。
+依赖：JDK 25、Node 24 + pnpm 11、Docker（Piston / SeaweedFS / Qdrant / 文档站）、MySQL 8、Redis。
 
 ```powershell
-.\deploy\bin\gen-keys.ps1   # 首次：生成 JWT 密钥
-.\bin\start-all.ps1         # 构建（bootJar）+ infra + 后端服务（account/bff/server/resource）
+.\deploy\bin\gen-keys.ps1      # 首次：生成 JWT 签名密钥
+.\bin\start-all.ps1            # 构建 jar、拉起基础设施、启动四个服务
+cd nitrowater-web; npm run dev # http://localhost:5173，/api 代理到 BFF
 ```
 
-- 前端由你自己启动：`cd nitrowater-web; npm run dev` → http://localhost:5173
-  （或 `.\bin\start-all.ps1 -BuildWeb` 让 BFF 在 :8080 直接托管构建版）
-- 门户 / 统一入口：http://localhost:8080 （BFF 托管的 SPA）
-- SSO 身份中心：http://localhost:8090
+门户 `:8080`，身份中心 `:8090`（直达 `/tools`、`/plugins`、`/chat`）。`start-all.ps1 -SkipBuild` 复用现有 jar 重启，`-Hidden` 后台运行，`-BuildWeb` 由 BFF 直接托管构建版，`stop-all.ps1` 停止全部服务；参数与数据脚本见 [`bin/README.md`](../../bin/README.md)。
 
-启停参数与 `bin/dev/` 数据脚本（播种 / 重置 / 同步）见 [`bin/README.md`](../../bin/README.md)。
+开发数据只放在脚本里、不进迁移：`bin/dev/dev-seed.ps1` 生成测试用户与示例资源（`testadmin` / `testuser1` / `testuser`，密码 `Passw0rd123`），`bin/dev/reset-db.ps1` 清库后由 Flyway 从 `V1` 重放。
 
-## 仓库与文档
+## 调试
 
-| 平台 | 地址 |
+`start-all.ps1` 启动的服务各占一个常驻窗口，Spring 日志直接可见；加 `-Hidden` 后同样内容写入 `bin\.run\logs\<module>.out.log`。只调一个模块时用 Gradle 或 IDE 直接跑：
+
+```powershell
+.\gradlew.bat :nitrowater-server:bootRun
+```
+
+需要在断点处停下时，用 JDWP 启动 jar，再把 IDE attach 到 5005：
+
+```powershell
+java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar nitrowater-server\build\libs\app.jar
+```
+
+提交前跑一遍：
+
+```powershell
+.\gradlew.bat test                     # 全模块
+.\gradlew.bat :nitrowater-server:test  # 单模块
+cd nitrowater-web; npm run lint; npm run build
+```
+
+前端改动走 Vite 热更新，前提是 `npm run dev` 在跑——SPA 只通过开发代理访问 BFF。数据库报错多半是 checksum 过期：`bin/dev/reset-db.ps1 -Db biz -Force -Restart` 会清库并重放迁移。
+
+## 部署
+
+单台 Linux + Docker。三个 compose 文件共享同一网络，顺序固定（`infra` → `account` → `app`）；可选的 `edge` profile 会在 BFF 与身份中心前面加上 nginx + ACME。
+
+```bash
+bash deploy/bin/gen-keys.sh
+cp deploy/docker/.env.prod.example deploy/docker/.env    # 域名、密钥、存储、配额
+bash deploy/bin/check-env.sh deploy/docker/.env
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
+# 再依次 up docker-compose.account.yml、docker-compose.app.yml
+```
+
+每个变量在 `.env.prod.example` 里都有注释；完整步骤、TLS edge profile、备份与运维说明见 [`deploy/README.md`](../../deploy/README.md)。两条流水线均为手动触发：`ci.yml` 负责构建与各项检查，`deploy.yml` 构建四个镜像、推送到 GHCR 并 SSH 部署。
+
+## 文档
+
+| | |
 |---|---|
-| GitHub | https://github.com/danburen/nitrowater |
-| Gitee | https://gitee.com/blackwallet/nitrowarer |
-
-- 需求 / 设计：[`docs/PRD.md`](../PRD.md)
-- 架构笔记与项目理解：`.ai/PROJECT.md`
-- 英文 README：[`../../README.md`](../../README.md)
+| 需求与设计 | [`docs/PRD.md`](../PRD.md) |
+| 架构说明 | [`docs/architecture.md`](../architecture.md) |
+| 部署 | [`deploy/README.md`](../../deploy/README.md) |
+| 开发脚本 | [`bin/README.md`](../../bin/README.md) |
 
 ## 许可证
 
-见 [`LICENSE`](../../LICENSE)。
+[MIT](../../LICENSE)
