@@ -133,7 +133,7 @@ if ($loadedEnv.Count -gt 0) {
 }
 
 # ---------- 2. 必需变量 / 占位值 ----------
-# Template placeholders (YOUR_*_HERE) must block: copying .env.prod.example verbatim used to
+# Template placeholders (YOUR_*_HERE) must block: copying .env.example verbatim used to
 # yield "Fail: 0" because the per-variable rules only knew about empty values and known weak
 # defaults (assessment M3).
 $placeholders = @($resolvedEnv | ForEach-Object { Get-PlaceholderKeys $_ } | Select-Object -Unique)

@@ -158,7 +158,8 @@ docker build --target account -t nitrowater-account .
 docker build --target server -t nitrowater-server .
 docker build --target resource -t nitrowater-resource .
 
-# all four at once; Gradle runs once (targets live in docker-bake.hcl, REGISTRY defaults to ghcr.io)
+# all five at once; Gradle runs once for the four app targets (targets live in docker-bake.hcl, REGISTRY defaults to ghcr.io)
+# `kit` is a FROM scratch carrier (compose files + ops scripts) that deploy.yml unpacks on the host
 # --set '*.attest=' drops the SBOM/provenance attesters: the docker exporter cannot load them
 TAG=dev SHA=$(git rev-parse --short HEAD) REPO=local/nitrowater \
   docker buildx bake --load --set '*.attest='
@@ -173,7 +174,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds the four images with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back); `release.yml` chains build → deploy in one run.
+Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds four application images plus the `kit` (compose files + ops scripts) with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it unpacks the kit with `docker create` + `docker cp`, so the host needs no git checkout; `release.yml` chains build → deploy in one run.
 
 ## 📦 Deployment
 
@@ -181,13 +182,13 @@ A single Linux host with Docker. Three compose files share one network and must 
 
 ```bash
 bash deploy/bin/gen-keys.sh
-cp deploy/docker/.env.prod.example deploy/docker/.env   # domains, secrets, storage, quotas
+cp deploy/docker/.env.example deploy/docker/.env   # domains, secrets, storage, quotas
 bash deploy/bin/check-env.sh deploy/docker/.env
 docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
 # then docker-compose.account.yml, then docker-compose.app.yml
 ```
 
-Every variable is annotated in `.env.prod.example`; the full walkthrough, TLS edge profile, backup and operations notes are in [`deploy/README.md`](deploy/README.md).
+Every variable is annotated in `.env.example`; the full walkthrough (required keys, public-URL group, conditional keys, image tags), TLS edge profile, backup and operations notes are in [`deploy/README.md`](deploy/README.md).
 
 ## 📚 Documentation
 

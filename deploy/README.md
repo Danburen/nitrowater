@@ -1,7 +1,7 @@
 # NitroWater 部署
 
 > 单机自建：一台 Linux + Docker，仓库放持久盘（如 `/opt/nitrowater`）。所有命令都在**仓库根**执行。
-> 变量清单以 **`deploy/docker/.env.prod.example`** 为准（每个键都有注释，改完不要留 `YOUR_*_HERE`）。
+> 变量清单以 **`deploy/docker/.env.example`** 为准（每个键都有注释，改完不要留 `YOUR_*_HERE`）。
 > 本文只讲：顺序、必填项、验收、日常运维、故障对照。
 
 ## 拓扑与单元
@@ -29,6 +29,7 @@
 | 端口 | 只放行 80/443；8080/8081/8090/8093/3306/6379/6333/8333/8888/9333/2000 **不要**对公网开放 |
 | DNS | 站点与 SSO 域名 A 记录指向本机（用 `edge` 时 80 必须公网可达，HTTP-01 签发） |
 | 资源 | ≥ 4 GB 内存（mysql 512M + redis 256M + qdrant 384M + seaweedfs 512M + 三个 JVM）、≥ 20 GB 磁盘 |
+| 宿主机工具 | `docker` + compose 插件、`bash`、`openssl`、`curl`。**不需要 git / JDK / Node**（部署包由 `kit` 镜像带上来，见 §12） |
 
 ## 2. 密钥
 
@@ -42,18 +43,43 @@ openssl rand -base64 24   # DB_PASSWORD
 openssl rand -base64 24   # REDIS_PASSWORD
 openssl rand -hex 32      # BFF_CLIENT_SECRET
 openssl rand -hex 24      # S3_SECRET_KEY
+openssl rand -hex 12      # RESOURCE_INTERNAL_TOKEN（/internal 发布通道）
+date +%s                  # APP_SESSION_EPOCH（每次发布换新值 = 旧会话全部失效）
 ```
 
-三个口令互不相同。`private.key` 轮换 = 全员重新登录。
+三个口令互不相同。`private.key` 轮换 = 全员重新登录。生成的值填进 §3 的 `.env`，
+口令/密钥建议单独放 `deploy/docker/.env.prod.secrets`（见 §3.2）。
 
-## 3. 变量
+## 3. 变量（`.env`）
+
+### 3.1 放在哪、谁维护
 
 ```bash
-cp deploy/docker/.env.prod.example deploy/docker/.env
+cd /opt/nitrowater                            # DEPLOY_ROOT
+cp deploy/docker/.env.example deploy/docker/.env
 chmod 600 deploy/docker/.env
 ```
 
-**必填**（缺任一，compose 或 `check-env` 直接阻断）：
+- 模板是 `deploy/docker/.env.example`（唯一模板，全部是占位值，不含真实配置）。
+  `deploy/docker/.env*` 整目录被 gitignore，**只有 `*.example` 进仓库**。
+- **CI/CD 不生成、不修改它**：`build.yml` 只推镜像；`deploy.yml` 只用进程环境变量覆盖 4 个键（见 3.6）；
+  部署时 kit 镜像只 `docker cp` 到 `deploy/`，宿主机没有 git 工作区，`.env` 完全是你的状态。
+- 换机器 = 手工搬 `.env`（连同 `deploy/keys/`、`deploy/content/`）。
+
+### 3.2 拆两个文件（可选，推荐）
+
+`.env` 放普通配置，口令/密钥放 `deploy/docker/.env.prod.secrets`；两者都传给 compose 和门禁，
+**后者覆盖前者**，进程环境变量优先级最高：
+
+```bash
+bash deploy/bin/check-env.sh deploy/docker/.env deploy/docker/.env.prod.secrets
+docker compose --env-file deploy/docker/.env --env-file deploy/docker/.env.prod.secrets \
+  -f deploy/docker/docker-compose.infra.yml up -d
+```
+
+不带参数时 `check-env.sh` 默认就读这一对；`deploy.yml` 也只在第二个文件存在时才追加 `--env-file`。
+
+### 3.3 必填：空值直接 FAIL（没有它们起不来）
 
 | 变量 | 说明 |
 |---|---|
@@ -63,28 +89,77 @@ chmod 600 deploy/docker/.env
 | `NITROWATER_KEK` / `DEVICE_SALT` | 32 字节 Base64 / 随机串，禁用 dev 默认值 |
 | `JWT_ISSUER` | 必须是 URL，且等于 account 对外地址 |
 | `BFF_CLIENT_SECRET` | 不能用 `nitrowater-bff-secret` |
+| `APP_SESSION_EPOCH` | 时间戳；每次发布换新值 = 旧会话全部失效 |
+| `RESOURCE_INTERNAL_TOKEN` | 留空也能启动，但 `/internal` 发布通道返回 503 |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` | `RESOURCE_BACKEND=s3` 时必填 |
 | `AI_CHAT_API_KEY` / `AI_EMBEDDING_API_KEY` | 也可用 `DEEPSEEK_API_KEY` / `SILICONFLOW_API_KEY` 回落 |
 
-**拆两个文件**（可选，推荐）：`.env` 放普通配置，密钥写 `deploy/docker/.env.prod.secrets`
-（已 gitignore）。两者都要传给 compose 和门禁，后者覆盖前者；**进程环境变量优先级最高**：
+### 3.4 对外地址：一律写【浏览器看到的公网地址】
 
-```bash
-bash deploy/bin/check-env.sh deploy/docker/.env deploy/docker/.env.prod.secrets
-docker compose --env-file deploy/docker/.env --env-file deploy/docker/.env.prod.secrets \
-  -f deploy/docker/docker-compose.infra.yml up -d
+不要写 `localhost` / 内网 IP / 容器名，否则回调与跳转会拼出错误地址（典型症状：登录后 400、跳回 `localhost`）。
+
+| 变量 | 例子 |
+|---|---|
+| `JWT_ISSUER` | `https://auth.example.com`（必须等于 account 对外地址） |
+| `BFF_REDIRECT_URIS` | `https://example.com/login/oauth2/code/nitrowater` |
+| `BFF_POST_LOGOUT_REDIRECT_URIS` | `https://example.com,https://example.com/` |
+| `SSO_DEFAULT_REDIRECT` / `POST_LOGOUT_REDIRECT_URI` | `https://example.com`（前者必须落在后者列表里） |
+| `SSO_FORM_ACTION_ORIGINS` | `https://example.com,https://auth.example.com` |
+| `CORS_ALLOWED_ORIGIN_PATTERNS` | 同上；**禁止 `*`**（带凭证的通配符等于放开所有来源） |
+| `S3_PUBLIC_ENDPOINT` / `AVATAR_PICTURE_BASE_URL` | `https://fs.example.com`（浏览器可达，不是容器地址） |
+
+**换域名 = 一次性同步 7 个变量**：`JWT_ISSUER`、`BFF_REDIRECT_URIS`、`BFF_POST_LOGOUT_REDIRECT_URIS`、
+`SSO_DEFAULT_REDIRECT`、`SSO_FORM_ACTION_ORIGINS`、`POST_LOGOUT_REDIRECT_URI`、`AVATAR_PICTURE_BASE_URL`。
+
+反代必须发 `X-Forwarded-Proto` / `X-Forwarded-Host`，并显式 403/404 掉 `/actuator/**` 与 `/internal/**`
+（样例见 `deploy/docker/nginx-public-proxy.conf`）。
+
+### 3.5 条件必填
+
+| 开关 | 条件 |
+|---|---|
+| `COMMUNICATION_MODE=real` | SMTP（`MAIL_*`）与阿里云短信（`ALIBABA_CLOUD_*`、`ALIYUN_SMS_*`）**两组都必填**，缺一项 FAIL；没有短信资质就先别切 `real` |
+| `RESOURCE_BACKEND`（`s3` / `cos` / `local`） | `cos` 要 `COS_SECRET_ID` / `COS_SECRET_KEY` / `COS_REGION` / `COS_BUCKET`；用 `s3` 就把 `COS_*` 整段注释掉（**别留占位值**，会 FAIL） |
+| `RESOURCE_USER_UPLOAD` | 审核流程上线前保持 `false`（接口返回 503） |
+| `S3_ENDPOINT` / `PISTON_BASE_URL` | 默认指向 compose 自带的 seaweedfs / piston，改用外部服务时才需要写 |
+
+### 3.6 镜像地址：写死 2 个键，tag 留给 CI
+
+```ini
+REGISTRY=ghcr.io
+GITHUB_REPOSITORY=danburen/nitrowater      # 不填会回落到 your-org/nitrowater → manifest unknown
 ```
 
-其余键（AI 调优、短信、内容挂载、端口绑定、镜像 tag）见 `.env.prod.example` 注释。几条容易踩的：
+`ACCOUNT_IMAGE_TAG` / `APP_IMAGE_TAG` **不要写进 `.env`**，交给 CI 注入（进程环境变量优先级更高，
+写了也会被覆盖，只会让手工排障和线上看到的不一致）。
+
+| 键 | `.env` | CI 部署时 |
+|---|---|---|
+| `REGISTRY` / `GITHUB_REPOSITORY` | 写（手工排障要用） | 被 CI 的环境变量覆盖为同一个值 |
+| `ACCOUNT_IMAGE_TAG` / `APP_IMAGE_TAG` | 留空 / 注释 | 注入成本次 run 的 tag |
+| 其余所有键 | 唯一来源 | 只读不写 |
+
+### 3.7 只有 compose 引用的键才会进容器
+
+模板已覆盖三份 compose 里 `${VAR}` 的全部引用。`application.yml` 里另有几十个调优键
+（`AI_AGENT_*`、`AI_CONTEXT_*`、`AI_TOP_K` 等）当前**没有**在 compose 透传，写进 `.env` 不生效；
+要改就在 `docker-compose.app.yml` 的 `environment:` 加一行 `${KEY:-默认值}`。
+
+`.env` 里写了却没被 compose 引用的键，`check-env` 会报 WARN（配了也不生效）。
+
+### 3.8 几条容易踩的
 
 - `PUBLISH_BIND` / `OPS_BIND` 保持 `127.0.0.1`（Qdrant/SeaweedFS 的 UI 无认证）。
-- 换域名要同步 7 个变量：`JWT_ISSUER`、`BFF_REDIRECT_URIS`、`BFF_POST_LOGOUT_REDIRECT_URIS`、
-  `SSO_DEFAULT_REDIRECT`、`SSO_FORM_ACTION_ORIGINS`、`POST_LOGOUT_REDIRECT_URI`、`AVATAR_PICTURE_BASE_URL`。
-- 浏览器跨域白名单 `CORS_ALLOWED_ORIGIN_PATTERNS` 必须显式列域名，禁止带凭证的通配符。
 - 外置词表必须**双层**：`classpath:ai/moderation/words.txt,file:/etc/nitrowater/moderation/words.txt`；
   只用 `file:` 且路径写错会得到 `words=0`，闸门静默失效。
 - `AI_DOCS_LOCATION` 指向的目录必须至少有 1 个 `.md`，否则该语料会被全量重建丢掉。
 - 换 embedding 维度要换 `AI_COLLECTION`（别原地重建）。
+- 不要在值后面写行内注释：`DB_PASSWORD=abc123  # 密码` 会把 `#` 和后面整段当成口令。
+- 不要在 Windows 上编辑后直接上传：CRLF 会让值尾带 `\r`（`check-env` 容错，compose 不一定）；
+  已经带上了就 `sed -i 's/\r$//' deploy/docker/.env`。
+- `NITROWATER_KEK` 一旦定下来永久不能改（改了所有加密列都解不开），生成后立刻离线备份。
+- 数据卷已存在时改 `DB_PASSWORD` 不会改库里的口令，需要手工 `ALTER USER`。
+- 走 HTTPS 时 `SESSION_COOKIE_SECURE=true`。
 
 ## 4. 门禁（上线前必须 0 FAIL）
 
@@ -125,6 +200,11 @@ docker exec nitrowater-piston cli/index.js ppman install java
 docker exec nitrowater-piston cli/index.js ppman install c
 docker exec nitrowater-piston cli/index.js ppman install c++
 ```
+
+> 宿主机上还没有 `deploy/` 目录？先看 §12 的「首次引导」：跑一次 `Deploy` 会把 kit 解到
+> `/opt/nitrowater/deploy/`，再回来填 `.env` 重跑。
+> 另外 `deploy/plugin-docs/`（约 1.8 MB 静态文档，**不在 kit 镜像里**）要单独 scp 上去，
+> 否则 `/plugin/*` 会 404。
 
 **公网入口二选一**：
 
@@ -278,12 +358,13 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 | 文件 | 手工跑法 | 干什么 | 碰服务器 |
 |---|---|---|---|
-| `.github/workflows/build.yml` | Actions → Build（填 `tag`） | 先 `verify`（后端 build+单测+JaCoCo、两个前端 lint+build、compose/脚本语法守卫），全绿后 `docker buildx bake` 一次推 4 个镜像到 GHCR：`<tag>` + `<sha>` 双标签。**不部署** | 否 |
-| `.github/workflows/deploy.yml` | Actions → Deploy（填 `tag`） | preflight 确认 4 个镜像存在 → SSH：同步部署包 → `check-env.sh` → infra → account → app `pull` + `up -d --no-build` → 探活。**不构建** | 是 |
+| `.github/workflows/build.yml` | Actions → Build（填 `tag`） | 先 `verify`（后端 build+单测+JaCoCo、两个前端 lint+build、compose/脚本语法守卫），全绿后 `docker buildx bake` 一次推 **4 个应用镜像 + `kit`** 到 GHCR：`<tag>` + `<sha>` 双标签。**不部署** | 否 |
+| `.github/workflows/deploy.yml` | Actions → Deploy（填 `tag`） | preflight 确认 **5 个镜像**存在 → SSH：`docker pull` + `docker cp` 解出 kit（compose/脚本）→ `check-env.sh` → infra → account → app `pull` + `up -d --no-build` → 探活。**不构建** | 是 |
 | `.github/workflows/release.yml` | Actions → Release（填 `tag`） | `build.yml` → 成功后 `deploy.yml`（`needs` 链，构建失败不动线上） | 是 |
 
-`docker-bake.hcl`（仓库根）是四镜像的构建清单：4 个 target 共享 Dockerfile 的 `build` 阶段（全量 gradle），
+`docker-bake.hcl`（仓库根）是全部镜像的构建清单：4 个应用 target 共享 Dockerfile 的 `build` 阶段（全量 gradle），
 `bake` 单次调用把它**只跑一次**；分开 `docker build --target` 会跑四次、并重复下载依赖。
+第 5 个 target `kit` 与之无关：`FROM scratch` + 20 个文本文件，构建只要 1~2 秒。
 
 > **三份前端的构建位置**：都在**镜像里**，workflow 不再单独跑前端 job——
 > `bff` 镜像的 `web-ui` stage（`nitrowater-web`：`npm ci` + vue-tsc + vite build → `dist` → jar 的 `classpath:/static/`），
@@ -299,8 +380,8 @@ gh workflow run deploy.yml  -f tag=v1.2.3   # 只上线（回滚也用它）
 gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线一条龙
 ```
 
-**选哪个**：日常发布用 `release`；想"白天构建、夜里切换"或先构建攒着，就 `build` 再 `deploy`；
-只改 compose / 脚本（不换镜像）直接 `deploy` 同 tag 即可。
+**选哪个**：日常发布用 `release`；想"白天构建、夜里切换"或先构建攒着，就 `build` 再 `deploy`。
+只改 compose / 脚本也一样要走 `build`（kit 会重打，1~2 秒），然后 `deploy` —— 这是因为 compose 文件现在也随镜像走。
 
 > `deploy` 的 preflight 用 `docker manifest inspect` 逐个查 GHCR；GHCR 包没链接到本仓库
 > （或包是 private 但 GITHUB_TOKEN 无权限）时会误报缺失——此时勾 `skip_preflight` 跳过，
@@ -308,11 +389,11 @@ gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线一条龙
 
 **一次性准备**
 
-1. 服务器上 `DEPLOY_ROOT`（默认 `/opt/nitrowater`）是本仓库的 git clone，且 §1~§6 已完成（含手工建库建号）；
+1. 服务器上 `DEPLOY_ROOT`（默认 `/opt/nitrowater`）**不需要 git clone**：部署包由 `kit` 镜像带上来
+   （见下面的「部署包」），§1~§6 已完成（含手工建库建号）；
    `deploy/docker/.env`（+ 可选 `.env.prod.secrets`）、`deploy/keys/`、`deploy/content/` 已就位。
 2. 仓库 Secrets：`SSH_HOST` / `SSH_USER` / `SSH_KEY`；GHCR 包是 private 时再加 `GHCR_USER` + `GHCR_PAT`。
-3. 仓库 Variables（可选）：`DEPLOY_ROOT`、`DEPLOY_BRANCH`（默认 `main`）、
-   `COMPOSE_PROFILE`（用自带 edge 就填 `edge`，自建反代留空）。
+3. 仓库 Variables（可选）：`DEPLOY_ROOT`、`COMPOSE_PROFILE`（用自带 edge 就填 `edge`，自建反代留空）。
 
 **发布与回滚**
 
@@ -326,10 +407,38 @@ gh workflow run deploy.yml -f tag=<上一个提交的 sha>   # 回滚，不重�
 **回滚别用 `release`**：它会用这个 tag 重新构建一遍并覆盖同名镜像，镜像内容变成"现在"而不是"当时"。
 `deploy` 是唯一会去动服务器的入口，也是唯一该用于回滚的入口（部署全局串行，`concurrency: deploy`）。
 
-服务器侧行为：`git reset --hard origin/<DEPLOY_BRANCH>` 同步部署包（compose / 脚本），
-`.env`、`keys`、`content` 是 gitignored 不受影响；镜像 tag 由工作流注入。
-所以**部署包跟 `main`，镜像跟 tag**——回滚镜像不会把 compose 一起退回去（反过来，只改 compose 的
-发布不需要重新构建镜像，直接跑 `deploy` 同 tag 即可）。
+服务器侧行为：`docker cp` 只覆盖 `deploy/` 里的 kit 文件；`.env`、`keys/`、`content/` 是宿主机状态，不受影响。
+**部署包跟 tag**（kit 与应用镜像同一个 tag/sha），所以回滚镜像是连同 compose 一起回退的；
+反过来说，只改 compose / 脚本也必须 `build` 一次（重打 kit），不能只跑 `deploy`。
+
+**部署包（`kit` 镜像）**
+
+宿主机上没有任何 git 工作区。compose 文件、`deploy/bin/*` 脚本、`.env.example` 都由 `kit` 镜像带上来——
+它只是借用 registry 当传输通道（同一个 tag、同一套凭据），宿主机用四行 docker 解包：
+
+```bash
+docker pull ghcr.io/<owner>/nitrowater/kit:<tag>
+docker create --name nitrowater-kit ghcr.io/<owner>/nitrowater/kit:<tag>
+docker cp nitrowater-kit:/deploy/. /opt/nitrowater/deploy/   # 合并，不删 .env / keys / content
+docker rm nitrowater-kit
+```
+
+镜像本身 `FROM scratch`，**没有 shell、没有二进制**（`docker run` 会报 `no command specified`），
+所以它只是"文件搬运"，永远不会变成运行时。内容就是 20 个文本文件（compose ×3、`docs-nginx.conf`、
+5 个脚本、模板、content 占位）；私钥、`.env`、运行时词表/语料、1.8 MB 的插件文档都被
+`deploy/.dockerignore` 挡在镜像外。
+
+`docker cp` 是**合并**不是同步：仓库里删掉的旧文件不会自动从宿主机消失（极少见，手工删掉即可）。
+
+**首次引导**（宿主机还没有 `deploy/` 时）：直接跑一次 `Deploy`。它先 `docker cp` 把 kit 落到
+`/opt/nitrowater/deploy/`，然后停在 `check-env.sh`（因为还没有 `.env`）。接着：
+
+```bash
+cd /opt/nitrowater
+cp deploy/docker/.env.example deploy/docker/.env && chmod 600 deploy/docker/.env
+bash deploy/bin/gen-keys.sh && chmod 600 deploy/keys/private.key
+# 按 §3 填 .env，然后重跑 Deploy
+```
 
 > `compose pull` 是**整份文件**拉取，`app.yml` 里还有 `chrislusf/seaweedfs`、`ghcr.io/engineer-man/piston`
 > 等第三方镜像（未固定 tag = latest）。某个镜像源抽风就会让整个 `deploy` 中止（`set -e`）。

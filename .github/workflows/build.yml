@@ -1,8 +1,11 @@
-# Build: run the checks, then build and push the four images to GHCR. Does not deploy.
+# Build: run the checks, then build and push the four application images plus the deploy
+# kit to GHCR. Does not deploy.
 #
 # Image tags: <tag> (input, default latest) and <sha>. Roll back by deploying a
 # previous sha with deploy.yml. Images are built by `docker buildx bake`
 # (docker-bake.hcl) so the shared Gradle stage runs once instead of once per image.
+# The kit target is a tiny `FROM scratch` carrier (compose files + ops scripts) that
+# deploy.yml unpacks on the host, so the server never needs a git checkout.
 # Tests run in this workflow only — the Dockerfile builds with `-x test`.
 #
 # Everything is manual; auto triggers are commented out in `on:` below.
@@ -203,10 +206,10 @@ jobs:
           Write-Host 'all .ps1 parsed clean'
 
   # ---------------------------------------------------------------------------
-  # build: one bake invocation -> 4 images, Gradle runs once
+  # build: one bake invocation -> 4 images + kit, Gradle runs once
   # ---------------------------------------------------------------------------
   build:
-    name: bake (push 4 images)
+    name: bake (push 4 images + kit)
     needs: [resolve, backend, ui-web, ui-account, guard]
     # Checks still run on pull_request, images are not built.
     if: github.event_name != 'pull_request'
@@ -244,7 +247,7 @@ jobs:
             echo "### images: \`${TAG}\`"
             echo "| service | ref | digest |"
             echo "|---|---|---|"
-            for svc in account resource server bff; do
+            for svc in account resource server bff kit; do
               ref="${REGISTRY}/${REPO}/${svc}:${TAG}"
               digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo n/a)"
               echo "| ${svc} | \`${ref}\` | \`${digest}\` |"

@@ -179,7 +179,7 @@ services:
       AI_WEB_SEARCH_API_KEY: ${AI_WEB_SEARCH_API_KEY:-${DEEPSEEK_API_KEY:-}}
       AI_WEB_SEARCH_ENDPOINT: ${AI_WEB_SEARCH_ENDPOINT:-https://api.deepseek.com/v1/tools/search}
       AI_WEB_SEARCH_TIMEOUT_MS: ${AI_WEB_SEARCH_TIMEOUT_MS:-20000}
-      # 词表默认只用镜像内基线；启用外置词表时在 .env 里加 file: 层（见 .env.prod.example）。
+      # 词表默认只用镜像内基线；启用外置词表时在 .env 里加 file: 层（见 .env.example）。
       AI_MODERATION_DICT: ${AI_MODERATION_DICT:-classpath:ai/moderation/words.txt}
       AI_MODERATION_ALLOW: ${AI_MODERATION_ALLOW:-classpath:ai/moderation/allow.txt}
       AI_MODERATION_STRIKE_LIMIT: ${AI_MODERATION_STRIKE_LIMIT:-5}

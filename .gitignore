@@ -82,9 +82,9 @@ go.work.sum
 # Production values kept outside deploy/docker/.env; pass them with `docker compose --env-file <path>`.
 .env.prod.secrets
 # Anything else dropped next to the compose files (.env.local, .env.prod, .env.bak, .env.prod.secrets)
-# is a copy of live credentials. Only the template is tracked.
+# is a copy of live credentials. Templates (`*.example`) are the only tracked files in this folder.
 deploy/docker/.env*
-!deploy/docker/.env.prod.example
+!deploy/docker/*.example
 
 # Scripts tracked: root bin/ (launch start-* + bin/dev dev tooling) and deploy/bin/ (ops/deploy).
 # The generic `bin/` rule above ignores ANY `bin` directory, so re-include both explicitly

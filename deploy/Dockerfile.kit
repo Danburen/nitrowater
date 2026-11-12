@@ -1,0 +1,21 @@
+# Deploy kit as an image: compose files + ops scripts + templates.
+#
+# Why an image: the host then needs no git checkout. It borrows the registry as transport
+# (same tag / credentials / network path as the four application images) and the host
+# unpacks it with `docker create` + `docker cp` (see deploy.yml).
+#
+# `FROM scratch` is deliberate: there is no shell and no binary in here, so `docker run`
+# fails on purpose — this is a file carrier, never a runtime.
+#
+# Built with context = ./deploy (docker-bake.hcl target "kit"), so paths are relative
+# to deploy/. deploy/.dockerignore keeps .env, *.secrets, keys/*.key and runtime data out.
+FROM scratch
+
+LABEL org.opencontainers.image.title="nitrowater deploy kit" \
+      org.opencontainers.image.description="compose files and ops scripts; not a runtime image"
+
+COPY docker/ /deploy/docker/
+COPY bin/ /deploy/bin/
+COPY content/ /deploy/content/
+COPY keys/README.md /deploy/keys/README.md
+COPY README.md /deploy/README.md

@@ -1,3 +1,6 @@
 /gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
+# .env templates must be checked out with LF: a CRLF would put a trailing \r into every
+# value. .env itself is never tracked, so this only guards the template.
+deploy/docker/.env* text eol=lf

@@ -158,7 +158,8 @@ docker build --target account -t nitrowater-account .
 docker build --target server -t nitrowater-server .
 docker build --target resource -t nitrowater-resource .
 
-# 一次四个，gradle 只跑一次（target 在 docker-bake.hcl，REGISTRY 默认 ghcr.io）
+# 一次五个，四个应用 target 的 gradle 只跑一次（target 在 docker-bake.hcl，REGISTRY 默认 ghcr.io）
+# kit 是 FROM scratch 的载体（compose 文件 + 运维脚本），deploy.yml 在宿主机解包
 # --set '*.attest=' 去掉 SBOM/来源证明：docker 导出器装不了 attestation
 TAG=dev SHA=$(git rev-parse --short HEAD) REPO=local/nitrowater \
   docker buildx bake --load --set '*.attest='
@@ -173,7 +174,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。三条流水线都是手动触发：`build.yml` 先跑各项检查，再用 `docker buildx bake` 构建四个镜像并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它）；`release.yml` 把 build → deploy 串成一次运行。
+覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。三条流水线都是手动触发：`build.yml` 先跑各项检查，再用 `docker buildx bake` 构建四个应用镜像 + `kit`（compose 文件与运维脚本）并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它），并用 `docker create` + `docker cp` 解出 kit，所以宿主机不需要 git；`release.yml` 把 build → deploy 串成一次运行。
 
 ## 📦 部署
 
@@ -181,13 +182,13 @@ cd nitrowater-account; pnpm lint; pnpm build
 
 ```bash
 bash deploy/bin/gen-keys.sh
-cp deploy/docker/.env.prod.example deploy/docker/.env   # 域名、密钥、存储、配额
+cp deploy/docker/.env.example deploy/docker/.env   # 域名、密钥、存储、配额
 bash deploy/bin/check-env.sh deploy/docker/.env
 docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
 # 再依次 up docker-compose.account.yml、docker-compose.app.yml
 ```
 
-每个变量在 `.env.prod.example` 里都有注释；完整步骤、TLS edge profile、备份与运维说明见 [`deploy/README.md`](../../deploy/README.md)。
+每个变量在 `.env.example` 里都有注释；完整步骤、变量填写顺序（必填 / 地址组 / 条件必填 / 镜像 tag）、TLS edge profile、备份与运维说明见 [`deploy/README.md`](../../deploy/README.md)。
 
 ## 📚 文档
 

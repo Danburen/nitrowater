@@ -1,16 +1,18 @@
 # Deploy: roll an already-built image tag out to the server. Never builds anything.
 #
-# The four images for that tag must exist in GHCR (run Build / Release first);
-# preflight verifies that before touching the server.
+# The five images for that tag must exist in GHCR (run Build / Release first). One of them
+# is the deploy kit (compose files + ops scripts): the host unpacks it with
+# `docker create` + `docker cp`, so there is no git checkout on the server. preflight
+# verifies all five before touching the host.
 #
 # Server side (same commands as deploy/README.md §5):
-#   git reset --hard origin/<branch>   syncs the deploy kit (compose, scripts); image tag comes from this run
+#   docker pull/create/cp kit          syncs the deploy kit; .env, keys/ and content/ untouched
 #   check-env.sh                       env gate
 #   compose config -q / --images       structure + the image refs that will be used
 #   infra -> account -> app            pull + up -d --no-build, then health checks
 #
-# Deploy kit follows DEPLOY_BRANCH, images follow the tag: rolling back an image
-# does not roll back the compose files (and vice versa).
+# Deploy kit follows the tag: rolling back an image also rolls back its compose files
+# (both come from the same kit image), so the two can no longer drift apart.
 
 name: Deploy
 
@@ -69,7 +71,6 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT || '/opt/nitrowater' }}
-  DEPLOY_BRANCH: ${{ vars.DEPLOY_BRANCH || 'main' }}
   # Set to `edge` when the infra compose brings its own 80/443 proxy; empty otherwise.
   COMPOSE_PROFILE: ${{ vars.COMPOSE_PROFILE || '' }}
 
@@ -109,7 +110,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: 4 images must already exist
+      - name: 5 images must already exist
         if: ${{ !inputs.skip_preflight }}
         env:
           TAG: ${{ steps.resolve.outputs.tag }}
@@ -117,7 +118,7 @@ jobs:
         run: |
           set -eu
           missing=0
-          for svc in account resource server bff; do
+          for svc in account resource server bff kit; do
             ref="ghcr.io/$REPO/$svc:$TAG"
             if docker manifest inspect "$ref" >/dev/null 2>&1; then
               echo "ok    $ref"
@@ -150,7 +151,6 @@ jobs:
           ACCOUNT_IMAGE_TAG: ${{ needs.preflight.outputs.tag }}
           APP_IMAGE_TAG: ${{ needs.preflight.outputs.tag }}
           DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
-          DEPLOY_BRANCH: ${{ env.DEPLOY_BRANCH }}
           COMPOSE_PROFILE: ${{ env.COMPOSE_PROFILE }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
@@ -160,26 +160,34 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           timeout: 30s
           command_timeout: 30m
-          envs: REGISTRY,GITHUB_REPOSITORY,ACCOUNT_IMAGE_TAG,APP_IMAGE_TAG,DEPLOY_ROOT,DEPLOY_BRANCH,COMPOSE_PROFILE,GHCR_USER,GHCR_PAT
+          envs: REGISTRY,GITHUB_REPOSITORY,ACCOUNT_IMAGE_TAG,APP_IMAGE_TAG,DEPLOY_ROOT,COMPOSE_PROFILE,GHCR_USER,GHCR_PAT
           script: |
             # The remote side is usually sh: POSIX only (no arrays, no ${var,,}).
             set -eu
 
             cd "$DEPLOY_ROOT"
 
-            echo "==> deploy kit: origin/${DEPLOY_BRANCH}"
-            git fetch --prune origin
-            git reset --hard "origin/${DEPLOY_BRANCH}"
-
             # compose image refs use ${REGISTRY}/${GITHUB_REPOSITORY}; the org must be lowercase.
             GITHUB_REPOSITORY="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
             export GITHUB_REPOSITORY
-            echo "==> images: ${REGISTRY}/${GITHUB_REPOSITORY}/* tag=${ACCOUNT_IMAGE_TAG}"
 
             if [ -n "${GHCR_PAT:-}" ]; then
               echo '==> docker login ghcr.io'
               printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:?GHCR_USER is required when GHCR_PAT is set}" --password-stdin
             fi
+
+            # Deploy kit = compose files + ops scripts, shipped as an image: no git on the host.
+            # `docker cp` merges into deploy/; .env, keys/ and content/ are host state and stay.
+            KIT_REF="${REGISTRY}/${GITHUB_REPOSITORY}/kit:${ACCOUNT_IMAGE_TAG}"
+            echo "==> deploy kit: ${KIT_REF}"
+            mkdir -p deploy
+            docker pull "$KIT_REF"
+            docker rm -f nitrowater-kit >/dev/null 2>&1 || true
+            docker create --name nitrowater-kit "$KIT_REF" >/dev/null
+            docker cp nitrowater-kit:/deploy/. deploy/
+            docker rm -f nitrowater-kit >/dev/null
+
+            echo "==> images: ${REGISTRY}/${GITHUB_REPOSITORY}/* tag=${ACCOUNT_IMAGE_TAG}"
 
             # When the env is split in two files, both go to compose (the latter wins);
             # shell environment variables still have the highest priority.
