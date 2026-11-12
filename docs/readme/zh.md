@@ -168,7 +168,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。两条流水线都是手动触发：`ci.yml` 负责构建与各项检查，`deploy.yml` 构建四个镜像、推到 GHCR 并 SSH 部署。
+覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。四条流水线都是手动触发：`ci.yml` 负责构建与各项检查，`build.yml` 只构建四个镜像并推到 GHCR，`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它），`release.yml` 把 build → deploy 串成一次运行。
 
 ## 📦 部署
 

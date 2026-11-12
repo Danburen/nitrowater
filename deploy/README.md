@@ -273,19 +273,31 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 ## 12. CI/CD（GitHub Actions）
 
-两个工作流**都只手动触发**（自动触发已注释掉，需要时再开）：仓库页 Actions → 选工作流 → `Run workflow`。
+四个工作流**都只手动触发**（自动触发已注释掉，需要时再开）：仓库页 Actions → 选工作流 → `Run workflow`。
+**构建与部署是两件事**：`build.yml` 产镜像，`deploy.yml` 只搬已构建好的镜像，`release.yml` 串起来一次做完。
 
-| 文件 | 手工跑法 | 干什么 |
-|---|---|---|
-| `.github/workflows/ci.yml` | Actions → CI | 后端 `gradlew build`（含单测+JaCoCo）、两个前端 lint+build、compose 结构校验、`deploy/bin`·`bin/dev` 脚本语法、Dockerfile 试构建 `target=bff` |
-| `.github/workflows/deploy.yml` | Actions → Deploy（填 `tag`） | 矩阵构建 4 个镜像推 GHCR → SSH 到服务器：同步部署包 → `check-env.sh` → 按 infra → account → app `pull` + `up -d` → 探活 |
+| 文件 | 手工跑法 | 干什么 | 碰服务器 |
+|---|---|---|---|
+| `.github/workflows/ci.yml` | Actions → CI | 后端 `gradlew build`（含单测+JaCoCo）、两个前端 lint+build、compose 结构校验、`deploy/bin`·`bin/dev` 脚本语法、Dockerfile 试构建 `target=bff` | 否 |
+| `.github/workflows/build.yml` | Actions → Build（填 `tag`） | 矩阵构建 4 个镜像推 GHCR：`<tag>` + `<sha>` 双标签。**不部署** | 否 |
+| `.github/workflows/deploy.yml` | Actions → Deploy（填 `tag`） | preflight 确认 4 个镜像存在 → SSH：同步部署包 → `check-env.sh` → infra → account → app `pull` + `up -d --no-build` → 探活。**不构建** | 是 |
+| `.github/workflows/release.yml` | Actions → Release（填 `tag`） | `build.yml` → 成功后 `deploy.yml`（`needs` 链，构建失败不动线上） | 是 |
 
 命令行等价物（装了 `gh` 时）：
 
 ```bash
 gh workflow run ci.yml
-gh workflow run deploy.yml -f tag=v1.2.3
+gh workflow run build.yml   -f tag=v1.2.3   # 先攒镜像，挑时间再上
+gh workflow run deploy.yml  -f tag=v1.2.3   # 只上线（回滚也用它）
+gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线一条龙
 ```
+
+**选哪个**：日常发布用 `release`；想"白天构建、夜里切换"或先构建攒着，就 `build` 再 `deploy`；
+只改 compose / 脚本（不换镜像）直接 `deploy` 同 tag 即可。
+
+> `deploy` 的 preflight 用 `docker manifest inspect` 逐个查 GHCR；GHCR 包没链接到本仓库
+> （或包是 private 但 GITHUB_TOKEN 无权限）时会误报缺失——此时勾 `skip_preflight` 跳过，
+> 真正缺失会在 `compose pull` 阶段报错，不会静默上线旧镜像。
 
 **一次性准备**
 
@@ -297,10 +309,22 @@ gh workflow run deploy.yml -f tag=v1.2.3
 
 **发布与回滚**
 
-`Run workflow` 时 `tag` 填什么就构建+部署什么：`latest`、版本号（`v1.2.3`）、或某个提交的 sha
-（`gh workflow run deploy.yml -f tag=<sha>`）。镜像同时打 `<tag>` 与 `<sha>` 两个标签，所以
-**回滚 = 把 `tag` 填成上一个提交的 sha 再跑一次**。
+`tag` 就是**镜像选择器**：`latest`、版本号（`v1.2.3`）、或某个提交的 sha。每次 build 都给同一批镜像
+同时打 `<tag>` 与 `<sha>` 两个标签，所以：
+
+```bash
+gh workflow run deploy.yml -f tag=<上一个提交的 sha>   # 回滚，不重建
+```
+
+**回滚别用 `release`**：它会用这个 tag 重新构建一遍并覆盖同名镜像，镜像内容变成"现在"而不是"当时"。
+`deploy` 是唯一会去动服务器的入口，也是唯一该用于回滚的入口（部署全局串行，`concurrency: deploy`）。
 
 服务器侧行为：`git reset --hard origin/<DEPLOY_BRANCH>` 同步部署包（compose / 脚本），
 `.env`、`keys`、`content` 是 gitignored 不受影响；镜像 tag 由工作流注入。
-所以**部署包跟 `main`，镜像跟 tag**——回滚镜像不会把 compose 一起退回去。
+所以**部署包跟 `main`，镜像跟 tag**——回滚镜像不会把 compose 一起退回去（反过来，只改 compose 的
+发布不需要重新构建镜像，直接跑 `deploy` 同 tag 即可）。
+
+> `compose pull` 是**整份文件**拉取，`app.yml` 里还有 `chrislusf/seaweedfs`、`ghcr.io/engineer-man/piston`
+> 等第三方镜像（未固定 tag = latest）。某个镜像源抽风就会让整个 `deploy` 中止（`set -e`）。
+> 第三方镜像建议先在服务器上 `docker compose ... pull` 预拉一次、或给它们固定版本，
+> 避免"业务镜像没问题却因为 nginx 拉不下来而上不了线"。

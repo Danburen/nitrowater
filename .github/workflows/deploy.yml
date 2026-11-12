@@ -1,30 +1,23 @@
 # ============================================================
-# NitroWater CD —— 构建 4 个镜像 → 推 GHCR → SSH 到单机部署
+# NitroWater Deploy —— 只部署**已经构建好**的镜像，不做任何 build。
 #
-# 触发：**只手动**（Actions → Deploy → Run workflow，或 gh workflow run deploy.yml -f tag=v1.2.3）。
-#       下面的 tag 自动触发先注释掉，需要时再取消。
+# 触发（都是手动；自动触发见下方 `on:` 里的注释）：
+#   - workflow_dispatch：Actions → Deploy → Run workflow（填 tag）
+#   - workflow_call   ：被 release.yml 复用（build 成功后紧接着部署）
 #
-# 两个 job：
-#   build   矩阵构建 account / resource / server / bff 四个 target 并推 GHCR（带 sha + tag 双标签）
-#   deploy  SSH 到服务器：同步部署包 → 校验环境 → 按 infra → account → app 顺序 pull + up -d → 探活
+# 前置：同 tag 的 4 个镜像必须在 GHCR 里（先跑 build.yml / release.yml）。
+#       preflight 会 `docker manifest inspect` 逐个确认，缺一个就中止，不 SSH。
 #
-# 与 waterfun 的差异（有意为之）：
-#   - 不走 deploy/bin/deploy.sh 一层封装：门禁与 compose 命令直接写在这里，
-#     和 deploy/README.md §5 的手工命令逐字一致（同一实现，不漂移）。
-#   - 没有前端产物上传：三个 SPA 都烤进了镜像（见根 Dockerfile），服务器不需要 dist。
+# 服务器侧行为（与 deploy/README.md §5 的手工命令逐字一致）：
+#   git reset --hard origin/<branch>   ← 部署包（compose / 脚本）跟 git，不跟镜像
+#   bash deploy/bin/check-env.sh       ← 门禁
+#   compose config -q                  ← 结构 + 插值
+#   infra → account → app  pull + up -d --no-build
+#   探活 → 清 24h 前的旧镜像
 #
-# 前置条件（只需一次）：
-#   1. 服务器已按 deploy/README.md §1~§6 完成首次手工部署（含建库建号）。
-#   2. 服务器 `DEPLOY_ROOT`（默认 /opt/nitrowater）是本仓库的 git clone，
-#      deploy/docker/.env（+ 可选 .env.prod.secrets）、deploy/keys/、deploy/content/ 已就位。
-#   3. GitHub 仓库 Secrets：SSH_HOST / SSH_USER / SSH_KEY；
-#      可选 GHCR_USER + GHCR_PAT（GHCR 包为 private 时服务器要 docker login；public 包不需要）。
-#   4. 可选 Variables：DEPLOY_ROOT（默认 /opt/nitrowater）、DEPLOY_BRANCH（默认 main）、
-#      COMPOSE_PROFILE（用自带 edge 就填 edge，占 80/443；自建反代留空）。
+# ⚠ 部署包跟 DEPLOY_BRANCH，镜像跟 tag。回滚 = 把 tag 填成上一个提交的 sha 再跑一次。
 #
-# ⚠ 部署包（compose / 脚本 / 文档）跟 DEPLOY_BRANCH，镜像跟 IMAGE_TAG。
-#   deploy 里会 `git reset --hard origin/<branch>`，服务器上对这些**受版本控制文件**的本地改动会被丢弃
-#   （.env、keys、content 都是 gitignored，不受影响）。
+# 一次性准备（服务器 / 仓库设置）见 deploy/README.md §12。
 # ============================================================
 
 name: Deploy
@@ -33,27 +26,58 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '镜像 tag（默认 latest；回滚时填上一个提交 sha 或旧 tag）'
+        description: '要部署的镜像 tag（默认 latest；回滚填上一个提交的 sha）'
         required: false
         default: 'latest'
+      skip_preflight:
+        description: '跳过「镜像已存在」预检（GHCR 包未链接到本仓库时会误报缺失）'
+        required: false
+        type: boolean
+        default: false
 
-  # ---------------- 自动触发（暂不启用：全部改手动，需要时取消注释） ----------------
-  # push:
-  #   tags:
-  #     - 'v*'
-  #   # 想「合进 main 即上线」就再加：
-  #   # branches:
-  #   #   - main
+  workflow_call:
+    inputs:
+      tag:
+        description: '要部署的镜像 tag'
+        required: false
+        type: string
+        default: 'latest'
+      skip_preflight:
+        description: '跳过镜像存在性预检'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      SSH_HOST:
+        required: true
+      SSH_USER:
+        required: true
+      SSH_KEY:
+        required: true
+      GHCR_USER:
+        required: false
+      GHCR_PAT:
+        required: false
 
-# 部署是全局串行：同一时刻只允许一个上线/回滚在跑。
+  # ---------------- 自动触发（暂不启用，需要时取消注释） ----------------
+  # 「build 跑完就自动部署」——注意这会绕过人工确认，且每次构建都会直接上线。
+  # 真要开的时候，tag 不能再用默认值：把下面 preflight 的 RAW_TAG 改成
+  #   ${{ github.event.workflow_run.head_sha }}
+  # 否则每次都会部署 latest（= 最后一次构建），回滚语义就没了。
+  # workflow_run:
+  #   workflows: [Build]
+  #   types: [completed]
+  #   branches: [main]
+
+# 部署全局串行：同一时刻只允许一个上线/回滚在跑。
+# 注意：本组只在 deploy.yml 里声明，release.yml 不声明同名组——
+# 调用方与被执行方持同一组会互相等待（GitHub 明确警告的死锁场景）。
 concurrency:
   group: deploy
   cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
-  # 手动触发时：`tag` 输入即 IMAGE_TAG（默认 latest）
-  IMAGE_TAG: ${{ inputs.tag || github.ref_name }}
   DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT || '/opt/nitrowater' }}
   DEPLOY_BRANCH: ${{ vars.DEPLOY_BRANCH || 'main' }}
   # 用 docker 自带 edge（nginx-proxy + acme，占 80/443）时把它设成 edge；用自建反代就留空。
@@ -61,51 +85,66 @@ env:
 
 jobs:
   # ================================================================
-  # Job 1: build —— 四个 target 各出一个镜像（同一份 Dockerfile 的 build 阶段由 gha 缓存共享）
+  # Job 1: preflight —— 确认「要部署的东西真的存在」，失败不碰服务器
   # ================================================================
-  build:
-    name: build (${{ matrix.service }})
+  preflight:
+    name: preflight (images)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [account, resource, server, bff]
+      packages: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-
-      # GHCR 要求镜像名全小写
-      - name: Lowercase repo name
-        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-
-      - uses: docker/setup-buildx-action@v3
+      - id: resolve
+        env:
+          RAW_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          tag="${RAW_TAG:-latest}"
+          case "$tag" in
+            ''|*[!A-Za-z0-9._-]*)
+              echo "::error::invalid tag: $tag（只允许 A-Za-z0-9._-）"
+              exit 1
+              ;;
+          esac
+          repo="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "target: ghcr.io/$repo/*:$tag"
 
       - uses: docker/login-action@v3
+        if: ${{ !inputs.skip_preflight }}
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.token }}
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          target: ${{ matrix.service }}
-          push: true
-          # 与 ci.yml 的 scope 一致：main 上预热过的缓存这里直接复用
-          cache-from: type=gha,scope=shared
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ env.IMAGE_TAG }}
-            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ github.sha }}
+      - name: 4 images must already exist
+        if: ${{ !inputs.skip_preflight }}
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
+          REPO: ${{ steps.resolve.outputs.repo }}
+        run: |
+          set -eu
+          missing=0
+          for svc in account resource server bff; do
+            ref="ghcr.io/$REPO/$svc:$TAG"
+            if docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "ok    $ref"
+            else
+              echo "::error::missing $ref —— 先跑 Build（同 tag）"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
 
   # ================================================================
-  # Job 2: deploy —— 服务器上执行与 deploy/README.md §5 完全相同的命令
+  # Job 2: deploy —— SSH 到服务器，pull 已构建好的镜像并 up -d
   # ================================================================
   deploy:
     name: deploy (ssh)
-    needs: [build]
+    needs: [preflight]
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -117,8 +156,10 @@ jobs:
           # 通过 envs 注入到远端脚本（不要把这些值直接写进 script，密钥会进日志）
           REGISTRY: ${{ env.REGISTRY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ACCOUNT_IMAGE_TAG: ${{ env.IMAGE_TAG }}
-          APP_IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          # compose 读的是 ACCOUNT_IMAGE_TAG / APP_IMAGE_TAG（不是 IMAGE_TAG），
+          # 进程环境变量优先级高于 --env-file，所以这里注入就能覆盖服务器 .env 里的旧值。
+          ACCOUNT_IMAGE_TAG: ${{ needs.preflight.outputs.tag }}
+          APP_IMAGE_TAG: ${{ needs.preflight.outputs.tag }}
           DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
           DEPLOY_BRANCH: ${{ env.DEPLOY_BRANCH }}
           COMPOSE_PROFILE: ${{ env.COMPOSE_PROFILE }}
@@ -200,6 +241,13 @@ jobs:
               docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" config -q
             done
 
+            # 打印 compose 实际会用的镜像引用：这里是唯一能当场看出
+            # 「.env 没写 REGISTRY/GITHUB_REPOSITORY → 回落 your-org/nitrowater」的地方。
+            echo '==> resolved images'
+            for unit in account app; do
+              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" config --images
+            done
+
             # 顺序固定：infra → account（bff 启动要拉 discovery）→ app
             # 不用 --remove-orphans：profile 不匹配时它会把 nginx-proxy/acme 当孤儿删掉。
             for unit in infra account app; do
@@ -219,4 +267,4 @@ jobs:
             echo '==> prune images older than 24h'
             docker image prune -af --filter 'until=24h'
 
-            echo "==> done: ${ACCOUNT_IMAGE_TAG}"
+            echo "==> done: ${APP_IMAGE_TAG}"

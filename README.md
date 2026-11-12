@@ -168,7 +168,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. Both pipelines are manual: `ci.yml` builds and runs the checks, `deploy.yml` builds the four images, pushes them to GHCR and rolls them out over SSH.
+Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All pipelines are manual: `ci.yml` builds and runs the checks, `build.yml` builds the four images and pushes them to GHCR, `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back), and `release.yml` chains build → deploy in one run.
 
 ## 📦 Deployment
 
