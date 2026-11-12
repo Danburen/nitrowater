@@ -111,8 +111,9 @@ docker compose --env-file deploy/docker/.env --env-file deploy/docker/.env.prod.
 **换域名 = 一次性同步 7 个变量**：`JWT_ISSUER`、`BFF_REDIRECT_URIS`、`BFF_POST_LOGOUT_REDIRECT_URIS`、
 `SSO_DEFAULT_REDIRECT`、`SSO_FORM_ACTION_ORIGINS`、`POST_LOGOUT_REDIRECT_URI`、`AVATAR_PICTURE_BASE_URL`。
 
-反代必须发 `X-Forwarded-Proto` / `X-Forwarded-Host`，并显式 403/404 掉 `/actuator/**` 与 `/internal/**`
-（样例见 `deploy/docker/nginx-public-proxy.conf`）。
+反代还必须是「干净」的：发 `X-Forwarded-Proto` / `X-Forwarded-Host`、放开 `client_max_body_size`
+（插件 jar 64 MB）与 `proxy_read_timeout`（AI 流式回答），并显式 403/404 掉
+`/actuator/**` 与 `/internal/**`。片段见 §5。
 
 ### 3.5 条件必填
 
@@ -201,17 +202,46 @@ docker exec nitrowater-piston cli/index.js ppman install c
 docker exec nitrowater-piston cli/index.js ppman install c++
 ```
 
-> 宿主机上还没有 `deploy/` 目录？先看 §12 的「首次引导」：跑一次 `Deploy` 会把 kit 解到
-> `/opt/nitrowater/deploy/`，再回来填 `.env` 重跑。
+> 宿主机上还没有 `deploy/` 目录？先看 §12 的「部署包」：解一次 kit（`docker create ... unused` +
+> `docker cp`）就有了 compose 和脚本，再回来填 `.env`。
 > 另外 `deploy/plugin-docs/`（约 1.8 MB 静态文档，**不在 kit 镜像里**）要单独 scp 上去，
 > 否则 `/plugin/*` 会 404。
+
+**之后不要手敲上面三条了**，用唯一发布入口（门禁 → pull → up -d --no-build → 探活）：
+
+```bash
+bash deploy/bin/deploy.sh --tag <tag>            # 上线（手动与 CI 同一条命令）
+bash deploy/bin/deploy.sh --only account         # 只动身份服务
+bash deploy/bin/deploy.sh --help                 # 全部参数
+```
 
 **公网入口二选一**：
 
 - 用 `edge` profile（nginx-proxy + 自动证书）：infra 那条加 `--profile edge`，`.env` 里填
   `WEB_DOMAIN` / `AUTH_DOMAIN` / `SSL_EMAIL`。
-- 用自建反代：不启用 edge，反代到本机 `127.0.0.1:8080` 与 `127.0.0.1:8090`；
-  现成样例见 `deploy/docker/nginx-public-proxy.conf`（TLS、`X-Forwarded-*`、SSE 不缓冲、`/actuator|/internal` → 404）。
+- 用自建反代：不启用 edge，反代到本机 `127.0.0.1:8080`（站点）与 `127.0.0.1:8090`（SSO）。
+  **这份配置不在仓库里**——它属于你那台 nginx，由你手动维护。但有四件事必须做对，
+  漏了都会伪装成应用 bug（症状见 §10）：
+
+  ```nginx
+  # 1) 转发头：缺了 account 会把回调拼成 http://，BFF 报 invalid redirect_uri
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header X-Forwarded-Host  $http_host;
+  proxy_set_header X-Real-IP         $remote_addr;
+
+  # 2) 上传上限：插件 jar 是 64 MB，nginx 默认 1m → 413
+  client_max_body_size 100m;
+
+  # 3) SSE 长连接：AI 回答逐字下发，默认 proxy_read_timeout 60s 会把它切断（后端 180s）
+  proxy_buffering off;          # 兜底；BFF 自己已回 X-Accel-Buffering: no
+  proxy_read_timeout 300s;
+  proxy_send_timeout 300s;
+
+  # 4) 管理面：容器侧本来就不发布管理端口，这里做双保险
+  location ~ ^/(actuator|internal)(/|$) { return 404; }
+  ```
+
+  用 edge profile 时第 2、3 条同样需要，加在 `nginx_vhost` 卷里的 `default_location` 上。
 
 ## 6. 建库建号（手工，一次性）
 
@@ -247,6 +277,14 @@ FLUSH PRIVILEGES;
 
 Redis 不用初始化：口令由 compose 从 `.env` 的 `REDIS_PASSWORD` 直接插值进 `redis-server` 命令行。
 
+**MySQL 需要 keyring 吗？不需要。** 敏感字段（`user_data.email_encrypted` / `phone_encrypted`、AI 供应商 key）
+是**应用层加密**：`NITROWATER_KEK`（AES-256-GCM）包住每条记录的 DEK（存 `encryption_data_key` 表），
+落库的本来就是密文。没有用 InnoDB 表空间加密（`ENCRYPTION='Y'`），所以不需要 `keyring_file` /
+`early-plugin-load` / 额外的 keyring 卷——那套是"数据库自己加密数据文件"才需要的。
+
+推论：**KEK 必须和数据库备份分开保管**。没有 KEK，`mysqldump` 出来的密文解不开；
+反之 KEK 泄露 = 密文全裸。换 KEK 前先确认是否需要重新加密存量记录。
+
 ## 7. 验收
 
 ```bash
@@ -255,6 +293,17 @@ curl -fsS http://127.0.0.1:8090/.well-known/openid-configuration    # account �
 curl -fsS https://<WEB_DOMAIN>/api/public/ping                       # {"success":true,...,"pong":true}
 curl -sI https://<WEB_DOMAIN>/api/ai/status | head -1                # 401：登录门禁生效且路由通
 curl -I http://<WEB_DOMAIN>                                          # 301/308 → https
+```
+
+反代层再验两条（**自建反代和 edge 都要**，失败症状见 §10）：
+
+```bash
+# 1) 管理面必须打不到：期望 404 或 401，出现 200 就是双保险没做
+curl -s -o /dev/null -w '%{http_code}\n' https://<WEB_DOMAIN>/actuator/health
+
+# 2) 上传上限：5 MB 请求应该是 401/400（说明透到了应用），绝不能是 413（nginx 默认 1m）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  --data-binary @<(head -c 5m /dev/zero) https://<WEB_DOMAIN>/api/public/ping
 ```
 
 `/api/**` 除 `/api/public/**` 外都要登录，所以 curl 只验证「路由 + 门禁」，功能项在浏览器里点。
@@ -269,6 +318,7 @@ curl -I http://<WEB_DOMAIN>                                          # 301/308 �
 | 5 | 点一个插件下载 | 200 + `Content-Disposition: attachment` |
 | 6 | 外网 `curl http://<host>:6333/collections` | 连接失败（端口未暴露） |
 | 7 | `bash deploy/bin/ops-tunnel.sh --host <host>` | 本机 `127.0.0.1:6333/dashboard` 可用 |
+| 8 | 登录后问一个长问题 | 首字 1~3 秒内出现、逐字增长、中途不断流（断流 = 反代 `proxy_read_timeout`） |
 
 ## 8. 首个管理员（必做）
 
@@ -335,6 +385,8 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 | 管理端 403 | 未绑定角色，或绑定后未重新登录 | §8 SQL + 重新登录 |
 | AI 回答无引用 | 索引为空 / embedding key 错 | 看 `/api/ai/status` 的 `error`，修 key 后重建索引 |
 | 大 Jar 发布 413 | 内部发布走 `RESOURCE_MAX_SIZE`（10MB） | 临时调高该值；`.jar` 的 admin 上传走 64MB 限制 |
+| **上传报 413，容器日志里没有这条请求** | 反代 `client_max_body_size` 还是 nginx 默认的 1m | 反代加 `client_max_body_size 100m;`（§5） |
+| **AI 回答说一半就断 / 整段一次性刷出** | 反代 `proxy_read_timeout` 60s 或 buffering | `proxy_buffering off; proxy_read_timeout 300s;`（§5） |
 | 图片裂图（开放上传后） | S3 只在回环，presigned 直连失败 | `RESOURCE_PRESIGN=false` 同源流式，或给 S3 开边缘 vhost |
 
 ## 11. 脚本（`deploy/bin/`）
@@ -343,6 +395,7 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 | 用途 | 脚本 |
 |---|---|
+| **上线 / 回滚（唯一发布入口，CI 与手动同一条路）** | `deploy.sh`（`--tag` / `--only` / `--with-kit` / `--help`） |
 | 生成 JWT 密钥 | `gen-keys.{ps1,sh}` |
 | **上线环境自检 / 部署门禁** | `check-env.{ps1,sh}` |
 | 备份 MySQL | `backup_mysql.{ps1,sh}`（读 `MYSQL_ROOT_PASSWORD`，兼容旧 `DB_PASS`） |
@@ -359,12 +412,12 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 | 文件 | 手工跑法 | 干什么 | 碰服务器 |
 |---|---|---|---|
 | `.github/workflows/build.yml` | Actions → Build（填 `tag`） | 先 `verify`（后端 build+单测+JaCoCo、两个前端 lint+build、compose/脚本语法守卫），全绿后 `docker buildx bake` 一次推 **4 个应用镜像 + `kit`** 到 GHCR：`<tag>` + `<sha>` 双标签。**不部署** | 否 |
-| `.github/workflows/deploy.yml` | Actions → Deploy（填 `tag`） | preflight 确认 **5 个镜像**存在 → SSH：`docker pull` + `docker cp` 解出 kit（compose/脚本）→ `check-env.sh` → infra → account → app `pull` + `up -d --no-build` → 探活。**不构建** | 是 |
+| `.github/workflows/deploy.yml` | Actions → Deploy（填 `tag`） | preflight 确认 **5 个镜像**存在 → SSH：`docker pull` + `docker cp` 解出 kit → `bash deploy/bin/deploy.sh`（门禁 → infra/account/app `pull` + `up -d --no-build` → 探活）。**不构建** | 是 |
 | `.github/workflows/release.yml` | Actions → Release（填 `tag`） | `build.yml` → 成功后 `deploy.yml`（`needs` 链，构建失败不动线上） | 是 |
 
 `docker-bake.hcl`（仓库根）是全部镜像的构建清单：4 个应用 target 共享 Dockerfile 的 `build` 阶段（全量 gradle），
 `bake` 单次调用把它**只跑一次**；分开 `docker build --target` 会跑四次、并重复下载依赖。
-第 5 个 target `kit` 与之无关：`FROM scratch` + 20 个文本文件，构建只要 1~2 秒。
+第 5 个 target `kit` 与之无关：`FROM scratch` + 二十来个文本文件，构建只要 1~2 秒。
 
 > **三份前端的构建位置**：都在**镜像里**，workflow 不再单独跑前端 job——
 > `bff` 镜像的 `web-ui` stage（`nitrowater-web`：`npm ci` + vue-tsc + vite build → `dist` → jar 的 `classpath:/static/`），
@@ -395,6 +448,24 @@ gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线一条龙
 2. 仓库 Secrets：`SSH_HOST` / `SSH_USER` / `SSH_KEY`；GHCR 包是 private 时再加 `GHCR_USER` + `GHCR_PAT`。
 3. 仓库 Variables（可选）：`DEPLOY_ROOT`、`COMPOSE_PROFILE`（用自带 edge 就填 `edge`，自建反代留空）。
 
+**给 CI 配一个专用 SSH 账号**（推荐，别直接用 root）：
+
+```bash
+# 服务器上：建账号 + 进 docker 组（注意：docker 组 ≈ root 等价权限）
+sudo useradd -m -s /bin/bash deployer && sudo usermod -aG docker deployer
+
+# 本地：生成专用密钥，只把公钥装上去
+ssh-keygen -t ed25519 -C "gh-actions-nitrowater" -f ~/.ssh/nitrowater_deploy
+ssh-copy-id -i ~/.ssh/nitrowater_deploy.pub deployer@<host>
+
+# 验证：能不动 sudo 就列出容器
+ssh -i ~/.ssh/nitrowater_deploy deployer@<host> 'docker ps >/dev/null && bash --version | head -1'
+```
+
+`SSH_KEY` 填**私钥全文**（`gh-actions-nitrowater`），`SSH_USER=deployer`。
+宿主机还需要 `bash` + `curl`（`deploy.sh` 用它做探活）；`DEPLOY_ROOT` 目录要归 `deployer` 或可写。
+可选：给 `appleboy/ssh-action` 加 `fingerprint`（`ssh-keyscan -t ed25519 <host>`）防中间人。
+
 **发布与回滚**
 
 `tag` 就是**镜像选择器**：`latest`、版本号（`v1.2.3`）、或某个提交的 sha。每次 build 都给同一批镜像
@@ -417,27 +488,39 @@ gh workflow run deploy.yml -f tag=<上一个提交的 sha>   # 回滚，不重�
 它只是借用 registry 当传输通道（同一个 tag、同一套凭据），宿主机用四行 docker 解包：
 
 ```bash
-docker pull ghcr.io/<owner>/nitrowater/kit:<tag>
-docker create --name nitrowater-kit ghcr.io/<owner>/nitrowater/kit:<tag>
-docker cp nitrowater-kit:/deploy/. /opt/nitrowater/deploy/   # 合并，不删 .env / keys / content
-docker rm nitrowater-kit
+KIT=ghcr.io/<owner>/nitrowater/kit:<tag>
+docker pull   "$KIT"
+docker create --name nitrowater-kit "$KIT" unused     # unused = 占位命令，见下
+docker cp     nitrowater-kit:/deploy/. /opt/nitrowater/deploy/   # 合并，不删 .env / keys / content
+docker rm -f  nitrowater-kit
 ```
 
-镜像本身 `FROM scratch`，**没有 shell、没有二进制**（`docker run` 会报 `no command specified`），
-所以它只是"文件搬运"，永远不会变成运行时。内容就是 20 个文本文件（compose ×3、`docs-nginx.conf`、
-5 个脚本、模板、content 占位）；私钥、`.env`、运行时词表/语料、1.8 MB 的插件文档都被
-`deploy/.dockerignore` 挡在镜像外。
+> **为什么要给个 `unused`**：镜像是 `FROM scratch`，没有 `CMD`/`ENTRYPOINT` 时 `docker create` 会直接报
+> `no command specified`——不是等到 `run` 才校验。这个容器**从不启动**，命令只是占位符
+> （`Dockerfile.kit` 里已写 `CMD ["unused"]`，用新版本镜像时这个参数可以省略）。
+> 镜像里没有任何可执行文件，所以它永远不会变成运行时。
+
+**发布产物规则（重要）**：`deploy/docker/*.yml` 和 `deploy/bin/*.sh` 是**发布产物**，不是"装一次的工具"。
+改它们 = 发一版（`build` 重打 kit，1~2 秒），**不要在服务器上手改**——下次解包会被覆盖，
+而且线上那份和仓库差在哪没人说得清。宿主机只保留状态：`.env`、`keys/`、`content/`、数据卷。
 
 `docker cp` 是**合并**不是同步：仓库里删掉的旧文件不会自动从宿主机消失（极少见，手工删掉即可）。
 
-**首次引导**（宿主机还没有 `deploy/` 时）：直接跑一次 `Deploy`。它先 `docker cp` 把 kit 落到
-`/opt/nitrowater/deploy/`，然后停在 `check-env.sh`（因为还没有 `.env`）。接着：
+**首次引导**（宿主机还没有 `deploy/`）：先解 kit（上面四行），然后：
 
 ```bash
 cd /opt/nitrowater
 cp deploy/docker/.env.example deploy/docker/.env && chmod 600 deploy/docker/.env
 bash deploy/bin/gen-keys.sh && chmod 600 deploy/keys/private.key
-# 按 §3 填 .env，然后重跑 Deploy
+# 按 §3 填 .env
+docker network create nitrowater-net
+```
+
+之后每次上线 / 回滚，手动与 CI 是同一条命令：
+
+```bash
+bash deploy/bin/deploy.sh --tag <tag> --skip-kit     # 门禁 → pull → up -d --no-build → 探活
+bash deploy/bin/deploy.sh --tag <tag> --with-kit     # 先把部署包切到该 tag，再上线
 ```
 
 > `compose pull` 是**整份文件**拉取，`app.yml` 里还有 `chrislusf/seaweedfs`、`ghcr.io/engineer-man/piston`

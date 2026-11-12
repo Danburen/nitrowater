@@ -174,7 +174,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。三条流水线都是手动触发：`build.yml` 先跑各项检查，再用 `docker buildx bake` 构建四个应用镜像 + `kit`（compose 文件与运维脚本）并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它），并用 `docker create` + `docker cp` 解出 kit，所以宿主机不需要 git；`release.yml` 把 build → deploy 串成一次运行。
+覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。三条流水线都是手动触发：`build.yml` 先跑各项检查，再用 `docker buildx bake` 构建四个应用镜像 + `kit`（compose 文件与运维脚本）并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它），用 `docker create` + `docker cp` 解出 kit（宿主机不需要 git），再调 `deploy/bin/deploy.sh`——手动上线是同一条命令；`release.yml` 把 build → deploy 串成一次运行。
 
 ## 📦 部署
 

@@ -19,3 +19,8 @@ COPY bin/ /deploy/bin/
 COPY content/ /deploy/content/
 COPY keys/README.md /deploy/keys/README.md
 COPY README.md /deploy/README.md
+
+# `docker create` refuses an image that has no command ("no command specified"), even when the
+# container is never started. Nothing in this image can execute (scratch = no binaries), so this
+# is pure metadata: it exists so `docker create <image>` works, then `docker cp` extracts the files.
+CMD ["unused"]

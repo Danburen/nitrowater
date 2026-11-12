@@ -5,11 +5,11 @@
 # `docker create` + `docker cp`, so there is no git checkout on the server. preflight
 # verifies all five before touching the host.
 #
-# Server side (same commands as deploy/README.md §5):
-#   docker pull/create/cp kit          syncs the deploy kit; .env, keys/ and content/ untouched
-#   check-env.sh                       env gate
-#   compose config -q / --images       structure + the image refs that will be used
-#   infra -> account -> app            pull + up -d --no-build, then health checks
+# Server side: two steps, one of which is the same command a manual deploy uses.
+#   docker pull/create/cp kit   bootstrap the deploy kit; .env, keys/ and content/ untouched
+#   deploy/bin/deploy.sh        gates -> compose config --images -> infra/account/app
+#                               pull + up -d --no-build -> health checks -> prune
+# Nothing of that sequence lives in this YAML, so CI and a manual release cannot drift apart.
 #
 # Deploy kit follows the tag: rolling back an image also rolls back its compose files
 # (both come from the same kit image), so the two can no longer drift apart.
@@ -178,91 +178,23 @@ jobs:
 
             # Deploy kit = compose files + ops scripts, shipped as an image: no git on the host.
             # `docker cp` merges into deploy/; .env, keys/ and content/ are host state and stay.
+            # The image is FROM scratch (no shell, no binaries), so `docker create` needs a
+            # throwaway command: it refuses an image without one ("no command specified").
+            # The container is never started - it exists only for `docker cp`.
             KIT_REF="${REGISTRY}/${GITHUB_REPOSITORY}/kit:${ACCOUNT_IMAGE_TAG}"
             echo "==> deploy kit: ${KIT_REF}"
             mkdir -p deploy
             docker pull "$KIT_REF"
             docker rm -f nitrowater-kit >/dev/null 2>&1 || true
-            docker create --name nitrowater-kit "$KIT_REF" >/dev/null
+            docker create --name nitrowater-kit "$KIT_REF" unused >/dev/null
             docker cp nitrowater-kit:/deploy/. deploy/
             docker rm -f nitrowater-kit >/dev/null
 
-            echo "==> images: ${REGISTRY}/${GITHUB_REPOSITORY}/* tag=${ACCOUNT_IMAGE_TAG}"
-
-            # When the env is split in two files, both go to compose (the latter wins);
-            # shell environment variables still have the highest priority.
-            ENV_ARGS="--env-file deploy/docker/.env"
-            if [ -f deploy/docker/.env.prod.secrets ]; then
-              ENV_ARGS="$ENV_ARGS --env-file deploy/docker/.env.prod.secrets"
-            fi
-
-            PROFILE_ARGS=""
+            # Everything after the bootstrap lives in deploy/bin/deploy.sh: one entry point
+            # shared with a manual deploy, so the sequence cannot drift between CI and ops.
+            echo '==> release (deploy/bin/deploy.sh)'
             if [ -n "${COMPOSE_PROFILE:-}" ]; then
-              PROFILE_ARGS="--profile ${COMPOSE_PROFILE}"
+              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG" --profile "$COMPOSE_PROFILE" --skip-kit
+            else
+              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG" --skip-kit
             fi
-
-            wait_http() {
-              tries=0
-              limit="${2:-60}"
-              while [ "$tries" -lt "$limit" ]; do
-                if curl -fsS -o /dev/null "$1"; then
-                  echo "    ready: $1"
-                  return 0
-                fi
-                tries=$((tries + 1))
-                sleep 3
-              done
-              echo "    TIMEOUT: $1 (after $((limit * 3))s)"
-              return 1
-            }
-
-            wait_healthy() {
-              tries=0
-              while [ "$tries" -lt 40 ]; do
-                if [ "$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null || echo missing)" = "healthy" ]; then
-                  echo "    healthy: $1"
-                  return 0
-                fi
-                tries=$((tries + 1))
-                sleep 3
-              done
-              echo "    TIMEOUT: $1 never became healthy"
-              docker logs --tail 50 "$1" || true
-              return 1
-            }
-
-            echo '==> gate 1/2: vars and content (deploy/bin/check-env.sh)'
-            bash deploy/bin/check-env.sh
-
-            echo '==> gate 2/2: compose structure'
-            for unit in infra account app; do
-              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" config -q
-            done
-
-            # The only place a `your-org/nitrowater` fallback (missing REGISTRY /
-            # GITHUB_REPOSITORY in .env) becomes visible before the pull.
-            echo '==> resolved images'
-            for unit in account app; do
-              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" config --images
-            done
-
-            # Fixed order: infra -> account (bff fetches discovery at boot) -> app.
-            # No --remove-orphans: with a profile mismatch it would delete nginx-proxy/acme.
-            for unit in infra account app; do
-              echo "==> ${unit}: pull"
-              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" pull
-              echo "==> ${unit}: up -d"
-              docker compose $ENV_ARGS $PROFILE_ARGS -f "deploy/docker/docker-compose.$unit.yml" up -d --no-build
-              if [ "$unit" = "account" ]; then
-                wait_http http://127.0.0.1:8090/.well-known/openid-configuration 60
-              fi
-            done
-
-            echo '==> verify'
-            wait_http http://127.0.0.1:8080/api/public/ping 100
-            wait_healthy nitrowater-bff
-
-            echo '==> prune images older than 24h'
-            docker image prune -af --filter 'until=24h'
-
-            echo "==> done: ${APP_IMAGE_TAG}"

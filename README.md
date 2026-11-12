@@ -174,7 +174,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds four application images plus the `kit` (compose files + ops scripts) with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it unpacks the kit with `docker create` + `docker cp`, so the host needs no git checkout; `release.yml` chains build → deploy in one run.
+Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds four application images plus the `kit` (compose files + ops scripts) with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it unpacks the kit with `docker create` + `docker cp`, so the host needs no git checkout, then runs `deploy/bin/deploy.sh` (the same command a manual release uses); `release.yml` chains build → deploy in one run.
 
 ## 📦 Deployment
 
