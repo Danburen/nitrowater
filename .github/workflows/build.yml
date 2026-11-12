@@ -1,20 +1,11 @@
-# ============================================================
-# NitroWater Build —— 只构建 4 个镜像并推 GHCR，**不部署**。
+# Build: run the checks, then build and push the four images to GHCR. Does not deploy.
 #
-# 触发（都是手动；自动触发见文件末尾注释）：
-#   - workflow_dispatch：Actions → Build → Run workflow
-#   - workflow_call   ：被 release.yml 复用（build + deploy 一条龙）
+# Image tags: <tag> (input, default latest) and <sha>. Roll back by deploying a
+# previous sha with deploy.yml. Images are built by `docker buildx bake`
+# (docker-bake.hcl) so the shared Gradle stage runs once instead of once per image.
+# Tests run in this workflow only — the Dockerfile builds with `-x test`.
 #
-# 产物（4 svc × 2 tag）：
-#   ghcr.io/<owner>/nitrowater/<svc>:<tag>
-#   ghcr.io/<owner>/nitrowater/<svc>:<github.sha>
-#
-# 部署是另一件事：deploy.yml 只 pull 已构建好的镜像，不再 build。
-# 因为镜像同时打了 sha 标签，**回滚 = 用上一个提交的 sha 当 tag 部署**。
-#
-# 与 ci.yml 的分工：ci.yml 判「能不能过」（含 target=bff 试构建 + 预热 gha 缓存），
-# 本文件只负责产出可部署的镜像。
-# ============================================================
+# Everything is manual; auto triggers are commented out in `on:` below.
 
 name: Build
 
@@ -22,33 +13,33 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '镜像 tag（默认 latest；建议版本号 v1.2.3 或某个提交 sha）'
+        description: 'Image tag (default latest; prefer v1.2.3 or a commit sha)'
         required: false
         default: 'latest'
 
   workflow_call:
     inputs:
       tag:
-        description: '镜像 tag'
+        description: 'Image tag'
         required: false
         type: string
-        default: 'latest'
+        default: ''
     outputs:
       tag:
-        description: '实际构建的 tag（空输入时回落 latest）'
+        description: 'Resolved tag (empty input falls back to latest)'
         value: ${{ jobs.resolve.outputs.tag }}
       sha:
-        description: '本次构建的提交 sha（同时作为镜像标签，用于回滚定位）'
+        description: 'Commit sha, pushed as a second tag (rollback target)'
         value: ${{ jobs.resolve.outputs.sha }}
 
-  # ---------------- 自动触发（暂不启用，需要时取消注释） ----------------
+  # ---------------- auto triggers (disabled, manual only for now) ----------------
   # push:
-  #   tags:
-  #     - 'v*'
+  #   branches: [main]
+  # pull_request:          # checks only: the build job is skipped (see its `if`)
 
-# 同一个 tag 的构建串行；不取消进行中的（推到一半被打断会留下半套镜像）。
+# Serialize builds of the same tag; never cancel one mid-push.
 concurrency:
-  group: build-${{ inputs.tag }}
+  group: build-${{ inputs.tag || 'latest' }}
   cancel-in-progress: false
 
 permissions:
@@ -56,53 +47,177 @@ permissions:
   packages: write
 
 jobs:
-  # ================================================================
-  # resolve：归一化 tag / 小写仓库名，供矩阵与后续 workflow 复用
-  # ================================================================
+  # ---------------------------------------------------------------------------
+  # resolve: normalize the tag and the lowercase repo name
+  # ---------------------------------------------------------------------------
   resolve:
     name: resolve tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       sha: ${{ steps.resolve.outputs.sha }}
+      repo: ${{ steps.resolve.outputs.repo }}
     steps:
       - id: resolve
         env:
-          # 输入来自 Run workflow 表单（人为可控），绝不直接拼进 shell 命令行。
+          # The tag comes from a form input: read it via env, never inline it in the script.
           RAW_TAG: ${{ inputs.tag }}
         run: |
           set -eu
           tag="${RAW_TAG:-latest}"
-          # tag 会进 docker tag；只放行合法字符，顺带挡住 shell 注入。
+          # It ends up in a docker tag, so whitelist the allowed characters.
           case "$tag" in
-            ''|*[!A-Za-z0-9._-]*)
-              echo "::error::invalid tag: $tag（只允许 A-Za-z0-9._-）"
-              exit 1
-              ;;
+            ''|*[!A-Za-z0-9._-]*) echo "::error::invalid tag: $tag"; exit 1 ;;
           esac
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          echo "resolved: tag=$tag sha=$GITHUB_SHA"
+          repo="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "tag=$tag"
+            echo "sha=$GITHUB_SHA"
+            echo "repo=$repo"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved: $repo/*:$tag (sha $GITHUB_SHA)"
 
-  # ================================================================
-  # build：四个 target 各出一个镜像（同一 Dockerfile，build 阶段由 gha 缓存共享）
-  # 只写 cache-from 不写 cache-to：4 个 job 并行写同一 scope 会互相覆盖，
-  # 缓存由 ci.yml 的 image job（mode=max）预热。
-  # ================================================================
-  build:
-    name: build (${{ matrix.service }})
-    needs: [resolve]
+  # ---------------------------------------------------------------------------
+  # verify: cheap gates. All four run in parallel and must pass before the build.
+  # ---------------------------------------------------------------------------
+  backend:
+    name: backend (java 25)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [account, resource, server, bff]
     steps:
       - uses: actions/checkout@v4
 
-      # GHCR 要求镜像名全小写
-      - name: Lowercase repo name
-        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      # -PskipAdminUi / -PskipAuthUi: the SPAs are built in the Dockerfile's node
+      # stages, not here (that is also why this stays fast).
+      - name: Build + test
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace build -PskipAdminUi -PskipAuthUi
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            **/build/reports/tests/test
+            **/build/test-results/test
+          retention-days: 7
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jacoco
+          path: '**/build/reports/jacoco/test/html'
+          retention-days: 7
+
+  ui-web:
+    name: ui-web (vue3)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nitrowater-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: nitrowater-web/package-lock.json
+
+      # `build` also type-checks (vue-tsc -b). It duplicates the web-ui Docker
+      # stage on purpose: bundling errors surface here in seconds, not mid-build.
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+
+  ui-account:
+    name: ui-account (pnpm workspace)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nitrowater-account
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.18.0'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: nitrowater-account/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run build
+
+  guard:
+    name: deploy guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --no-interpolate: validate the files themselves; real values are checked
+      # on the server by deploy/bin/check-env.sh during deploy.
+      - name: Validate compose files
+        run: |
+          for f in deploy/docker/docker-compose.*.yml; do
+            echo "::group::$f"
+            docker compose -f "$f" config --no-interpolate -q
+            echo "::endgroup::"
+          done
+
+      - name: Shell syntax (bash -n)
+        run: |
+          for f in deploy/bin/*.sh bin/dev/*.sh; do
+            [ -f "$f" ] || continue
+            echo "::group::$f"
+            bash -n "$f"
+            echo "::endgroup::"
+          done
+
+      - name: PowerShell parse (no execution)
+        shell: pwsh
+        run: |
+          $bad = @()
+          Get-ChildItem -Path deploy/bin, bin/dev, bin -Filter *.ps1 -File -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $file = $_.FullName
+              $tokens = $null; $errors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors)
+              foreach ($e in $errors) {
+                $bad += "${file}:$($e.Extent.StartLineNumber): $($e.Message)"
+              }
+            }
+          if ($bad.Count) { $bad | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
+          Write-Host 'all .ps1 parsed clean'
+
+  # ---------------------------------------------------------------------------
+  # build: one bake invocation -> 4 images, Gradle runs once
+  # ---------------------------------------------------------------------------
+  build:
+    name: bake (push 4 images)
+    needs: [resolve, backend, ui-web, ui-account, guard]
+    # Checks still run on pull_request, images are not built.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
+      REPO: ${{ needs.resolve.outputs.repo }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+      SHA: ${{ needs.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
@@ -110,26 +225,28 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          # 不用 secrets.GITHUB_TOKEN：被 release.yml 复用（workflow_call）时同样可用。
+          # github.token (not secrets.GITHUB_TOKEN) so it also works when called by release.yml.
           password: ${{ github.token }}
 
-      - uses: docker/build-push-action@v6
+      # Cache has no dedicated input in bake-action: it is passed as --set overrides.
+      # ignore-error keeps a cache-export hiccup from failing an otherwise good build.
+      - uses: docker/bake-action@v6
         with:
-          context: .
-          file: Dockerfile
-          target: ${{ matrix.service }}
+          files: ./docker-bake.hcl
           push: true
-          cache-from: type=gha,scope=shared
-          tags: |
-            ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ needs.resolve.outputs.tag }}
-            ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ needs.resolve.outputs.sha }}
+          set: |
+            *.cache-from=type=gha,scope=shared
+            *.cache-to=type=gha,mode=max,scope=shared,ignore-error=true
 
-      - name: Summary
+      - name: Summary (digests)
         run: |
           {
-            echo "### ${{ matrix.service }}"
-            echo '```'
-            echo "ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ needs.resolve.outputs.tag }}"
-            echo "ghcr.io/${{ env.REPO_LOWER }}/${{ matrix.service }}:${{ needs.resolve.outputs.sha }}"
-            echo '```'
+            echo "### images: \`${TAG}\`"
+            echo "| service | ref | digest |"
+            echo "|---|---|---|"
+            for svc in account resource server bff; do
+              ref="${REGISTRY}/${REPO}/${svc}:${TAG}"
+              digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo n/a)"
+              echo "| ${svc} | \`${ref}\` | \`${digest}\` |"
+            done
           } >> "$GITHUB_STEP_SUMMARY"

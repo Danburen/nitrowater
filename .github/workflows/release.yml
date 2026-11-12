@@ -1,17 +1,10 @@
-# ============================================================
-# NitroWater Release —— build + deploy 一条流水线（两件事一次做完）
+# Release: build + deploy in one run. Both steps use the same tag.
 #
-# 手工触发一次，同一个 tag 同时用于「构建」与「部署」：
-#   job build  → 复用 build.yml  （4 镜像推 GHCR，产物带 <tag> + <sha>）
-#   job deploy → 复用 deploy.yml （preflight 校验镜像存在 → SSH pull + up -d）
+#   build  -> build.yml   (checks, then 4 images to GHCR)
+#   deploy -> deploy.yml  (preflight, then pull + up -d on the server)
 #
-# 与另外两个工作流的差别：
-#   build.yml   只构建，不碰服务器（可以先攒着镜像，择时上线）
-#   deploy.yml  只部署已有镜像（回滚、补发、只换 compose 都用它）
-#   release.yml 构建成功才部署（needs 链），失败不会去动线上
-#
-# 回滚：不要用本文件（它会重新构建）。用 Actions → Deploy → tag=上一个提交的 sha。
-# ============================================================
+# needs: deploy only runs if build succeeded, so a red commit never reaches the host.
+# Rollback: use Deploy with a previous sha — Release would rebuild that tag.
 
 name: Release (build + deploy)
 
@@ -19,32 +12,30 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '镜像 tag（默认 latest；建议版本号 v1.2.3）'
+        description: 'Image tag (default latest; prefer v1.2.3)'
         required: false
         default: 'latest'
 
-# 一条发布跑到底；构建期间不取消（推到一半会留下半套镜像）。
+# Do not use the same group as deploy.yml: the callee would wait on the caller.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
   build:
-    name: build
     uses: ./.github/workflows/build.yml
     with:
       tag: ${{ inputs.tag }}
-    # 被调用的 workflow 只能收窄权限，所以这里必须给出它需要的写权限。
+    # A called workflow can only narrow permissions, so grant what it needs here.
     permissions:
       contents: read
       packages: write
 
   deploy:
-    name: deploy
     needs: [build]
     uses: ./.github/workflows/deploy.yml
     with:
-      # 用 build 归一化后的 tag（空输入已回落 latest），避免两处各写一份默认值。
+      # Build's normalized tag (empty input already fell back to latest).
       tag: ${{ needs.build.outputs.tag }}
       skip_preflight: false
     secrets:
