@@ -157,6 +157,11 @@ docker build --target bff -t nitrowater-bff .
 docker build --target account -t nitrowater-account .
 docker build --target server -t nitrowater-server .
 docker build --target resource -t nitrowater-resource .
+
+# 一次四个，gradle 只跑一次（target 在 docker-bake.hcl，REGISTRY 默认 ghcr.io）
+# --set '*.attest=' 去掉 SBOM/来源证明：docker 导出器装不了 attestation
+TAG=dev SHA=$(git rev-parse --short HEAD) REPO=local/nitrowater \
+  docker buildx bake --load --set '*.attest='
 ```
 
 ### 提交之前
@@ -168,7 +173,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。四条流水线都是手动触发：`ci.yml` 负责构建与各项检查，`build.yml` 只构建四个镜像并推到 GHCR，`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它），`release.yml` 把 build → deploy 串成一次运行。
+覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。三条流水线都是手动触发：`build.yml` 先跑各项检查，再用 `docker buildx bake` 构建四个镜像并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它）；`release.yml` 把 build → deploy 串成一次运行。
 
 ## 📦 部署
 

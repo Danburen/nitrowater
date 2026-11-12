@@ -157,6 +157,11 @@ docker build --target bff -t nitrowater-bff .
 docker build --target account -t nitrowater-account .
 docker build --target server -t nitrowater-server .
 docker build --target resource -t nitrowater-resource .
+
+# all four at once; Gradle runs once (targets live in docker-bake.hcl, REGISTRY defaults to ghcr.io)
+# --set '*.attest=' drops the SBOM/provenance attesters: the docker exporter cannot load them
+TAG=dev SHA=$(git rev-parse --short HEAD) REPO=local/nitrowater \
+  docker buildx bake --load --set '*.attest='
 ```
 
 ### Before you push
@@ -168,7 +173,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All pipelines are manual: `ci.yml` builds and runs the checks, `build.yml` builds the four images and pushes them to GHCR, `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back), and `release.yml` chains build → deploy in one run.
+Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds the four images with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back); `release.yml` chains build → deploy in one run.
 
 ## 📦 Deployment
 

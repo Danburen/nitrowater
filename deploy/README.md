@@ -273,20 +273,27 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 ## 12. CI/CD（GitHub Actions）
 
-四个工作流**都只手动触发**（自动触发已注释掉，需要时再开）：仓库页 Actions → 选工作流 → `Run workflow`。
-**构建与部署是两件事**：`build.yml` 产镜像，`deploy.yml` 只搬已构建好的镜像，`release.yml` 串起来一次做完。
+三个工作流**都只手动触发**（自动触发已注释掉，需要时再开）：仓库页 Actions → 选工作流 → `Run workflow`。
+**构建与部署是两件事**：`build.yml` 先跑检查再产镜像，`deploy.yml` 只搬已构建好的镜像，`release.yml` 串起来一次做完。
 
 | 文件 | 手工跑法 | 干什么 | 碰服务器 |
 |---|---|---|---|
-| `.github/workflows/ci.yml` | Actions → CI | 后端 `gradlew build`（含单测+JaCoCo）、两个前端 lint+build、compose 结构校验、`deploy/bin`·`bin/dev` 脚本语法、Dockerfile 试构建 `target=bff` | 否 |
-| `.github/workflows/build.yml` | Actions → Build（填 `tag`） | 矩阵构建 4 个镜像推 GHCR：`<tag>` + `<sha>` 双标签。**不部署** | 否 |
+| `.github/workflows/build.yml` | Actions → Build（填 `tag`） | 先 `verify`（后端 build+单测+JaCoCo、两个前端 lint+build、compose/脚本语法守卫），全绿后 `docker buildx bake` 一次推 4 个镜像到 GHCR：`<tag>` + `<sha>` 双标签。**不部署** | 否 |
 | `.github/workflows/deploy.yml` | Actions → Deploy（填 `tag`） | preflight 确认 4 个镜像存在 → SSH：同步部署包 → `check-env.sh` → infra → account → app `pull` + `up -d --no-build` → 探活。**不构建** | 是 |
 | `.github/workflows/release.yml` | Actions → Release（填 `tag`） | `build.yml` → 成功后 `deploy.yml`（`needs` 链，构建失败不动线上） | 是 |
+
+`docker-bake.hcl`（仓库根）是四镜像的构建清单：4 个 target 共享 Dockerfile 的 `build` 阶段（全量 gradle），
+`bake` 单次调用把它**只跑一次**；分开 `docker build --target` 会跑四次、并重复下载依赖。
+
+> **三份前端的构建位置**：都在**镜像里**，workflow 不再单独跑前端 job——
+> `bff` 镜像的 `web-ui` stage（`nitrowater-web`：`npm ci` + vue-tsc + vite build → `dist` → jar 的 `classpath:/static/`），
+> `account` 镜像的 `admin-ui` / `auth-ui` stage（pnpm workspace → `nitrowater-account/src/main/resources/static/{admin,auth}`）。
+> 所以服务器只吃镜像，不需要 dist/；`build.yml` 的 `ui-web` / `ui-account` 两个 job 是 lint + 类型检查 + build 的**质量门禁**，
+> 产物不参与部署。Dockerfile 里 gradle 用 `-PskipAdminUi -PskipAuthUi` 跑，避免 stage 内二次调 node。
 
 命令行等价物（装了 `gh` 时）：
 
 ```bash
-gh workflow run ci.yml
 gh workflow run build.yml   -f tag=v1.2.3   # 先攒镜像，挑时间再上
 gh workflow run deploy.yml  -f tag=v1.2.3   # 只上线（回滚也用它）
 gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线一条龙
