@@ -1,8 +1,8 @@
 # NitroWater 部署
 
-> 单机自建：一台 Linux + Docker，仓库放持久盘（如 `/opt/nitrowater`）。所有命令都在**仓库根**执行。
+> 单机自建：一台 Linux + Docker，**部署根**（默认 `/opt/nitrowater`，CI 里叫 `DEPLOY_ROOT`）。所有命令都在部署根执行。
 > 变量清单以 **`deploy/docker/.env.example`** 为准（每个键都有注释，改完不要留 `YOUR_*_HERE`）。
-> 本文只讲：顺序、必填项、验收、日常运维、故障对照。
+> 本文只讲：首次部署（§0）、顺序、必填项、验收、日常运维、故障对照。
 
 ## 拓扑与单元
 
@@ -21,6 +21,112 @@
 
 三份共享外部网络 `nitrowater-net`。**启动顺序固定：infra → account → app**（后端启动即连库）。
 
+## 0. 第一次部署（从零到上线）
+
+从一台只装了 Docker 的空机器，到浏览器能登录。**按顺序做，每一步都有验收点**；细节指向后面章节。
+
+下文的 `dc` 是一个只在本节用到的简写，先执行一次（bash）：
+
+```bash
+dc() { docker compose --env-file deploy/docker/.env -f "deploy/docker/docker-compose.$1.yml" "${@:2}"; }
+```
+
+### 0.1 取部署包（宿主机不需要 git）
+
+```bash
+sudo mkdir -p /opt/nitrowater && cd /opt/nitrowater
+KIT=ghcr.io/<owner>/nitrowater/kit:<tag>            # 与应用镜像同一个 tag
+docker pull   "$KIT"
+docker create --name nitrowater-kit "$KIT" unused   # scratch 镜像必须带占位命令，见 §12
+docker cp     nitrowater-kit:/deploy/. deploy/      # 合并，不覆盖 .env / keys / content
+docker rm -f  nitrowater-kit
+ls deploy/docker/docker-compose.*.yml               # 三份都在
+```
+
+GHCR 包是 private 时先 `printf '%s' '<PAT>' | docker login ghcr.io -u <user> --password-stdin`。
+
+- [ ] `deploy/docker/` 里有 `infra` / `account` / `app` 三份 compose 和 `.env.example`
+
+### 0.2 密钥 + 环境变量
+
+```bash
+cp deploy/docker/.env.example deploy/docker/.env && chmod 600 deploy/docker/.env
+bash deploy/bin/gen-keys.sh && chmod 600 deploy/keys/private.key
+$EDITOR=${EDITOR:-vi}; "$EDITOR" deploy/docker/.env     # 必填见 §3.3；地址类见 §3.4
+```
+
+- [ ] 没有残留 `YOUR_*_HERE`（`grep -c 'YOUR_.*_HERE' deploy/docker/.env` 应为 0）
+- [ ] 手动反代：`WEB_DOMAIN` / `AUTH_DOMAIN` / `SSL_EMAIL` **保持注释**
+- [ ] 反代不在本机：`PUBLISH_BIND` 改成内网 IP（默认 `127.0.0.1` 只允许同机访问）
+
+### 0.3 门禁（纯文本校验，10 秒）
+
+```bash
+bash deploy/bin/check-env.sh        # 必须 0 FAIL
+```
+
+- [ ] `Result:` 里 FAIL = 0（WARN 可以接受，看提示逐条确认）
+
+### 0.4 网络 + 中间件 + 建库建号
+
+```bash
+docker network create nitrowater-net      # 只需一次；三份 compose 都引用它
+dc infra up -d
+dc infra ps                               # 等 mysql 的 STATUS 变成 healthy
+docker exec -it nitrowater-mysql mysql -uroot -p   # 粘 §6 的三库 + 建号 SQL
+```
+
+- [ ] `docker exec nitrowater-mysql mysqladmin -uroot -p ping` → `mysqld is alive`
+- [ ] `SHOW DATABASES;` 能看到 `nitrowater_account` / `nitrowater_biz` / `nitrowater_resource`
+
+### 0.5 身份服务 → 业务面（顺序不能反）
+
+```bash
+dc account pull && dc account up -d --no-build
+curl -fsS http://127.0.0.1:8090/.well-known/openid-configuration | head -1   # account 就绪
+
+dc app pull && dc app up -d --no-build
+```
+
+bff 启动时要拉 account 的 OIDC discovery，所以 account 必须先起；`--no-build` 保证是拉镜像而不是现场构建。
+
+- [ ] `docker inspect -f '{{.State.Health.Status}}' nitrowater-bff` → `healthy`
+- [ ] `curl -fsS http://127.0.0.1:8080/api/public/ping` → `{"success":true,...,"pong":true}`
+
+### 0.6 一次性收尾
+
+```bash
+# Piston 语言包（落在 nitrowater-piston 卷，只装一次）
+docker exec nitrowater-piston cli/index.js ppman install java
+docker exec nitrowater-piston cli/index.js ppman install c
+docker exec nitrowater-piston cli/index.js ppman install c++
+
+# 插件文档（约 1.8 MB，不在 kit 里；不传则 /plugin/* 404）
+scp -r deploy/plugin-docs/* <host>:/opt/nitrowater/deploy/plugin-docs/
+```
+
+### 0.7 公网入口
+
+- 手动反代：按 §5 的四条（`X-Forwarded-Proto/Host`、`client_max_body_size`、`proxy_read_timeout`、`/actuator|/internal` → 404）。
+- 用 `edge`：infra 那条加 `--profile edge`，并在 `.env` 里填 `WEB_DOMAIN` / `AUTH_DOMAIN` / `SSL_EMAIL`。
+
+- [ ] `curl -I http://<WEB_DOMAIN>` → 301/308 到 https
+- [ ] `curl -s -o /dev/null -w '%{http_code}\n' https://<WEB_DOMAIN>/actuator/health` → 404 或 401（不能 200）
+
+### 0.8 验收 + 首个管理员
+
+1. §7 的 curl 清单全绿；
+2. §8 授权第一个 `SUPER_ADMIN`，然后**重新登录**；
+3. 备份基线：按 §9 导一份空库，并把 `NITROWATER_KEK` 存进密码管理器（丢了密文就解不开）。
+
+### 0.9 之后不再手敲 compose
+
+```bash
+bash deploy/bin/deploy.sh --tag <tag>       # 上线 / 回滚；CI 用的是同一条命令
+```
+
+`deploy/docker/*.yml` 与 `deploy/bin/*.sh` 属**发布产物**，不要在生产机上直接改（见 §12）。
+
 ## 1. 前置
 
 | 项 | 要求 |
@@ -29,7 +135,7 @@
 | 端口 | 只放行 80/443；8080/8081/8090/8093/3306/6379/6333/8333/8888/9333/2000 **不要**对公网开放 |
 | DNS | 站点与 SSO 域名 A 记录指向本机（用 `edge` 时 80 必须公网可达，HTTP-01 签发） |
 | 资源 | ≥ 4 GB 内存（mysql 512M + redis 256M + qdrant 384M + seaweedfs 512M + 三个 JVM）、≥ 20 GB 磁盘 |
-| 宿主机工具 | `docker` + compose 插件、`bash`、`openssl`、`curl`。**不需要 git / JDK / Node**（部署包由 `kit` 镜像带上来，见 §12） |
+| 宿主机工具 | `docker` + compose 插件、`bash`、`openssl`、`curl`。**不需要 git / JDK / Node**（部署包由 `kit` 镜像带上来，见 §0.1） |
 
 ## 2. 密钥
 
@@ -202,8 +308,8 @@ docker exec nitrowater-piston cli/index.js ppman install c
 docker exec nitrowater-piston cli/index.js ppman install c++
 ```
 
-> 宿主机上还没有 `deploy/` 目录？先看 §12 的「部署包」：解一次 kit（`docker create ... unused` +
-> `docker cp`）就有了 compose 和脚本，再回来填 `.env`。
+> 宿主机上还没有 `deploy/` 目录？**先按 §0.1 解一次 kit**（`docker create ... unused` + `docker cp`），
+> 拿到 compose 和脚本后回来填 `.env`。
 > 另外 `deploy/plugin-docs/`（约 1.8 MB 静态文档，**不在 kit 镜像里**）要单独 scp 上去，
 > 否则 `/plugin/*` 会 404。
 
@@ -506,17 +612,8 @@ docker rm -f  nitrowater-kit
 
 `docker cp` 是**合并**不是同步：仓库里删掉的旧文件不会自动从宿主机消失（极少见，手工删掉即可）。
 
-**首次引导**（宿主机还没有 `deploy/`）：先解 kit（上面四行），然后：
-
-```bash
-cd /opt/nitrowater
-cp deploy/docker/.env.example deploy/docker/.env && chmod 600 deploy/docker/.env
-bash deploy/bin/gen-keys.sh && chmod 600 deploy/keys/private.key
-# 按 §3 填 .env
-docker network create nitrowater-net
-```
-
-之后每次上线 / 回滚，手动与 CI 是同一条命令：
+**首次引导**：完整顺序见 **§0**（解包 → 密钥/`.env` → 门禁 → 网络/中间件 → 建库 → account → app → 入口 → 验收）。
+这一步之后每次上线 / 回滚，手动与 CI 是同一条命令：
 
 ```bash
 bash deploy/bin/deploy.sh --tag <tag> --skip-kit     # 门禁 → pull → up -d --no-build → 探活
@@ -527,3 +624,57 @@ bash deploy/bin/deploy.sh --tag <tag> --with-kit     # 先把部署包切到该 
 > 等第三方镜像（未固定 tag = latest）。某个镜像源抽风就会让整个 `deploy` 中止（`set -e`）。
 > 第三方镜像建议先在服务器上 `docker compose ... pull` 预拉一次、或给它们固定版本，
 > 避免"业务镜像没问题却因为 nginx 拉不下来而上不了线"。
+
+## 13. 安全基线（白名单模型）
+
+整套系统按「**默认拒绝、逐项放行**」建。加新功能时先回答一个问题：**它会在哪一层被放行？**
+放行面只有三层，任何一层写错都等于把墙拆了。
+
+### 13.1 三层放行面
+
+| 层 | 默认 | 放行了什么 | 改这里会改安全面 |
+|---|---|---|---|
+| **网络** | 容器端口只绑 `127.0.0.1`（`PUBLISH_BIND` / `OPS_BIND`） | 反代 → `8080`（站点 + `/api/**`）、`8090`（SSO）；`8081/8093/3306/6379/6333/8333/8888/9333/2000/9080` 不出宿主机 | `deploy/docker/*.yml` + 防火墙 |
+| **应用** | Spring Security 拒绝一切 | `/api/public/**` 匿名；`/api/**` 需登录；`/api/admin/**` 需 `ROLE_ADMIN`/`ROLE_SUPER_ADMIN`；`/actuator/**`、`/internal/**` `denyAll`；OIDC 端点按规范 | 各服务 `SecurityConfig` |
+| **内容** | 全部白名单 | 上传：后缀 + magic number 双校验；插件产物：严格 allow-list；跨域：`CORS_ALLOWED_ORIGIN_PATTERNS` 显式列域名；代码执行：Piston 只连 `runner-net`，与 mysql/redis 物理隔离 | `FileTypeValidator` / `CorsConfig` / compose 网络 |
+
+**BFF 的额外放行**（唯一需要记的特例）：SPA 静态资源、history 深链接、OIDC 回调、`/bff/accounts/add`（发起登录）
+走 `anyRequest().permitAll()`。所以：
+
+> **新增数据端点必须挂在 `/api/**` 下**——挂在别处就是匿名可读（这是 §12 之外最容易犯的一条）。
+
+### 13.2 五条禁止项（踩了等于拆墙）
+
+1. **`CORS_ALLOWED_ORIGIN_PATTERNS=*`** —— Spring 的 `setAllowedOriginPatterns` **不会**报错，会静默变成
+   "任意源 + 带凭证"。只写真实站点域与 SSO 域（`.env.example` §4）。
+2. **`PUBLISH_BIND=0.0.0.0`** —— 只有"反代在另一台机器"时才允许，且应填内网 IP，并让安全组只放行那台反代机。
+3. **未上线审核就开 `RESOURCE_USER_UPLOAD=true`** —— 默认 `false` 时上传接口返回 `503 uploads_disabled`。
+4. **把 `piston` 接回 `nitrowater-net`** —— 那等于给沙箱一条直通数据库/Redis 的路；它只该在 `runner-net`。
+5. **把 `/actuator/**` 或 `/internal/**` 暴露到公网** —— 管理端口 9080 本就不发布，反代还要再 404 一次（§5）。
+
+### 13.3 上线前后各查一次
+
+```bash
+# 1) 管理面必须打不到
+curl -s -o /dev/null -w '%{http_code}\n' https://<WEB_DOMAIN>/actuator/health     # 期望 404/401，不能 200
+
+# 2) 内部发布口必须打不到（该路径只接受 POST + 令牌，公网连路由都不该有）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<WEB_DOMAIN>/internal/resource/publish   # 404/401/403
+
+# 3) 数据面未登录必须 401
+curl -s -o /dev/null -w '%{http_code}\n' https://<WEB_DOMAIN>/api/ai/status
+
+# 4) 端口没裸奔（在宿主机上跑；没有 ss 就用 netstat -lntp）
+ss -lntp | grep -E ':(3306|6379|6333|8333|8081|8093|9080)\b'   # 只应出现 127.0.0.1
+```
+
+`/api/public/**` 是**唯一**匿名数据面：新增前先确认"它真的要被所有人直接读"。
+
+### 13.4 两条已知待加固
+
+| 项 | 现状 | 建议 |
+|---|---|---|
+| CORS 通配符 | 只靠文档与占位值检查，代码不拦（`CorsConfig` 直接吃 `*`） | 启动时 fail-fast + `check-env` 加一条 FAIL 规则 |
+| `SESSION_COOKIE_SECURE` | compose 默认 `false`，靠 `.env` 显式写 `true` | 生产模式缺失/为 false 时直接 FAIL |
+
+> 这两条属于「配置能救、代码不兜底」。在补上守卫之前，**升级 .env 时务必人工确认这两项**。
