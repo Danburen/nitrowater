@@ -85,6 +85,8 @@ go.work.sum
 # is a copy of live credentials. Templates (`*.example`) are the only tracked files in this folder.
 deploy/docker/.env*
 !deploy/docker/*.example
+# MySQL dumps written by deploy/bin/backup_mysql.sh (host state, may hold personal data).
+/deploy/backups/
 
 # Scripts tracked: root bin/ (launch start-* + bin/dev dev tooling) and deploy/bin/ (ops/deploy).
 # The generic `bin/` rule above ignores ANY `bin` directory, so re-include both explicitly

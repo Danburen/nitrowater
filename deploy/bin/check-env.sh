@@ -2,9 +2,8 @@
 # ============================================================
 # NitroWater 上线环境自检 (Linux / macOS)
 #
-# 与 check-env.ps1 对齐：.env 加载、必需变量与占位值（YOUR_*_HERE / 123456 /
-# change-me / dev salt）、条件变量、内容资产（词表双层 + 非空 / 文档语料）、
-# 密钥、端口。
+# 检查项：.env 加载、必需变量与占位值（YOUR_*_HERE / 123456 / change-me / dev salt）、
+# 条件变量、内容资产（词表双层 + 非空 / 文档语料）、密钥、端口。
 #
 # 用法：
 #   bash deploy/bin/check-env.sh                       # Docker 上线
@@ -294,15 +293,15 @@ else
     pass 'DB_PASSWORD' '已设置'
 fi
 
-# The app account is created by hand once (deploy/README.md §6); root is bootstrap-only. A pool
+# The app account is created by hand once (deploy/docs/bootstrap.md); root is bootstrap-only. A pool
 # credential that owns every schema turns any SQL injection into a full-database compromise.
 DB_USERNAME="${DB_USERNAME:-}"
 if [ "$LOCAL" -eq 1 ]; then
     info 'DB_USERNAME' '本地 dev 用宿主机账号（Docker 上线必须是专用账号）'
 elif [ -z "$DB_USERNAME" ]; then
-    fail 'DB_USERNAME' '未设置（业务连库账号，见 deploy/README.md §6）'
+    fail 'DB_USERNAME' '未设置（业务连库账号，见 deploy/docs/bootstrap.md）'
 elif [ "$DB_USERNAME" = 'root' ]; then
-    fail 'DB_USERNAME' 'root：改用 README §6 建的专用账号'
+    fail 'DB_USERNAME' 'root：改用 deploy/docs/bootstrap.md 建的专用账号'
 elif is_placeholder "$DB_USERNAME"; then
     fail 'DB_USERNAME' '仍是模板占位值'
 elif ! printf '%s' "$DB_USERNAME" | grep -Eq '^[A-Za-z0-9_]{1,32}$'; then
@@ -610,7 +609,7 @@ echo ''
 echo "Pass: $PASS | Warn: $WARN | Fail: $FAIL"
 if [ "$FAIL" -gt 0 ]; then
     echo ''
-    echo '  [FAIL] 存在阻断项，修好再上线。变量与拓扑见 deploy/README.md'
+    echo '  [FAIL] 存在阻断项，修好再上线。变量与拓扑见 deploy/README.md 与 deploy/docs/'
     echo '         内容挂载见 deploy/content/README.md'
     exit 1
 fi

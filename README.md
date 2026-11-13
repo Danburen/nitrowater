@@ -83,7 +83,7 @@ Eleven tools, most of them running entirely in the browser (WebAssembly / worker
 ### Three commands
 
 ```powershell
-.\deploy\bin\gen-keys.ps1      # once: generate the JWT signing keys
+bash deploy/bin/gen-keys.sh    # once: generate the JWT signing keys (Git Bash / WSL)
 .\bin\start-all.ps1            # build the jars, start infra, run the four services
 cd nitrowater-web; npm run dev # http://localhost:5173, proxies /api to the BFF
 ```
@@ -158,8 +158,7 @@ docker build --target account -t nitrowater-account .
 docker build --target server -t nitrowater-server .
 docker build --target resource -t nitrowater-resource .
 
-# all five at once; Gradle runs once for the four app targets (targets live in docker-bake.hcl, REGISTRY defaults to ghcr.io)
-# `kit` is a FROM scratch carrier (compose files + ops scripts) that deploy.yml unpacks on the host
+# all four at once; Gradle runs once for the four app targets (targets live in docker-bake.hcl, REGISTRY defaults to ghcr.io)
 # --set '*.attest=' drops the SBOM/provenance attesters: the docker exporter cannot load them
 TAG=dev SHA=$(git rev-parse --short HEAD) REPO=local/nitrowater \
   docker buildx bake --load --set '*.attest='
@@ -174,7 +173,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds four application images plus the `kit` (compose files + ops scripts) with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it unpacks the kit with `docker create` + `docker cp`, so the host needs no git checkout, then runs `deploy/bin/deploy.sh` (the same command a manual release uses); `release.yml` chains build → deploy in one run.
+Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds the four application images with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it tars `deploy/` from the commit being deployed and scps it to the host, so no git checkout is needed there, then runs `deploy/bin/deploy.sh` (the same command a manual release uses); `release.yml` chains build → deploy in one run.
 
 ## 📦 Deployment
 
@@ -183,12 +182,15 @@ A single Linux host with Docker. Three compose files share one network and must 
 ```bash
 bash deploy/bin/gen-keys.sh
 cp deploy/docker/.env.example deploy/docker/.env   # domains, secrets, storage, quotas
-bash deploy/bin/check-env.sh deploy/docker/.env
-docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
-# then docker-compose.account.yml, then docker-compose.app.yml
+bash deploy/bin/check-env.sh                       # must report 0 FAIL
 ```
 
-Every variable is annotated in `.env.example`; the full walkthrough (required keys, public-URL group, conditional keys, image tags), TLS edge profile, backup and operations notes are in [`deploy/README.md`](deploy/README.md).
+First deployment is a manual runbook (DNS, TLS, secrets, first admin): [`deploy/docs/bootstrap.md`](deploy/docs/bootstrap.md).
+Day-2 releases, rollbacks and operations go through one entry point, the same command CI uses:
+`bash deploy/bin/deploy.sh --tag <tag>` — see [`deploy/docs/operations.md`](deploy/docs/operations.md).
+
+Every variable is annotated in `.env.example` (the only template); backup, tunnels, certificates
+and AI quota live in the same operations doc.
 
 ## 📚 Documentation
 
@@ -208,7 +210,7 @@ Issues and pull requests are welcome — in English or Chinese, whichever is eas
 2. Follow [Conventional Commits](https://www.conventionalcommits.org/) loosely — `type(scope): summary` is all we need (`feat(agent): add calculate tool`); no need to match the spec word for word. One concern per pull request.
 3. Follow the conventions in [`AGENTS.md`](AGENTS.md): `TIMESTAMP(3)` columns, integer-coded enums, `Specification`-based list queries, `ApiResponse<T>` JSON contracts, API calls confined to `nitrowater-web/src/api/`.
 4. Run the checks listed under [Before you push](#before-you-push) and keep the existing tests green.
-5. Never commit secrets, keys or credentials — `deploy/bin/gen-keys.*` generates them locally, environment variables provide them in production.
+5. Never commit secrets, keys or credentials — `deploy/bin/gen-keys.sh` generates them locally, environment variables provide them in production.
 
 Found a bug or have a feature request? Open an issue with the commit/version, the module involved and the steps to reproduce.
 

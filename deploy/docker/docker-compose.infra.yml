@@ -4,7 +4,7 @@
 #   edge profile  : 公网入口 + 自动 TLS（仅生产启用）
 #
 # 前置（只需一次）：docker network create nitrowater-net
-# 库/账号初始化是手工一步（deploy/README.md §6），这里不挂 initdb 脚本。
+# 库/账号初始化是手工一步（deploy/docs/bootstrap.md §5），这里不挂 initdb 脚本。
 # 启动：docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
 # 带公网：docker compose ... --profile edge up -d
 # ============================================================
@@ -15,7 +15,7 @@ services:
     image: mysql:8.0
     container_name: nitrowater-mysql
     environment:
-      # root 只用于首次手工建库 / 运维；业务连接走 DB_USERNAME（见 deploy/README.md §6）。
+      # root 只用于首次手工建库 / 运维；业务连接走 DB_USERNAME（见 deploy/docs/bootstrap.md §5）。
       # 必填：没填时 compose 直接拒绝启动，而不是回落到 123456 / root。
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
     volumes:

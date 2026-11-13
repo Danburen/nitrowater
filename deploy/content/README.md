@@ -44,7 +44,7 @@ AI_MODERATION_ALLOW=classpath:ai/moderation/allow.txt,file:/etc/nitrowater/moder
 - 挂载缺失时加载器只跳过该层并打 WARN，基线仍生效。**不要**改成只用 `file:` 单层——路径写错会让闸门
   静默失效（`words=0`，日志可见、用户无感）。
 
-修改后生效：`POST /api/admin/ai/moderation/reload`（无需重启）。用 `deploy/bin/check-env.ps1` 可在上线前
+修改后生效：`POST /api/admin/ai/moderation/reload`（无需重启）。用 `deploy/bin/check-env.sh` 可在上线前
 校验词表是否真的非空、基线层是否还在。
 
 ## 文档语料：默认不接管

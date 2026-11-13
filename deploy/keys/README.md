@@ -10,7 +10,7 @@
 1. **复用 waterfun 密钥**（推荐，迁移期 token 兼容）：
    复制 `D:\Project\waterfun\deploy\keys\{private,public}.key` 到本目录。
 
-2. **重新生成**：`.\deploy\bin\gen-keys.ps1`
+2. **重新生成**：`bash deploy/bin/gen-keys.sh`（Windows 用 Git Bash / WSL）
 
 ## 引用位置
 

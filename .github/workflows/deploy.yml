@@ -1,18 +1,18 @@
 # Deploy: roll an already-built image tag out to the server. Never builds anything.
 #
-# The five images for that tag must exist in GHCR (run Build / Release first). One of them
-# is the deploy kit (compose files + ops scripts): the host unpacks it with
-# `docker create` + `docker cp`, so there is no git checkout on the server. preflight
-# verifies all five before touching the host.
+# The four images for that tag must exist in GHCR (run Build / Release first);
+# preflight verifies all four before touching the host.
 #
-# Server side: two steps, one of which is the same command a manual deploy uses.
-#   docker pull/create/cp kit   bootstrap the deploy kit; .env, keys/ and content/ untouched
-#   deploy/bin/deploy.sh        gates -> compose config --images -> infra/account/app
-#                               pull + up -d --no-build -> health checks -> prune
+# Server side: three steps.
+#   checkout + tar + scp        ship deploy/ from the commit being deployed
+#   tar -xzf /tmp/...           merge it into DEPLOY_ROOT; .env, keys/, content/, backups/ untouched
+#   deploy/bin/deploy.sh        gates -> MySQL backup -> compose config --images
+#                               -> infra/account/app pull + up -d --no-build -> health checks -> prune
 # Nothing of that sequence lives in this YAML, so CI and a manual release cannot drift apart.
 #
-# Deploy kit follows the tag: rolling back an image also rolls back its compose files
-# (both come from the same kit image), so the two can no longer drift apart.
+# The commit is the alignment unit: images carry <tag>/<sha>, deploy/ comes from the
+# same ref. Rolling back means deploying that tag with `ref` set to the same commit,
+# so compose files, scripts and docs match the images again.
 
 name: Deploy
 
@@ -23,6 +23,10 @@ on:
         description: 'Image tag to deploy (default latest; for rollback use a previous commit sha)'
         required: false
         default: 'latest'
+      ref:
+        description: 'Git ref/sha to take deploy/ from (default: the commit this run is on)'
+        required: false
+        default: ''
       skip_preflight:
         description: 'Skip the image-exists check (use when GHCR packages are not linked to this repo)'
         required: false
@@ -36,6 +40,11 @@ on:
         required: false
         type: string
         default: 'latest'
+      ref:
+        description: 'Git ref/sha to take deploy/ from (empty = this run commit)'
+        required: false
+        type: string
+        default: ''
       skip_preflight:
         description: 'Skip the image-exists check'
         required: false
@@ -110,7 +119,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: 5 images must already exist
+      - name: 4 images must already exist
         if: ${{ !inputs.skip_preflight }}
         env:
           TAG: ${{ steps.resolve.outputs.tag }}
@@ -118,7 +127,7 @@ jobs:
         run: |
           set -eu
           missing=0
-          for svc in account resource server bff kit; do
+          for svc in account resource server bff; do
             ref="ghcr.io/$REPO/$svc:$TAG"
             if docker manifest inspect "$ref" >/dev/null 2>&1; then
               echo "ok    $ref"
@@ -140,6 +149,30 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The host keeps no git checkout, so deploy/ is shipped from the commit being
+      # deployed. `ref` defaults to this run's commit; for a rollback pass the commit
+      # that produced the images (or the git tag name).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Bundle deploy/
+        run: tar -czf /tmp/nitrowater-deploy.tgz -C . deploy
+
+      - name: Copy bundle to host
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -eu
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          scp -q -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            /tmp/nitrowater-deploy.tgz "$SSH_USER@$SSH_HOST:/tmp/nitrowater-deploy.tgz"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
@@ -176,25 +209,18 @@ jobs:
               printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:?GHCR_USER is required when GHCR_PAT is set}" --password-stdin
             fi
 
-            # Deploy kit = compose files + ops scripts, shipped as an image: no git on the host.
-            # `docker cp` merges into deploy/; .env, keys/ and content/ are host state and stay.
-            # The image is FROM scratch (no shell, no binaries), so `docker create` needs a
-            # throwaway command: it refuses an image without one ("no command specified").
-            # The container is never started - it exists only for `docker cp`.
-            KIT_REF="${REGISTRY}/${GITHUB_REPOSITORY}/kit:${ACCOUNT_IMAGE_TAG}"
-            echo "==> deploy kit: ${KIT_REF}"
-            mkdir -p deploy
-            docker pull "$KIT_REF"
-            docker rm -f nitrowater-kit >/dev/null 2>&1 || true
-            docker create --name nitrowater-kit "$KIT_REF" unused >/dev/null
-            docker cp nitrowater-kit:/deploy/. deploy/
-            docker rm -f nitrowater-kit >/dev/null
+            # deploy/ arrives as a tarball from the same commit as the images. It is
+            # extracted in place (merge): tracked files are overwritten, while .env,
+            # keys/, content/ and backups/ are host state and are not in the bundle.
+            echo '==> sync deploy/ from the workflow commit'
+            tar -xzf /tmp/nitrowater-deploy.tgz
+            rm -f /tmp/nitrowater-deploy.tgz
 
-            # Everything after the bootstrap lives in deploy/bin/deploy.sh: one entry point
+            # Everything after that lives in deploy/bin/deploy.sh: one entry point
             # shared with a manual deploy, so the sequence cannot drift between CI and ops.
             echo '==> release (deploy/bin/deploy.sh)'
             if [ -n "${COMPOSE_PROFILE:-}" ]; then
-              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG" --profile "$COMPOSE_PROFILE" --skip-kit
+              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG" --profile "$COMPOSE_PROFILE"
             else
-              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG" --skip-kit
+              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG"
             fi

@@ -4,7 +4,8 @@
 #   deploy -> deploy.yml  (preflight, then pull + up -d on the server)
 #
 # needs: deploy only runs if build succeeded, so a red commit never reaches the host.
-# Rollback: use Deploy with a previous sha — Release would rebuild that tag.
+# Rollback: use Deploy with a previous sha (`ref` = the commit that produced it) — Release
+# would rebuild the tag from the current branch instead of restoring the old artifacts.
 
 name: Release (build + deploy)
 

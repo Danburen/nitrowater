@@ -1,44 +1,112 @@
 #!/usr/bin/env bash
 # ============================================================
-# nitrowater MySQL 自动备份（Bash — Linux/macOS）
-# 全量备份 nitrowater_account，gzip 压缩，保留最近 30 天。
+# nitrowater MySQL backup (Bash - Linux/macOS)
 #
-# 用法:
-#   手动:  bash deploy/bin/backup_mysql.sh
-#   定时:  crontab -e  ->  0 3 * * * /path/nitrowater/deploy/bin/backup_mysql.sh >/dev/null 2>&1
+# Dumps all three schemas (account / biz / resource) from the running mysql
+# container, gzips the result into ${BACKUP_DIR} and deletes dumps older than
+# RETAIN_DAYS. The script runs on the host, so no mysql client is required:
+# credentials are read from deploy/docker/.env (+ optional .env.prod.secrets)
+# and passed to the container, never typed on a command line.
+#
+# Usage:
+#   bash deploy/bin/backup_mysql.sh
+#   BACKUP_DIR=/mnt/backup bash deploy/bin/backup_mysql.sh
+#   crontab -e  ->  0 3 * * * /opt/nitrowater/deploy/bin/backup_mysql.sh >/dev/null 2>&1
+#
+# deploy.sh calls this before replacing containers; a non-zero exit aborts the deploy.
+# Exit codes: 0 = dump written and verified; 1 = no fresh backup was produced.
 # ============================================================
 set -euo pipefail
 
-# ----- 配置区（按需修改）-----
-MYSQL_BIN="${MYSQL_BIN:-/usr/bin}"
-BACKUP_DIR="${BACKUP_DIR:-/data/backup/nitrowater}"
-DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-3306}"
-DB_USER="${DB_USER:-root}"
-# root 口令改名后优先读 MYSQL_ROOT_PASSWORD；DB_PASS 保留给旧习惯 / 单库账号。
-DB_PASS="${MYSQL_ROOT_PASSWORD:-${DB_PASS:-123456}}"
-DB_NAME="${DB_NAME:-nitrowater_account}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ENV_FILE="$DEPLOY_ROOT/deploy/docker/.env"
+SECRETS_FILE="$DEPLOY_ROOT/deploy/docker/.env.prod.secrets"
+
+MYSQL_CONTAINER="${MYSQL_CONTAINER:-nitrowater-mysql}"
+BACKUP_DIR="${BACKUP_DIR:-$DEPLOY_ROOT/backups}"
 RETAIN_DAYS="${RETAIN_DAYS:-30}"
-# -----------------------------
+DATABASES=(nitrowater_account nitrowater_biz nitrowater_resource)
 
-LOG_FILE="${BACKUP_DIR}/backup_log.txt"
-DATE_SUFFIX="$(date +%Y%m%d_%H%M%S)"
-BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${DATE_SUFFIX}.sql"
+# Read one KEY without sourcing .env: values may contain '#', '$' or spaces.
+# Later files win, matching `docker compose --env-file` precedence.
+env_get() {
+    local key="$1" file line value=""
+    for file in "$ENV_FILE" "$SECRETS_FILE"; do
+        [ -f "$file" ] || continue
+        line="$(sed -n "s/^[[:space:]]*${key}=//p" "$file" | tail -n 1)"
+        [ -n "$line" ] && value="${line%$'\r'}"
+    done
+    printf '%s' "$value"
+}
 
-mkdir -p "$BACKUP_DIR"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] 开始备份 ${DB_NAME}..." >> "$LOG_FILE"
-
-if "${MYSQL_BIN}/mysqldump" \
-        -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" \
-        --single-transaction --routines --triggers --default-character-set=utf8mb4 \
-        "$DB_NAME" > "$BACKUP_FILE" 2>> "$LOG_FILE"; then
-    gzip -f "$BACKUP_FILE"
-    BACKUP_FILE="${BACKUP_FILE}.gz"
-    find "$BACKUP_DIR" -name "${DB_NAME}_*.sql.gz" -type f -mtime +"${RETAIN_DAYS}" -delete
-    msg="[$(date '+%Y-%m-%d %H:%M:%S')] ✓ 备份完成：${BACKUP_FILE}"
-    echo "$msg" | tee -a "$LOG_FILE"
-else
-    msg="[$(date '+%Y-%m-%d %H:%M:%S')] ✗ 备份失败（见 ${LOG_FILE}）"
-    echo "$msg" | tee -a "$LOG_FILE"
+# Business account first (least privilege); root only when .env has no DB user.
+DB_USER="${MYSQL_BACKUP_USER:-${DB_USERNAME:-$(env_get DB_USERNAME)}}"
+DB_PASS="${MYSQL_BACKUP_PASSWORD:-${DB_PASSWORD:-$(env_get DB_PASSWORD)}}"
+if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ]; then
+    DB_USER="${MYSQL_BACKUP_USER:-root}"
+    DB_PASS="${MYSQL_BACKUP_PASSWORD:-$(env_get MYSQL_ROOT_PASSWORD)}"
+fi
+if [ -z "$DB_PASS" ]; then
+    echo "ERROR: no MySQL password in $ENV_FILE (DB_PASSWORD or MYSQL_ROOT_PASSWORD)" >&2
     exit 1
 fi
+
+# The container must exist and be running: a stopped mysql means the data files are
+# not safely consistent, and a missing one means this is not a deployed host yet.
+if ! docker inspect -f '{{.State.Running}}' "$MYSQL_CONTAINER" >/dev/null 2>&1; then
+    echo "ERROR: container '$MYSQL_CONTAINER' not found (docker compose ... infra up -d)" >&2
+    exit 1
+fi
+if [ "$(docker inspect -f '{{.State.Running}}' "$MYSQL_CONTAINER")" != "true" ]; then
+    echo "ERROR: container '$MYSQL_CONTAINER' is not running (its files are not consistent)" >&2
+    exit 1
+fi
+
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR" 2>/dev/null || true
+
+LOG_FILE="$BACKUP_DIR/backup.log"
+STAMP="$(date +%Y%m%d_%H%M%S)"
+FINAL_FILE="$BACKUP_DIR/nitrowater_all_${STAMP}.sql.gz"
+TMP_FILE="$BACKUP_DIR/.nitrowater_all_${STAMP}.sql.gz.part"
+trap 'rm -f "$TMP_FILE"' EXIT
+
+log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"; }
+
+log "start: ${DATABASES[*]} from ${MYSQL_CONTAINER}"
+
+# MYSQL_PWD keeps the password out of the container's process list (host docker
+# access is already root-equivalent). --no-tablespaces avoids needing PROCESS.
+if ! docker exec -e MYSQL_PWD="$DB_PASS" "$MYSQL_CONTAINER" \
+        mysqldump -u "$DB_USER" -h 127.0.0.1 \
+        --single-transaction --routines --triggers --no-tablespaces \
+        --default-character-set=utf8mb4 \
+        --databases "${DATABASES[@]}" \
+        2>> "$LOG_FILE" | gzip > "$TMP_FILE"; then
+    rm -f "$TMP_FILE"
+    log "FAILED: mysqldump returned non-zero (log: ${LOG_FILE})"
+    exit 1
+fi
+
+# A truncated pipe or an unknown schema still writes a "valid looking" file, so
+# check gzip integrity and that every expected schema header made it in.
+if ! gzip -t "$TMP_FILE" 2>/dev/null; then
+    rm -f "$TMP_FILE"
+    log 'FAILED: gzip integrity check'
+    exit 1
+fi
+
+size="$(wc -c < "$TMP_FILE" | tr -d '[:space:]')"
+schemas="$(gzip -dc "$TMP_FILE" | grep -c '^CREATE DATABASE' || true)"
+if [ "$size" -lt 4096 ] || [ "${schemas:-0}" -lt "${#DATABASES[@]}" ]; then
+    rm -f "$TMP_FILE"
+    log "FAILED: incomplete dump (${size} bytes, ${schemas:-0}/${#DATABASES[@]} schemas)"
+    exit 1
+fi
+
+mv "$TMP_FILE" "$FINAL_FILE"
+chmod 600 "$FINAL_FILE"
+log "done: ${FINAL_FILE} (${size} bytes, ${schemas} schemas)"
+
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'nitrowater_all_*.sql.gz' -mtime +"$RETAIN_DAYS" -delete
