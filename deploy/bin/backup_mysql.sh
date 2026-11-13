@@ -24,7 +24,7 @@ ENV_FILE="$DEPLOY_ROOT/deploy/docker/.env"
 SECRETS_FILE="$DEPLOY_ROOT/deploy/docker/.env.prod.secrets"
 
 MYSQL_CONTAINER="${MYSQL_CONTAINER:-nitrowater-mysql}"
-BACKUP_DIR="${BACKUP_DIR:-$DEPLOY_ROOT/backups}"
+BACKUP_DIR="${BACKUP_DIR:-$DEPLOY_ROOT/deploy/backups}"
 RETAIN_DAYS="${RETAIN_DAYS:-30}"
 DATABASES=(nitrowater_account nitrowater_biz nitrowater_resource)
 

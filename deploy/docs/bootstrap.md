@@ -18,6 +18,7 @@ dc() { docker compose --env-file deploy/docker/.env -f "deploy/docker/docker-com
 | 端口 | 只放行 80/443；3306/6379/6333/8333/8080/8081/8090/8093/8888/9333/2000 **不要**对公网开 |
 | DNS | 站点与 SSO 域名 A 记录指向本机（用 `edge` 时 80 必须公网可达） |
 | 资源 | ≥ 4 GB 内存、≥ 20 GB 磁盘 |
+| 镜像 | 4 个应用镜像已推到 GHCR（先手动跑一次 `build.yml`）。private 包要先在宿主机登录 |
 
 ## 2. 取部署文件
 
@@ -39,6 +40,12 @@ sudo chown -R "$USER": /opt/nitrowater/deploy && rm -f /tmp/nitrowater-deploy.tg
 
 - [ ] `/opt/nitrowater/deploy/docker/` 里有 `infra` / `account` / `app` 三份 compose 和 `.env.example`
 - [ ] `/opt/nitrowater/deploy/docs/` 也在（排障时不用回仓库翻）
+
+GHCR 是 private 时，先在这台机器上登录一次（凭据会留在 `~/.docker/config.json`，之后 `compose pull` 直接可用）：
+
+```bash
+printf '%s' '<PAT>' | docker login ghcr.io -u <github-user> --password-stdin
+```
 
 ## 3. 密钥 + 环境变量
 
@@ -120,6 +127,8 @@ dc app pull && dc app up -d --no-build
 ```
 
 顺序不能反：bff 启动时要拉 account 的 OIDC discovery。`--no-build` 保证拉镜像而不是现场构建。
+`pull` 的目标由 `.env` 的 `REGISTRY` / `GITHUB_REPOSITORY` / `ACCOUNT_IMAGE_TAG`·`APP_IMAGE_TAG` 拼出，
+`manifest unknown` 基本就是这三处和实际推上去的不一致。
 
 验收：`nitrowater-bff` healthy；`curl http://127.0.0.1:8080/api/public/ping` 返回 pong。
 
