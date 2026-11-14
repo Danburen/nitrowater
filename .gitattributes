@@ -6,3 +6,8 @@
 # .env templates must be checked out with LF: a CRLF would put a trailing \r into every
 # value. .env itself is never tracked, so this only guards the template.
 deploy/docker/.env* text eol=lf
+# The deploy tree is tar'd verbatim to a Linux host and parsed by bash/compose. With
+# core.autocrlf=true (the Windows default here) every file without an eol rule comes back as
+# CRLF on the next checkout, which silently appends \r to .env values and hides `${VAR:?…}`
+# from deploy/bin/check-env.sh. Pin the whole tree instead of per-file.
+deploy/** text eol=lf

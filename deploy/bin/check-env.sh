@@ -145,6 +145,28 @@ fi
 # 两级严重度：`.env 没给值` = FAIL（部署不可能安全）；`给了但仍是 dev 值` = WARN（单机内部署可接受）。
 DEV_DEFAULT_VALUES=' 123456 change-me device-salt-dev nitrowater-bff-secret root dev not-configured '
 COMPOSE_DIR="$ROOT/docker"
+
+# Windows line endings are invisible in a diff and break two things at once: a CRLF .env hands
+# every container a value with a trailing \r (Redis AUTH / MySQL password mismatch), and a CRLF
+# compose file makes the coverage parser below miss `${VAR:?…}` (it reports the container-side
+# key, e.g. SPRING_DATASOURCE_USERNAME, instead of the .env key it came from).
+CRLF_FILES=''
+for crlf_file in "${ENV_PATHS[@]}" "$COMPOSE_DIR"/docker-compose.*.yml; do
+    [ -f "$crlf_file" ] || continue
+    crlf_chunk=''
+    # Read with the bash builtin: GNU grep on some platforms (MSYS) opens files in text mode and
+    # silently drops the CR, which would make this gate blind exactly where it matters.
+    IFS= read -r -d '' crlf_chunk < "$crlf_file"
+    case "$crlf_chunk" in
+        *$'\r'*) CRLF_FILES="$CRLF_FILES ${crlf_file#"$ROOT/"}" ;;
+    esac
+done
+if [ -n "$CRLF_FILES" ]; then
+    fail 'crlf' "CRLF 换行：${CRLF_FILES# }（修：sed -i 's/\\r$//' 上述文件）"
+else
+    pass 'crlf' '.env / compose 均为 LF'
+fi
+
 declare -A COMPOSE_KEYS=()
 declare -A REFERENCED=()
 UNFILLED=''
@@ -487,11 +509,19 @@ else
 fi
 
 if [ "$CHECKED_WORDS" -eq 0 ]; then
-    count="$(count_entries "$REPO/nitrowater-server/src/main/resources/ai/moderation/words.txt")"
+    BASELINE="$REPO/nitrowater-server/src/main/resources/ai/moderation/words.txt"
+    count="$(count_entries "$BASELINE")"
     if [ "$count" -gt 0 ]; then
         pass 'words.txt' "classpath 基线 $count 条（未挂载增量词表）"
+    elif [ -f "$BASELINE" ]; then
+        fail 'words.txt' "classpath 基线为空：$BASELINE（闸门会默认失效）"
+    elif [ "$LOCAL" -eq 1 ]; then
+        fail 'words.txt' "classpath 基线缺失：$BASELINE"
     else
-        fail 'words.txt' 'classpath 基线缺失或为空'
+        # Deploy host keeps only deploy/: there is no source tree to count. The baseline ships
+        # inside the server image as classpath:ai/moderation/words.txt, so its absence here says
+        # nothing about the running service.
+        info 'words.txt' '宿主机无源码树，classpath 基线由镜像内置；未挂载增量词表'
     fi
 fi
 
