@@ -64,7 +64,9 @@ Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 Write-Step "verify (public list, $App/$Group)"
 try {
     $list = Invoke-RestMethod -Uri "$BaseUrl/api/public/resources?app=$([uri]::EscapeDataString($App))&group=$([uri]::EscapeDataString($Group))"
-    Write-Host "  $($list.Count) file(s); first = $($list[0].name) v$($list[0].version)"
+    # Wire shape is ApiResponse<Page<..>>: data.content + data.page{...}.
+    $files = @($list.data.content)
+    Write-Host "  $($files.Count) file(s); first = $($files[0].name) v$($files[0].version)"
 } catch {
     Write-Warn "could not read the public list: $($_.Exception.Message)"
 }

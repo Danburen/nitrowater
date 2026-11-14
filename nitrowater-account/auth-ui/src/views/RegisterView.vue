@@ -13,8 +13,6 @@ const username = ref('')
 const phone = ref('')
 const smsCode = ref('')
 const password = ref('')
-const email = ref('')
-const emailCode = ref('')
 
 const showOptional = ref(false)
 const errorMessage = ref('')
@@ -24,12 +22,9 @@ const showCaptcha = ref(false)
 const captchaCode = ref('')
 const sending = ref(false)
 const submitting = ref(false)
-const emailSending = ref(false)
-const showEmailCaptcha = ref(false)
 
-/** Targets the last SMS/email code was sent to; editing the target invalidates the stale input. */
+/** Target the last SMS code was sent to; editing the target invalidates the stale input. */
 const smsSentTo = ref('')
-const emailSentTo = ref('')
 
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -40,20 +35,9 @@ const {
   clear: clearSmsCooldown,
   sync: syncSmsCooldown,
 } = useCodeCooldown()
-const {
-  remaining: emailCooldown,
-  start: startEmailCooldown,
-  restore: restoreEmailCooldown,
-  clear: clearEmailCooldown,
-  sync: syncEmailCooldown,
-} = useCodeCooldown()
 
 function smsScope(): CooldownScope {
   return { scene: 'register', channel: 'sms', target: phone.value.trim() }
-}
-
-function emailScope(): CooldownScope {
-  return { scene: 'register', channel: 'email', target: email.value.trim() }
 }
 
 watch(phone, () => {
@@ -65,19 +49,9 @@ watch(phone, () => {
   if (target) restoreSmsCooldown(smsScope())
   else clearSmsCooldown()
 })
-watch(email, () => {
-  const target = email.value.trim()
-  if (emailSentTo.value && emailSentTo.value !== target) {
-    emailSentTo.value = ''
-    emailCode.value = ''
-  }
-  if (target) restoreEmailCooldown(emailScope())
-  else clearEmailCooldown()
-})
 
 onMounted(() => {
   if (phone.value.trim()) restoreSmsCooldown(smsScope())
-  if (email.value.trim()) restoreEmailCooldown(emailScope())
 })
 
 function messageOf(error: unknown): string {
@@ -133,52 +107,6 @@ function sendCodeWithCaptcha(code: string) {
   void sendCode()
 }
 
-function openEmailCaptcha() {
-  const mail = email.value.trim()
-  if (!mail) {
-    errorMessage.value = '请先填写邮箱'
-    return
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
-    errorMessage.value = '邮箱格式不正确'
-    return
-  }
-  clearMessages()
-  showEmailCaptcha.value = true
-}
-
-async function sendEmailCode(captcha: string) {
-  const mail = email.value.trim()
-  if (!mail) {
-    errorMessage.value = '请先填写邮箱'
-    return
-  }
-
-  emailSending.value = true
-  clearMessages()
-  try {
-    await postJson<void>('/api/auth/send-code', {
-      target: mail,
-      channel: 'email',
-      scene: 'register',
-      captcha,
-    })
-    notice.value = '邮箱验证码已发送，请查收'
-    emailSentTo.value = mail
-    startEmailCooldown(60, emailScope())
-  } catch (error) {
-    errorMessage.value = messageOf(error)
-    syncEmailCooldown(error, emailScope())
-  } finally {
-    emailSending.value = false
-  }
-}
-
-function sendEmailCodeWithCaptcha(code: string) {
-  showEmailCaptcha.value = false
-  void sendEmailCode(code)
-}
-
 async function register() {
   clearMessages()
 
@@ -186,7 +114,6 @@ async function register() {
   const target = phone.value.trim()
   const code = smsCode.value.trim()
   const pwd = password.value
-  const mail = email.value.trim()
 
   if (!name || !target || !code) {
     errorMessage.value = '请填写用户名、手机号和短信验证码'
@@ -200,14 +127,6 @@ async function register() {
     errorMessage.value = '用户名不能是手机号'
     return
   }
-  if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
-    errorMessage.value = '邮箱格式不正确'
-    return
-  }
-  if (mail && !emailCode.value.trim()) {
-    errorMessage.value = '请填写邮箱验证码'
-    return
-  }
   if (pwd && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,20}$/.test(pwd)) {
     errorMessage.value = '密码需为 8-20 位，且包含大小写字母和数字'
     return
@@ -219,7 +138,7 @@ async function register() {
       username: name,
       phone: target,
       password: pwd || null,
-      email: mail || null,
+      // Registration proves the phone only; an email is bound from the user center afterwards.
       verify: {
         channel: 'sms',
         target,
@@ -227,15 +146,6 @@ async function register() {
         scene: 'register',
         deviceInfo: { deviceFp: getDeviceFp() },
       },
-      emailVerify: mail
-        ? {
-            channel: 'email',
-            target: mail,
-            code: emailCode.value.trim(),
-            scene: 'register',
-            deviceInfo: { deviceFp: getDeviceFp() },
-          }
-        : null,
     })
     notice.value = '注册成功，正在前往登录…'
     redirectTimer = setTimeout(() => window.location.assign('/login?registered=1'), 800)
@@ -377,55 +287,12 @@ onUnmounted(() => {
               设置后可使用用户名 + 密码登录
             </p>
           </div>
-
-          <div>
-            <label
-              class="auth-label"
-              for="reg-email"
-            >邮箱</label>
-            <ElInput
-              id="reg-email"
-              v-model="email"
-              size="large"
-              type="email"
-              :prefix-icon="Message"
-              autocomplete="email"
-              placeholder="填写后需验证，可用于快捷登录"
-            />
-          </div>
-
-          <div v-if="email.trim()">
-            <label
-              class="auth-label"
-              for="reg-email-code"
-            >邮箱验证码</label>
-            <div class="flex items-center gap-2">
-              <ElInput
-                id="reg-email-code"
-                v-model="emailCode"
-                class="min-w-0 flex-1"
-                size="large"
-                :prefix-icon="Message"
-                autocomplete="one-time-code"
-                inputmode="numeric"
-                maxlength="6"
-                placeholder="请输入邮箱验证码"
-              />
-              <ElButton
-                class="shrink-0"
-                size="large"
-                :disabled="emailSending || emailCooldown > 0"
-                @click="openEmailCaptcha"
-              >
-                {{ emailCooldown > 0 ? `${emailCooldown}s 后重发` : '获取验证码' }}
-              </ElButton>
-            </div>
-            <p class="mt-1.5 text-[11px] text-faint">
-              邮箱验证通过后可用于验证码快捷登录
-            </p>
-          </div>
         </div>
       </div>
+
+      <p class="text-[11px] leading-relaxed text-faint">
+        注册只验证手机号。邮箱可在登录后的「用户中心 → 邮箱与手机」绑定，验证通过后即可用于邮箱验证码登录。
+      </p>
 
       <ElButton
         class="mt-2 w-full"
@@ -455,15 +322,6 @@ onUnmounted(() => {
       confirm-text="发送验证码"
       :loading="sending"
       @submit="sendCodeWithCaptcha"
-    />
-
-    <CaptchaDialog
-      v-model="showEmailCaptcha"
-      title="安全验证"
-      description="输入图形验证码后发送邮箱验证码。"
-      confirm-text="发送验证码"
-      :loading="emailSending"
-      @submit="sendEmailCodeWithCaptcha"
     />
   </AuthLayout>
 </template>

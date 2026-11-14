@@ -10,13 +10,17 @@ public interface RegisterService {
     /**
      * Registers a normal account from the public registration form.
      *
-     * @param body         phone + username (required), optional password and email
-     * @param smsCodeKey   cookie key of the SMS code sent to {@code body.phone}
-     * @param emailCodeKey cookie key of the email code sent to {@code body.email}, when present
+     * <p>Registration covers one contact channel only: a phone proven by an SMS code. An email is
+     * optional account data, bound later from the user center (where ownership is proven against an
+     * already-authenticated account); accepting it here would mean a second code, a second captcha
+     * and a second cookie for something the account can live without.</p>
+     *
+     * @param body       phone + username (required), optional password
+     * @param smsCodeKey cookie key of the SMS code sent to {@code body.phone}
      * @return the persisted {@link User}
      */
     @Transactional
-    User register(RegisterRequest body, String smsCodeKey, String emailCodeKey);
+    User register(RegisterRequest body, String smsCodeKey);
 
     @Transactional
     User autoRegister(String target, VerifyChannel channel, VerifyScene scene, String codeKey, String code, String deviceFp);

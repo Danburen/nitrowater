@@ -49,9 +49,17 @@ if (-not $SkipStart) {
 }
 
 # ---------------- 3. test users (testadmin / testuser1 / testuser) ----------------
+# Two different sources, on purpose:
+#   * seed-test-users.ps1        -> the three main accounts, created through the REAL register
+#     flow (account + Redis must be up; register is capped at 3 / 300 s per IP, so it cannot take
+#     more than three).
+#   * seed-account-test-users.ps1 -> the password-only SQL fixture set, incl. testops (SUPER_ADMIN).
+#     Without this step a rebuilt account DB silently loses testops, and there is no other path to
+#     a super-admin in dev.
 if (-not $SkipUsers) {
     Write-Step 'seed test users'
     & (Join-Path $PSScriptRoot 'seed-test-users.ps1')
+    & (Join-Path $PSScriptRoot 'seed-account-test-users.ps1')
 }
 
 # ---------------- 4. resource fixtures (SYSTEM/public artefacts) ----------------
@@ -62,5 +70,6 @@ if (-not $SkipResources) {
 
 Write-Step 'dev-seed done'
 Write-Host '  test users : testadmin / testuser1 / testuser   (password Passw0rd123)'
+Write-Host '  password-only fixtures : testops (SUPER_ADMIN) / testlab / testadminpw / testdisabled / testnopwd'
 Write-Host '  plugin     : velochatx (seeded by the V1 baseline migration)'
 Write-Host '  resources  : app=nitrowater group=smoke-plugin / samples'

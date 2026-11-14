@@ -40,7 +40,6 @@ class RegisterRequestValidationTest {
         req.setPhone("13800138000");
         req.setUsername("tester01");
         req.setPassword("Passw0rd123");
-        req.setEmail("tester01@example.com");
 
         VerifyCodeDto verify = new VerifyCodeDto();
         verify.setChannel(VerifyChannel.SMS);

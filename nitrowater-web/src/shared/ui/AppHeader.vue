@@ -51,7 +51,13 @@ async function onNav(item: NavItem): Promise<void> {
 </script>
 
 <template>
-  <header class="h-[var(--app-header-h)] border-b border-line bg-bg/80 backdrop-blur-md">
+  <!--
+    `relative z-40`: the header paints with `backdrop-blur-md`, which creates a stacking context.
+    Without a z-index that context is ordered by DOM position, so the account dropdown (trapped
+    inside it) was painted UNDER the home hero's `position: relative` title. Giving the header its
+    own level keeps every child overlay above page content; modals/drawers (1000+) stay on top.
+  -->
+  <header class="relative z-40 h-[var(--app-header-h)] border-b border-line bg-bg/80 backdrop-blur-md">
     <div class="mx-auto flex h-full max-w-[1120px] items-center justify-between gap-4 px-4 sm:px-6">
       <router-link
         to="/"

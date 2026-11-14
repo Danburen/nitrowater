@@ -162,8 +162,7 @@ public class AuthController {
     public ApiResponse<Void> register(@Valid @RequestBody RegisterRequest dto, HttpServletRequest request) {
         registerService.register(
                 dto,
-                CookieUtil.getCookieValue(request.getCookies(), "SMS_CODE_KEY"),
-                CookieUtil.getCookieValue(request.getCookies(), "EMAIL_CODE_KEY")
+                CookieUtil.getCookieValue(request.getCookies(), "SMS_CODE_KEY")
         );
         // No token is issued here: the client signs in through the SSO form login / OIDC afterwards.
         return ApiResponse.success();

@@ -95,7 +95,7 @@ async function onRemoveAccount(uid: string, active: boolean): Promise<void> {
       <span class="text-[10px] text-dim">▼</span>
     </summary>
 
-    <div class="absolute right-0 top-full z-30 mt-2 w-64 overflow-hidden rounded-xl border border-line bg-card shadow-xl">
+    <div class="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-line bg-card shadow-xl">
       <p class="border-b border-line px-3 py-2 text-[11px] uppercase tracking-wide text-faint">
         账号
       </p>

@@ -53,11 +53,8 @@ public class RegisterServiceImpl implements RegisterService {
 
     @Transactional
     @Override
-    public User register(RegisterRequest body, String smsCodeKey, String emailCodeKey) {
+    public User register(RegisterRequest body, String smsCodeKey) {
         String phone = AuthIdentifierUtil.normalizePhone(body.getPhone());
-        String email = StringUtil.isNotBlank(body.getEmail())
-                ? AuthIdentifierUtil.normalizeEmail(body.getEmail())
-                : null;
         EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
         String hmacSecret = hmacKey.getEncryptedKey();
 
@@ -65,20 +62,13 @@ public class RegisterServiceImpl implements RegisterService {
             throw new UserNameAlreadyExistException();
         });
 
-        // Uniqueness first: a taken phone/email should fail precisely, before a valid code is
-        // consumed. The derived unique indexes in the V1 baseline remain the final race-safe guard.
+        // Uniqueness first: a taken phone should fail precisely, before a valid code is
+        // consumed. The derived unique index in the V1 baseline remains the final race-safe guard.
         userDatumRepo.findByPhoneHash(HashUtil.toSha256HmacString(phone, hmacSecret)).ifPresent(
                 _ -> {
                     throw new BizException(BaseResponseCode.PHONE_NUMBER_ALREADY_USED);
                 }
         );
-        if (email != null) {
-            userDatumRepo.findByEmailHash(HashUtil.toSha256HmacString(email, hmacSecret)).ifPresent(
-                    _ -> {
-                        throw new BizException(BaseResponseCode.EMAIL_ALREADY_USED);
-                    }
-            );
-        }
         // Phone proof: compare normalized targets, then verify against the SMS-channel code only.
         VerifyCodeDto phoneVerify = body.getVerify();
         if (phoneVerify == null
@@ -87,19 +77,6 @@ public class RegisterServiceImpl implements RegisterService {
         }
         verificationService.verifyCode(
                 phone, VerifyScene.REGISTER, VerifyChannel.SMS, smsCodeKey, phoneVerify.getCode());
-        // A mailbox is optional, but claiming one requires proof. Without this check the address
-        // could be attached to an attacker's account before the real owner registers.
-        if (email != null) {
-            VerifyCodeDto emailVerify = body.getEmailVerify();
-            if (emailVerify == null) {
-                throw new AuthException(AuthCode.EMAIL_VERIFY_REQUIRED);
-            }
-            if (!email.equals(AuthIdentifierUtil.normalizeEmail(emailVerify.getTarget()))) {
-                throw new AuthException(AuthCode.REAUTHORIZATION_REQUIRED);
-            }
-            verificationService.verifyCode(
-                    email, VerifyScene.REGISTER, VerifyChannel.EMAIL, emailCodeKey, emailVerify.getCode());
-        }
 
         // Encrypt email, phone, password
         EncryptionDataKey aesKey = encryptedKeyService.getAesKey();
@@ -123,16 +100,10 @@ public class RegisterServiceImpl implements RegisterService {
         ud.setPhoneEncrypted(encryptedPhone);
         ud.setPhoneHash(HashUtil.toSha256HmacString(phone, hmacSecret));
         ud.setPhoneVerified(true);
-
-        if (email != null) {
-            ud.setEmailEncrypted(EncryptionHelper.encryptField(email, aesKey));
-            ud.setEmailHash(HashUtil.toSha256HmacString(email, hmacSecret));
-            ud.setEmailVerified(true);
-            // Proven at registration time: no unverified grace period is needed.
-            ud.setEmailExpireAt(null);
-        } else {
-            ud.setEmailVerified(false);
-        }
+        // No mailbox is attached at registration; the user center binds one later, after proving
+        // ownership. That keeps a new row free of unverified contact claims and of the
+        // email-uniqueness race that a half-claimed address would otherwise reserve.
+        ud.setEmailVerified(false);
 
         // TODO(SSO): UserProfile/UserCounter/UserPreference/UserSetting bootstrap cut — business tables not migrated
         user.setUserDatum(ud);

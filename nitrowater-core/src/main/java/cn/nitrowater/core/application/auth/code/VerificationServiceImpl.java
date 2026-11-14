@@ -96,6 +96,12 @@ public class VerificationServiceImpl implements VerificationService {
             throw new InvalidVerifySceneException();
         }
         VerifyChannel channel = dto.getChannel();
+        // Registration is phone-only: an email is bound from the user center, which proves it on an
+        // authenticated account (scene ACTIVATE). Rejecting the pair keeps this anonymous endpoint
+        // from mailing arbitrary addresses through a flow that no longer consumes the code.
+        if (dto.getScene() == VerifyScene.REGISTER && channel == VerifyChannel.EMAIL) {
+            throw new InvalidVerifySceneException();
+        }
         String target = channel == VerifyChannel.EMAIL
                 ? AuthIdentifierUtil.normalizeEmail(dto.getTarget())
                 : AuthIdentifierUtil.normalizePhone(dto.getTarget());

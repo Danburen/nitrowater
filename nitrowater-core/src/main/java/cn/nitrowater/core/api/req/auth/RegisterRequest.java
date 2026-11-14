@@ -1,6 +1,5 @@
 package cn.nitrowater.core.api.req.auth;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -44,15 +43,10 @@ public class RegisterRequest {
         this.password = StringUtil.isBlank(password) ? null : password;
     }
 
-    @Email(message = "{valid.email_address.invalid}")
-    private String email;
-
     /**
-     * Optional email proof. Required whenever {@link #email} is present, so an unverified mailbox
-     * can never be claimed by someone else (account pre-hijacking).
+     * Phone proof. Registration only accepts a phone + SMS code; an email is bound later from the
+     * user center, where it is proven the same way but against an already-authenticated account.
      */
-    private VerifyCodeDto emailVerify;
-
     @NotNull
     private VerifyCodeDto verify;
 }
