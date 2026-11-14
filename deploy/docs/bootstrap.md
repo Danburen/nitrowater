@@ -3,6 +3,7 @@
 > 从空机器到能登录，**一次性、不可回滚**。按顺序做，每节末尾是验收点。
 > 之后的上线 / 回滚 / 运维见 [`operations.md`](operations.md)。
 > 变量以 `deploy/docker/.env.example` 为准（每项都有注释），本页只讲必填和最容易踩的。
+> 第一次跑报错先翻 **§11 常见坑**，按流水线顺序排的。
 
 下文的 `dc` 只在本页使用，先执行一次（bash）：
 
@@ -72,6 +73,8 @@ $EDITOR deploy/docker/.env
 | `APP_SESSION_EPOCH` | 每次发布换新值 = 旧会话全部失效 |
 | `BFF_REDIRECT_URIS` 等 7 个地址 | 一律写**浏览器看到的公网地址**，不要 localhost / 容器名 |
 | `S3_*` / `AI_*` | 用 s3 时传 S3；AI key 可用 `DEEPSEEK_API_KEY` 等回落 |
+| `AVATAR_PICTURE_BASE_URL` | 填**站点 origin**（如 `https://<WEB_DOMAIN>`）：account 会拼成 `<base>/api/public/resource/<uuid>`，走 BFF 匿名读，**不是** S3 地址 |
+| `RESEND_API_KEY` / `MAIL_FROM` | `COMMUNICATION_MODE=real` 时必填，缺失则 account **启动失败**（邮件无 SMTP 降级）；`MAIL_FROM` 必须是 Resend 已验证域下的地址 |
 
 换域名要同步：`JWT_ISSUER`、`BFF_REDIRECT_URIS`、`BFF_POST_LOGOUT_REDIRECT_URIS`、
 `SSO_DEFAULT_REDIRECT`、`SSO_FORM_ACTION_ORIGINS`、`POST_LOGOUT_REDIRECT_URI`、`AVATAR_PICTURE_BASE_URL`。
@@ -194,3 +197,30 @@ WHERE u.username = '<用户名>';"
 - [ ] https 生效；`/actuator/health` 非 200；上传 5 MB 不是 413
 - [ ] 首个 `SUPER_ADMIN` 已授权并重新登录
 - [ ] MySQL 基线备份完成；KEK 已离线保存
+
+## 11. 常见坑
+
+按流水线顺序排；括号里是上文对应的小节。示例值一律用 `<host>` / `<user>` / `<org>` 这类占位符。
+
+| 阶段 | 现象 | 原因 / 处理 |
+|---|---|---|
+| 传文件（§2） | 在服务器上 `ssh <host> …`、`scp …` 报 `Could not resolve hostname` | 这类命令只在**本地**执行；服务器上直接跑 `tar`、`docker`、`bash deploy/bin/…` |
+| 传文件（§2） | `ls -1 deploy/docker` 看不到 `.env.example` | 点开头是隐藏文件，用 `ls -la` |
+| 传文件（§2） | 解包后多一层 `deploy/deploy/…` | `-C` 指到了 `deploy/` 而不是部署根；删掉重来，`-C /opt/nitrowater` |
+| 传文件（§2） | 服务器 `keys/` 里出现了 `private.key` | 用了工作区的 `tar` 或 `scp -r`：开发密钥不能上生产。改用 `git archive`，或加 `--exclude 'deploy/keys/*.key'` |
+| 权限（§1） | CI 同步时 `tar: Cannot open: Permission denied` | `deploy/` 属主必须是执行部署的账号：`sudo chown -R <user>: /opt/nitrowater` |
+| 权限（§1） | `docker ps` 报 `permission denied` | `docker` 组没生效：`sudo usermod -aG docker <user>` 后**退出重登** |
+| 配置（§3） | 口令/地址里混进了奇怪后缀 | `KEY=value  # 注释` 会把 `#` 之后算进值里；注释单独成行 |
+| 配置（§3） | Windows 编辑后变量带不可见字符 | 行尾是 `\r`：`sed -i 's/\r$//' deploy/docker/.env` |
+| 配置（§3） | `check-env` 判 `GITHUB_REPOSITORY` FAIL | 必须**全小写**的 `<org>/nitrowater`，且与 GHCR 里的实际路径一致 |
+| 配置（§3） | `DB_USERNAME` 被判 FAIL | 不能用 `root`；必须与 §5 建库 SQL 里的账号同名 |
+| 配置（§3） | `NITROWATER_KEK` 换掉或丢失 | 加密列**永久不可解**（备份也救不回来）；生成后立刻离线另存，且与数据库备份**分开**保管 |
+| 建库（§5） | 应用启动报 `Unknown database` | Flyway 只建表不建库：先跑 §5 的三库 + 账号 SQL |
+| 拉镜像（§6） | `manifest unknown` | 该 tag 没推 / 拼错 / 仓库路径不对；private 包先在宿主机 `docker login ghcr.io` |
+| 发布（§6） | 第一次 `deploy.sh` 打印 `MySQL dump before replacing containers` | 正常：空库也会备份，`deploy/backups/` 多一个几 KB 的 `.sql.gz` |
+| 入口（§8） | 登录后跳 `localhost:5173`，或 `invalid redirect_uri` | 7 个地址写浏览器看到的公网地址；反代必须发 `X-Forwarded-Proto` 与 `X-Forwarded-Host` |
+| 入口（§8） | 上传 413，或 AI 回答整段刷出 | 反代 `client_max_body_size 100m`、`proxy_buffering off`、`proxy_read_timeout 300s` |
+| 入口（§8） | `/actuator/health` 返回 200 | 管理面必须不可达：反代 `location ~ ^/(actuator\|internal)(/\|$){ return 404; }` |
+| 运行期（§7） | 点「运行」才 500 | Piston 语言包没装：`ppman install java` / `c` / `c++` |
+| 运行期（§7） | `/plugin/*` 404 | `plugin-docs` 被 gitignore，**不在**同步包里，必须手工上传 |
+| 运行期（§4） | `check-env` 输出一堆 `[WARN]` | WARN 不阻断（写了但没被 compose 引用）；只清 `[FAIL]` |

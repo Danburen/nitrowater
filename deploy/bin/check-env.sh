@@ -380,7 +380,7 @@ fi
 # ---------- 3. 条件变量 ----------
 MODE="${COMMUNICATION_MODE:-mock}"
 if [ "$MODE" = 'real' ]; then
-    for name in MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD MAIL_FROM \
+    for name in RESEND_API_KEY MAIL_FROM \
         ALIBABA_CLOUD_ACCESS_KEY_ID ALIBABA_CLOUD_ACCESS_KEY_SECRET ALIYUN_SMS_SIGN_NAME ALIYUN_SMS_TEMPLATE_CODE; do
         if [ -z "${!name:-}" ]; then
             fail "$name" 'COMMUNICATION_MODE=real 时必填'

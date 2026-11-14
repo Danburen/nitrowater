@@ -36,7 +36,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
-    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    // Email delivery goes through Resend's HTTP API (no SMTP). The SDK is HTTP-only, so the
+    // service no longer needs spring-boot-starter-mail / jakarta.mail on the classpath.
+    implementation 'com.resend:resend-java:4.30.0'
+    // Plain org.thymeleaf (core engine), not the Spring-integrated dialect: email templates are
+    // rendered outside any web request, so the Spring view layer would only add coupling.
+    implementation 'org.thymeleaf:thymeleaf'
     // The generated Aliyun SDK (tea -> com.aliyun.tea.okhttp.*) performs its HTTP calls through
     // okhttp, so the transitive okhttp MUST stay on the runtime classpath: excluding it makes
     // sendSms fail with NoClassDefFoundError(okhttp3/Authenticator) even when credentials are valid.

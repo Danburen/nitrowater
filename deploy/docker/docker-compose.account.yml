@@ -51,13 +51,11 @@ services:
       # 留默认值会让生产头像指向 http://localhost:8093 —— 换域名必须同步这里。
       AVATAR_PICTURE_BASE_URL: ${AVATAR_PICTURE_BASE_URL:-http://localhost:8093}
       COMMUNICATION_MODE: ${COMMUNICATION_MODE:-mock}
-      MAIL_HOST: ${MAIL_HOST:-}
-      MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USERNAME: ${MAIL_USERNAME:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      # Email goes through Resend's HTTP API (no SMTP). RESEND_API_KEY is required in real mode:
+      # the service fails at startup rather than degrading to logging.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
       MAIL_FROM: ${MAIL_FROM:-}
-      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
-      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
+      EMAIL_LOGO_URL: ${EMAIL_LOGO_URL:-}
       ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID:-}
       ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET:-}
       ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}

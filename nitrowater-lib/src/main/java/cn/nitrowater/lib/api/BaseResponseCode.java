@@ -166,7 +166,10 @@ public enum BaseResponseCode implements ResponseCode {
     CLIENT_ALREADY_EXISTS("admin.client.already_exists"),
     CLIENT_ALREADY_EXISTS_WITH_ARGS("admin.client.already_exists.args"),
     CAN_NOT_DELETE_BUILTIN_CLIENT("admin.client.built_in_protected"),
-    CLIENT_NOT_CONFIDENTIAL("admin.client.not_confidential"),;
+    CLIENT_NOT_CONFIDENTIAL("admin.client.not_confidential"),
+
+    // Communication (email delivery)
+    COMMUNICATION_SEND_FAILED("system.communication_send_failed"),;
     private final String code;
     // private final String defaultMessage;
 

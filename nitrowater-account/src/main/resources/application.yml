@@ -22,15 +22,8 @@ spring:
   application:
     name: nitrowater-account
 
-  # Real email delivery (app.communication.mode=real). Mock mode ignores these values.
-  mail:
-    host: ${MAIL_HOST:}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
-    properties:
-      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
-      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+  # Email is delivered through Resend's HTTP API (see app.communication.email.resend below).
+  # There is no spring.mail / SMTP configuration: the service does not fall back to SMTP.
 
   # -------- 数据源（SSO 库：nitrowater_account，与业务库 nitrowater_biz 物理隔离；首次连接自动建库）--------
   datasource:
@@ -156,14 +149,18 @@ generator:
 app:
   # Verification-code delivery. Local development defaults to mock: codes are logged, not sent.
   # Set COMMUNICATION_MODE=real plus the provider credentials below for production.
-  # `real` with an unconfigured provider (SMTP / Aliyun SMS) degrades to logging instead of failing
-  # the startup, so a local run still works; the missing keys are named in a startup WARN.
+  # Email has NO degrade path: `real` without RESEND_API_KEY fails at startup (ResendConfig).
   # Aliyun SMS credentials are NOT config: they come from the standard environment variables
   # ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET (same names the Aliyun SDK uses).
   communication:
     mode: ${COMMUNICATION_MODE:mock}  # mock / real
     email:
+      # Sender address; must be on a domain verified in Resend (SPF/DKIM/DMARC aligned).
       from: ${MAIL_FROM:}
+      # Public, unauthenticated image URL injected into every layout; blank renders the wordmark.
+      logo-url: ${EMAIL_LOGO_URL:}
+      resend:
+        api-key: ${RESEND_API_KEY:}
     sms:
       sign-name: ${ALIYUN_SMS_SIGN_NAME:}
       template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}

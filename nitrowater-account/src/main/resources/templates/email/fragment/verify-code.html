@@ -1,0 +1,14 @@
+<div th:fragment="verifyCode" xmlns:th="http://www.thymeleaf.org">
+  <p style="margin:0 0 8px;font-size:15px;color:#1f2430;">
+    您正在<span th:text="${sceneLabel}">登录</span>，本次验证码为：
+  </p>
+
+  <p style="margin:18px 0;font-size:30px;font-weight:700;letter-spacing:8px;color:#1f2430;
+            font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;"
+     th:text="${code}">123456</p>
+
+  <p style="margin:0;font-size:14px;line-height:1.7;color:#5b6270;">
+    验证码 <strong th:text="${expireMinutes}">5</strong> 分钟内有效，仅可使用一次。<br>
+    请勿将验证码转发给任何人，工作人员不会向您索取。
+  </p>
+</div>

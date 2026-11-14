@@ -9,6 +9,8 @@
 | **日常运维 + 版本迭代** | CI 同步 `deploy/` + `bash deploy/bin/deploy.sh --tag <tag>` | [`docs/operations.md`](docs/operations.md) |
 
 首次部署不进 CI：失败会留下半初始化的机器。CI 只负责已运行机器上的"文件同步 + 镜像替换"。
+第一次跑的常见坑（传文件、权限、`manifest unknown`、`invalid redirect_uri`、413、语言包）
+按顺序整理在 [`docs/bootstrap.md`](docs/bootstrap.md) §11。
 
 **回滚**（手动，够用就好）：`deploy.sh --tag <旧 sha>`，并把 `deploy/` 同步回同一个 commit
 （CI 用 `deploy.yml` 的 `ref`）；要退数据就用 `deploy/backups/` 里发版前那份 dump。暂不做自动回滚。
