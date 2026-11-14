@@ -26,8 +26,8 @@ dc() { docker compose --env-file deploy/docker/.env -f "deploy/docker/docker-com
 宿主机不需要 git。在**本地仓库根**执行（`deploy/` 里只有配置文件与脚本，状态文件不在 git 里）：
 
 ```bash
-# 本地仓库根
-tar -czf /tmp/nitrowater-deploy.tgz -C . deploy
+# 本地仓库根：git archive 只打 tracked 文件（.env / keys/ / plugin-docs 产物不会进包）
+git archive --format=tar.gz HEAD deploy > /tmp/nitrowater-deploy.tgz
 scp /tmp/nitrowater-deploy.tgz <host>:/tmp/
 
 # 服务器上（$USER = 你的 SSH 账号；CI 也用这个账号写 deploy/）
@@ -35,6 +35,24 @@ sudo mkdir -p /opt/nitrowater
 sudo tar -xzf /tmp/nitrowater-deploy.tgz -C /opt/nitrowater
 sudo chown -R "$USER": /opt/nitrowater/deploy && rm -f /tmp/nitrowater-deploy.tgz
 ```
+
+Windows PowerShell 用这版（`-o` 让 git 自己写文件；`>` 是 `Out-File`，会把 gzip 当文本写坏）：
+
+```powershell
+git archive --format=tar.gz -o "$env:TEMP\nitrowater-deploy.tgz" HEAD deploy
+scp "$env:TEMP\nitrowater-deploy.tgz" <host>:/tmp/
+Remove-Item "$env:TEMP\nitrowater-deploy.tgz"
+```
+
+解包前自查（有输出就中止，说明包里混进了私钥或已填好的 env；PowerShell 把路径换成 `"$env:TEMP\nitrowater-deploy.tgz"`）：
+
+```bash
+tar -tzf /tmp/nitrowater-deploy.tgz | grep -E '\.key$|deploy/docker/\.env$|deploy/docker/\.env\.(prod|local|secrets|bak)'
+```
+
+不要用 `tar -czf /tmp/… -C . deploy`：`tar` 打包的是磁盘目录，会把**被 gitignore 忽略但本机存在**的文件一起带上——
+`deploy/keys/private.key`、`deploy/docker/.env*`、`deploy/plugin-docs/*/` 一旦存在，解包就会覆盖服务器上的
+生产签名密钥与配置（`keys/` 只应由服务器上的 `gen-keys.sh` 生成）。`git archive` 与 CI 的干净检出行为一致。
 
 也可以在服务器上 `git clone` 后把仓库的 `deploy/` 复制到 `/opt/nitrowater/`，效果一样；
 之后每次迭代由 CI 同步，**不需要在服务器上保留工作区**。
@@ -215,11 +233,12 @@ WHERE u.username = '<用户名>';"
 | 传文件（§2） | 在服务器上 `ssh <host> …`、`scp …` 报 `Could not resolve hostname` | 这类命令只在**本地**执行；服务器上直接跑 `tar`、`docker`、`bash deploy/bin/…` |
 | 传文件（§2） | `ls -1 deploy/docker` 看不到 `.env.example` | 点开头是隐藏文件，用 `ls -la` |
 | 传文件（§2） | 解包后多一层 `deploy/deploy/…` | `-C` 指到了 `deploy/` 而不是部署根；删掉重来，`-C /opt/nitrowater` |
-| 传文件（§2） | 服务器 `keys/` 里出现了 `private.key` | 用了工作区的 `tar` 或 `scp -r`：开发密钥不能上生产。改用 `git archive`，或加 `--exclude 'deploy/keys/*.key'` |
+| 传文件（§2） | 服务器 `keys/` 里出现了 `private.key` | 用了工作区的 `tar` 或 `scp -r`：开发密钥不能上生产。改用 `git archive`；实在要用 `tar` 就加 `--exclude 'deploy/keys/*.key' --exclude 'deploy/docker/.env' --exclude 'deploy/docker/.env.prod*'` |
 | 权限（§1） | CI 同步时 `tar: Cannot open: Permission denied` | `deploy/` 属主必须是执行部署的账号：`sudo chown -R <user>: /opt/nitrowater` |
 | 权限（§1） | `docker ps` 报 `permission denied` | `docker` 组没生效：`sudo usermod -aG docker <user>` 后**退出重登** |
 | 配置（§3） | 口令/地址里混进了奇怪后缀 | `KEY=value  # 注释` 会把 `#` 之后算进值里；注释单独成行 |
-| 配置（§3） | Windows 编辑后变量带不可见字符 | 行尾是 `\r`：`sed -i 's/\r$//' deploy/docker/.env` |
+| 配置（§3） | Windows 编辑后变量带不可见字符 | 行尾是 `\r`：`sed -i 's/\r$//' deploy/docker/.env deploy/docker/docker-compose.*.yml`（`check-env` 的 `crlf` 项也会报） |
+| 配置（§3） | `check-env` 的 `compose-coverage` 缺的是 `SPRING_DATASOURCE_USERNAME` 这类**容器侧**名字 | 同上：compose 文件是 CRLF，脚本没解析到 `${DB_USERNAME:?…}`。转成 LF 后重跑，缺的会变回 `DB_USERNAME` |
 | 配置（§3） | `check-env` 判 `GITHUB_REPOSITORY` FAIL | 必须**全小写**的 `<org>/nitrowater`，且与 GHCR 里的实际路径一致 |
 | 配置（§3） | `DB_USERNAME` 被判 FAIL | 不能用 `root`；必须与 §5 建库 SQL 里的账号同名 |
 | 配置（§3） | `NITROWATER_KEK` 换掉或丢失 | 加密列**永久不可解**（备份也救不回来）；生成后立刻离线另存，且与数据库备份**分开**保管 |

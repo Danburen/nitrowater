@@ -7,7 +7,7 @@
 deploy/content/
 ├── moderation/
 │   ├── words.txt      # 生产违禁词（追加到镜像内基线词表之后）
-│   └── allow.txt      # 白名单（命中 allow 即不算违规）
+│   └── allow.txt      # 误报逃生口（覆盖住命中的片段才生效，见下）
 └── docs/
     └── nitrowater/    # 外置语料（仅当 AI_DOCS_LOCATION 指向它时生效）
 ```
@@ -46,6 +46,48 @@ AI_MODERATION_ALLOW=classpath:ai/moderation/allow.txt,file:/etc/nitrowater/moder
 
 修改后生效：`POST /api/admin/ai/moderation/reload`（无需重启）。用 `deploy/bin/check-env.sh` 可在上线前
 校验词表是否真的非空、基线层是否还在。
+
+### 词表格式（加载器的硬规则）
+
+| 规则 | 说明 |
+|---|---|
+| UTF-8 **无 BOM** | 带 BOM 时第一行会变成 `\uFEFF代开发票`，**永远匹配不到**，而且没有任何报错 |
+| 一行一个词 | 行首尾空白被 `trim`；空行与 `#` 开头忽略 |
+| 每条 ≥ 2 字符 | 单字条目被**静默丢弃**（`ModerationDictionary.MIN_WORD_LENGTH`），所以 `check-env` 数的行数可能比实际加载数大 |
+| 换行 LF | CRLF 不会破坏加载，但保持 LF（`sed -i 's/\r$//'`） |
+| 归一化已开 | 大小写、全半角、繁简、重复字符自动归一，不必为变体重复登记 |
+| 多层去重 | 按声明顺序合并、重复词只留一次；某层文件不存在只打 WARN 并跳过 |
+
+词内空格不会去掉：`代 开` 这类拆字仍可绕过，这是词典方案的公认局限（靠模型侧 prompt 兜底）。
+
+### allow 的抑制范围（实测行为）
+
+allow 只抑制**它自己覆盖的那一段**，且长度必须 ≥ 命中的违禁词：
+
+| 违禁词 | allow | 文本 | 结果 |
+|---|---|---|---|
+| 代开 | 代开发票 | 我要代开发票 | 不命中（长 allow 盖住短 deny） |
+| 代开 | 代开发票 | 代开 | **命中**（allow 只护住更长的那个片段） |
+| 代开发票 | 代开 | 我要代开发票 | **命中**（allow 比 deny 短，挡不住） |
+| 代开发票 | 代开发票 | 我要代开发票 | 不命中 |
+
+所以正确姿势是：从后台命中列表的 `words` 列**抄下命中的那个词**，把它（或包含它的更高层短语）写进
+`allow.txt`，而不是写一个更短的上位词。
+
+### 上线节奏与调词闭环
+
+1. `moderation_mode` 默认 `LOG`（影子：只记录、不拦截、不遮盖），先跑 1–2 天。
+2. 看 `GET /api/admin/ai/moderation`：`dictionarySize` 应为基线 + overlay 的实际条数，命中行带 `words`。
+3. 误报 → 加 `allow.txt`；真阳性 → 加 `words.txt`；两者都只动本目录。
+4. `POST /api/admin/ai/moderation/reload`：返回刷新后的报告，热生效（旧引用给在途请求用完即弃）。
+5. 稳定后切 `ENFORCE`（后台设置页 / `PUT /api/admin/ai/settings`）：违规提问被拒、答案被遮盖。
+6. 稳定超过一个发布周期后，把 overlay 里的词迁回仓库基线（PR + 下个镜像），overlay 只留部署独有的。
+
+`AI_MODERATION_STRIKE_LIMIT` / `STRIKE_WINDOW_MINUTES` / `COOLDOWN_MINUTES` 控制"连续命中几次后冷却多久"，
+默认 5 次 / 10 分钟 → 冷却 15 分钟，只有 `ENFORCE` 下才真的拦。
+
+⚠️ 本目录被 gitignore 且**不在部署包里**（所以不会被覆盖），但也不在 `backup_resource.sh` 的备份范围里。
+词表属于配置，改完务必在私有仓或 `deploy/backups/` 留一份，否则换机能找回镜像基线却找不回生产增量。
 
 ## 文档语料：默认不接管
 

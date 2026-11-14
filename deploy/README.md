@@ -35,18 +35,30 @@
 ## 命令
 
 ```bash
-# 首次（详见 docs/bootstrap.md）：本地仓库根打包，再在服务器上解开
-tar -czf /tmp/nitrowater-deploy.tgz -C . deploy
+# 首次（详见 docs/bootstrap.md）：本地仓库根打包，再在服务器上解开。
+# 打包用 git archive（只含 tracked 文件），不要用 tar：tar 不认 .gitignore，
+# 会把本机的 deploy/keys/*.key、deploy/docker/.env*、deploy/plugin-docs/*/ 一起打进去，
+# 解包时直接覆盖服务器上的生产密钥与配置。
+git archive --format=tar.gz HEAD deploy > /tmp/nitrowater-deploy.tgz
 scp /tmp/nitrowater-deploy.tgz <host>:/tmp/
 # 服务器上（$USER = 你的 SSH 账号，CI 也用同一个写 deploy/）
 sudo mkdir -p /opt/nitrowater && sudo tar -xzf /tmp/nitrowater-deploy.tgz -C /opt/nitrowater
 sudo chown -R "$USER": /opt/nitrowater/deploy && rm -f /tmp/nitrowater-deploy.tgz
 # 之后：cp .env.example → .env、gen-keys → check-env → infra + 建库 → account → app → 收尾 → 验收
+# （.env 与 keys/ 只在服务器上生成，永远不随包走）
 
-# 每次上线（CI 会先同步 deploy/；手动改过文件就自己按上面三行再传一次，用同一个账号解包就不用 sudo）
+# 每次上线（CI 会先同步 deploy/；手动改过文件就按上面打包那一组再传一次，用同一个账号解包就不用 sudo）
 bash deploy/bin/deploy.sh --tag <tag>       # 门禁 → 备份 → pull → up -d --no-build → 探活
 bash deploy/bin/deploy.sh --only account    # 只动身份服务
 bash deploy/bin/deploy.sh --help
+```
+
+Windows PowerShell 用这版（`-o` 让 git 自己写文件；`>` 在 PowerShell 里是 `Out-File`，会把 gzip 当文本写坏）：
+
+```powershell
+git archive --format=tar.gz -o "$env:TEMP\nitrowater-deploy.tgz" HEAD deploy
+scp "$env:TEMP\nitrowater-deploy.tgz" <host>:/tmp/
+Remove-Item "$env:TEMP\nitrowater-deploy.tgz"
 ```
 
 ## 脚本
@@ -66,8 +78,9 @@ bash deploy/bin/deploy.sh --help
 
 1. `deploy/` 下的 compose / 脚本 / 文档是**发布产物**：CI 从被部署的那个 commit 同步上来，
    改动随 commit 走。不要在服务器上手改——下次同步会被覆盖。
-2. 宿主机只保留状态：`.env`、`keys/`、`content/`、`backups/`、资源目录（`RESOURCE_DATA_DIR`）与数据卷。它们不在同步范围内
-   （被 gitignore），也不会被覆盖。
+2. 宿主机只保留状态：`.env`、`keys/`、`content/`、`backups/`、资源目录（`RESOURCE_DATA_DIR`）与数据卷。它们被 gitignore，
+   所以用 `git archive` 打包或 CI 同步都不会带上来、也不会被覆盖 —— 但 `tar` 不认 gitignore，
+   手动打包必须用 `git archive`（见「命令」）。
 3. 换机器 = 手工搬 `.env` / `keys/` / `content/` / 资源目录加数据卷；`NITROWATER_KEK` 必须离线另存（丢了密文不可解）。
 
 ## 安全红线
@@ -76,6 +89,7 @@ bash deploy/bin/deploy.sh --help
 - `PUBLISH_BIND` / `OPS_BIND` 保持 `127.0.0.1`。
 - 上传只允许 `ROLE_ADMIN` / `ROLE_SUPER_ADMIN`；`RESOURCE_UPLOAD_ENABLED=false` 可整面关闭。
 - `piston` 只连 `runner-net`，不要接回 `nitrowater-net`。
+- 部署包只含 tracked 文件（`git archive`）；`keys/`、`.env` 只在服务器上生成。
 - `/actuator/**`、`/internal/**` 不对公网开放（容器不发布 + 反代 404）。
 
 ## 先验三条
