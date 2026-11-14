@@ -80,8 +80,10 @@ public class SecurityConfig {
 
         http
                 .authorizeHttpRequests(a -> a
-                        // Anonymous tool endpoints (e.g. the code sandbox runner) are public here;
-                        // abuse is bounded by rate limiting on the resource server.
+                        // Anonymous public endpoints are reachable without a session. Abuse is
+                        // bounded downstream, not here: the business service rate-limits its
+                        // sandbox/AI paths, and the resource service applies @RateLimit per client
+                        // IP to every /api/public/resource* endpoint.
                         .requestMatchers("/api/public/**").permitAll()
                         // Probe endpoint only. It is served by the separate management connector
                         // (management.server.port=9080) which compose does not publish, so it never
@@ -111,10 +113,17 @@ public class SecurityConfig {
                         // assets long-cache, index.html no-cache). Spring Security's default
                         // global "no-store" would otherwise overwrite them at response commit.
                         .cacheControl(cache -> cache.disable())
-                        // Dynamic session/API responses must not be cached.
+                        // Dynamic session/API responses must not be cached. Public resource bytes are
+                        // the one exception: the resource service owns their Cache-Control (it is the
+                        // only component that knows the presign TTL), and a second `no-store` here
+                        // would silently disable the only caching policy in the system.
                         .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
-                                request -> request.getRequestURI().startsWith("/bff/")
-                                        || request.getRequestURI().startsWith("/api/"),
+                                request -> {
+                                    String uri = request.getRequestURI();
+                                    return uri.startsWith("/bff/")
+                                            || (uri.startsWith("/api/")
+                                                    && !uri.startsWith("/api/public/resource/"));
+                                },
                                 new StaticHeadersWriter("Cache-Control", "no-store"))))
                 .exceptionHandling(ex ->
                         ex.defaultAuthenticationEntryPointFor(

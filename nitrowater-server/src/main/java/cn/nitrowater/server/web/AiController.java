@@ -1,5 +1,7 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
+
 import cn.nitrowater.server.service.ai.ops.AiStatusService;
 import cn.nitrowater.server.service.ai.ops.AiUsageService;
 import cn.nitrowater.server.web.vo.AiStatusResp;

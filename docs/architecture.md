@@ -45,7 +45,7 @@ NitroWater 的解决方式是把这些能力收敛到一个同源平台：**一�
 | 工具箱 | 11 个在线工具 | MOTD、server.properties、server-icon、启动脚本；代码运行器、插件 ZIP、插件树、ListTree、Java→TS、MP4→GIF、Markdown→Word |
 | 插件中心 | 插件元数据与分发 | 插件元数据、管理端 CRUD、JAR 下载、文档入口 |
 | 代码运行器 | 浏览器 + 服务端双模式 | 匿名走浏览器 WASM；登录用户走 Piston；Redis 分钟/日配额；进程内排队；输出截断 |
-| 资源服务 | 可插拔文件存储 | SeaweedFS/S3、腾讯 COS、LOCAL；预签名读写；可见性/owner；管理端文件管理；孤儿回收；插件 JAR 托管 |
+| 资源服务 | 可插拔文件存储 | 本地磁盘（默认）、腾讯 COS；统一上传/下载入口；仅管理员可上传；读取分公开（匿名）与认证两条出口；可见性/owner；管理端文件管理；孤儿回收；插件 JAR 托管 |
 | 文档站 | VeloChatX VitePress | 9 篇中文 + 9 篇英文 + README；构建产物发布到 `deploy/plugin-docs`；nginx :8085；BFF `/plugin/**` 同源代理 |
 | AI Agent | 工具调用问答 | 多语料索引、`searchDocs`/`loadSkill`/`webSearch`/`runCode`；工具预算、AgentTrace、技能覆盖、引用 `[n]`、SSE 步骤卡片、会话落库 |
 | AI 运营 | 配额与管理 | 登录校验、每分钟限流、每日 token 计量；运行时开关；`/admin/ai/{settings,usage,catalog}` |
@@ -82,7 +82,7 @@ BFF :8080
 ```text
 MySQL 3306        nitrowater_account / nitrowater_biz / nitrowater_resource
 Redis 6379        session、验证码、限流、缓存
-SeaweedFS 8333    S3 兼容对象存储
+local disk        resource 的资源目录（宿主机 bind mount，无独立服务）
 Qdrant 6334       文档向量索引
 Piston 2000       代码沙箱（容器内网）
 docs nginx 8085   VeloChatX 文档站

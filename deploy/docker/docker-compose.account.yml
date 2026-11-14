@@ -47,9 +47,9 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       # 浏览器跨域白名单（带会话 Cookie，务必显式列出真实域名，不要用通配符）。
       CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:5173,http://localhost:5175,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5175,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn}
-      # OIDC picture claim / avatar 的稳定基址（resource 的公开只读地址）。
-      # 留默认值会让生产头像指向 http://localhost:8093 —— 换域名必须同步这里。
-      AVATAR_PICTURE_BASE_URL: ${AVATAR_PICTURE_BASE_URL:-http://localhost:8093}
+      # 头像暂不开放修改（没有写入口，picture claim 不会被下发），默认留空 = 不下发。
+      # 未来做默认头像选择时，这里填对外站点 origin（经 BFF），不要填 8093。
+      AVATAR_PICTURE_BASE_URL: ${AVATAR_PICTURE_BASE_URL:-}
       COMMUNICATION_MODE: ${COMMUNICATION_MODE:-mock}
       # Email goes through Resend's HTTP API (no SMTP). RESEND_API_KEY is required in real mode:
       # the service fails at startup rather than degrading to logging.

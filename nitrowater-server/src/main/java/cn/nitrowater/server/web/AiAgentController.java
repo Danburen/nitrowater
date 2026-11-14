@@ -1,5 +1,7 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
+
 import cn.nitrowater.lib.utils.JsonUtil;
 import cn.nitrowater.server.service.ai.agent.AgentTurnService;
 import cn.nitrowater.server.service.ai.model.agent.AgentEventSink;

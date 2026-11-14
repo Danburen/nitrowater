@@ -180,17 +180,20 @@ app:
     # 生产用 CORS_ALLOWED_ORIGIN_PATTERNS 覆盖为真实站点/账号域名；默认值只服务本地开发。
     allowed-origin-patterns: "${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://localhost:5175,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5175,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn}"
   # 头像：OIDC picture claim 由 user.avatar_resource_uuid 派生（稳定读路径，非存储URL）。
-  # 此处为资源服务对外的稳定基址；生产设 https://files.nitrowater.cn（或网关域名）。
+  # 当前不开放头像修改：没有写入口，uuid 恒为 null，因此这里默认留空（留空 = 不下发 picture）。
+  # 未来做默认头像选择时，把它配成对外站点 origin（经 BFF），绝不填资源服务的 8093。
   avatar:
-    picture-base-url: "${AVATAR_PICTURE_BASE_URL:http://localhost:8093}"
+    picture-base-url: "${AVATAR_PICTURE_BASE_URL:}"
+  # 本服务（account API）作为 Resource Server 接受的 aud；与 server / resource 同名同义，
+  # 只接受为 BFF 签发的那张票，不收业务 API 的令牌。
+  security:
+    jwt:
+      audiences: "${ACCOUNT_JWT_AUDIENCES:nitrowater-bff}"
   # access token 的 aud（RFC 9068：标识"这张票能在哪个资源上用"）。
   # 逗号分隔；始终追加 client_id，id_token 的 aud 不受影响（OIDC Core §2 要求 = client_id）。
   # Resource Server 用 app.security.jwt.audiences 校验这个值，两边要对齐。
   oidc:
-    access-token-audiences: nitrowater-server
-    # The account API is called only by the confidential BFF client. Keep this audience narrow
-    # instead of accepting every token minted for the business API.
-    account-api-audiences: nitrowater-bff
+    access-token-audiences: ${OIDC_ACCESS_TOKEN_AUDIENCES:nitrowater-server,nitrowater-resource}
     # BFF（confidential client）——服务端持 AT/RT，唯一面向浏览器的客户端。
     # 密文由 seeder 用 DelegatingPasswordEncoder 编码后存入 oauth2_registered_client。
     # 必填：无内置默认值（启动缺变量即失败）。本地由 bin/start-all 或 bootRun 注入 dev 值，

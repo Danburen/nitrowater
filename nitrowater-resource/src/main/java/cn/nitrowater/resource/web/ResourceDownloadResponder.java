@@ -1,6 +1,6 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.application.dto.ResourceReadResult;
+import cn.nitrowater.resource.service.dto.ResourceReadResult;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
@@ -39,7 +39,10 @@ final class ResourceDownloadResponder {
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .contentType(result.contentType())
                 .contentLength(result.contentLength())
-                .cacheControl(cacheControl);
+                .cacheControl(cacheControl)
+                // The bytes are user/admin supplied, so never let the browser second-guess the type
+                // we chose (stored-XSS hardening on the shared resource origin).
+                .header("X-Content-Type-Options", "nosniff");
         if (result.attachment()) {
             // Force a download: a stored file (e.g. an SVG declaring HTML) must never render in the
             // browser, which would turn the shared resource origin into a stored-XSS sink. Carry the

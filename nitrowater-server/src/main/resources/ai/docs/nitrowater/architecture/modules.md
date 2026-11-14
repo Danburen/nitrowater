@@ -62,7 +62,7 @@ cn.nitrowater.resource
 ├── application    # 资源应用服务（上传策略、回调、读写、清理）
 ├── config         # 安全、存储、预签名配置
 ├── domain         # 资源实体与状态
-├── infrastructure # 存储后端（S3 / COS / local）、Redis 缓存
+├── infrastructure # 存储后端（COS / local）、Redis 缓存
 └── web            # 上传、读取、管理、内部发布控制器
 ```
 

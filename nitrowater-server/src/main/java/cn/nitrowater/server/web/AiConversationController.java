@@ -1,5 +1,7 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
+
 import cn.nitrowater.lib.api.ApiResponse;
 import cn.nitrowater.server.infra.enums.ConversationStatus;
 import cn.nitrowater.server.service.ai.conversation.AiCompactService;

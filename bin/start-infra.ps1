@@ -3,10 +3,12 @@
 #
 #   MySQL      3306 : Windows service 'MySQL'                 (no window)
 #   Redis      6379 : redis-server.exe                        -> own console window
-#   SeaweedFS  8333 : docker container nitrowater-seaweedfs   -> docker logs -f window
 #   Piston     2000 : docker container nitrowater-piston      -> docker logs -f window
 #   docs       8085 : docker container nitrowater-docs        -> docker logs -f window
 #                     (nginx hosting ALL plugin docs; the BFF forwards /plugin/** here)
+#
+# Resource bytes need no infra: the resource service writes them to a local directory
+# (RESOURCE_LOCAL_PATH, default ./bin/dev/resource-storage).
 #
 # Idempotent: anything already listening on its port is left as-is.
 # Every non-service component keeps its own console window (cmd /k) so its log stays visible.
@@ -48,14 +50,6 @@ else {
 }
 
 # ---- Docker containers (+ live log windows); Ensure-DockerContainer comes from _common.ps1 ----
-Ensure-DockerContainer 'nitrowater-seaweedfs' 8333 'NitroWater - SeaweedFS' {
-    & docker run -d --name nitrowater-seaweedfs `
-        -p 8333:8333 -p 8888:8888 -p 9333:9333 -p 23646:23646 `
-        -v nitrowater-seaweedfs-data:/data `
-        -e AWS_ACCESS_KEY_ID=nitrowater -e AWS_SECRET_ACCESS_KEY=change-me -e S3_BUCKET=nitrowater `
-        chrislusf/seaweedfs | Out-Null
-}
-
 Ensure-DockerContainer 'nitrowater-piston' 2000 'NitroWater - Piston' {
     & docker rm -f nitrowater-piston *> $null
     & docker run -d --name nitrowater-piston `
@@ -90,5 +84,6 @@ Ensure-DockerContainer 'nitrowater-docs' 8085 'NitroWater - docs' {
 }
 
 Write-Step 'Infra ready'
-Write-Host '  MySQL 3306 | Redis 6379 | Qdrant 6334 | SeaweedFS 8333 | Piston 2000 | docs 8085' -ForegroundColor Gray
+Write-Host '  MySQL 3306 | Redis 6379 | Qdrant 6334 | Piston 2000 | docs 8085' -ForegroundColor Gray
+Write-Host '  Resource bytes: local dir (RESOURCE_LOCAL_PATH), no extra service.' -ForegroundColor Gray
 Write-Host '  Each component has its own console window showing logs.' -ForegroundColor Gray

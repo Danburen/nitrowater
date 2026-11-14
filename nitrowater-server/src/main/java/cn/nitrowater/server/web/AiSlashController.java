@@ -1,5 +1,7 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
+
 import cn.nitrowater.server.service.ai.chat.AiSlashService;
 import cn.nitrowater.server.service.ai.model.agent.ContextReset;
 import cn.nitrowater.server.web.dto.AiSlashClearReq;

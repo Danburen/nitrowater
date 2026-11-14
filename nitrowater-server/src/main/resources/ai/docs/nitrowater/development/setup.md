@@ -7,7 +7,7 @@
 | JDK | 25 | Gradle toolchain 固定 25 |
 | Node.js | 24 | 前端与 account 的两个 SPA |
 | pnpm | 11 | `nitrowater-account` 是 pnpm workspace |
-| Docker | 最新 | SeaweedFS / Piston / Qdrant 容器 |
+| Docker | 最新 | Piston / Qdrant 容器（资源字节落本地目录） |
 | MySQL | 8.0 | Windows 服务名固定 `MySQL`，端口 3306 |
 | Redis | 7.x | 端口 6379 |
 

@@ -125,6 +125,9 @@ app:
     # longer pins a request thread forever, because the JDK client has no default connect timeout.
     connect-timeout-ms: ${API_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${API_READ_TIMEOUT_MS:45000}
+    # 资源服务的超时：上传/下载的字节流都经过 BFF，而 Spring 的 read timeout 是"整个交换"的
+    # 截止时间（从请求开始计），用 45s 的 JSON 预算会把慢速链路上的上传直接掐断。
+    resource-timeout-ms: ${RESOURCE_API_TIMEOUT_MS:300000}
   web:
     # Vite 产物 assets/* 文件名带内容 hash → 可长缓存（默认 1 年）；index.html 不缓存。
     assets-cache-seconds: ${WEB_ASSETS_CACHE_SECONDS:31536000}

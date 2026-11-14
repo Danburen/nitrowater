@@ -18,7 +18,8 @@ deploy/plugin-docs/
 - **BFF 只做路由转发**：`/plugin/**` → `app.plugin-docs.upstream`（compose 里 `http://docs:80`，
   本地 dev `http://localhost:8085`）；BFF 自己不再读盘（旧 `WebConfig` 的 `/plugin/**` 资源处理器已移除）。
 - `docs/` = 插件文档站（本目录**唯一**职责）。插件的**下发资源（Jar）已迁出本目录**：改由统一资源服务
-  （`nitrowater-resource`，:8093）+ 对象存储（SeaweedFS）托管，见下方「插件下载资源」。
+  （`nitrowater-resource`，:8093）托管：字节落在 resource 容器的本地磁盘（`RESOURCE_DATA_DIR`），
+  对外只经 BFF 的 `/api/public/**`。见下方「插件下载资源」。
 - 门户侧 **只保留路由/链接**：SPA `/plugins`（插件中心）→ 文档 `<a href="/plugin/velochatx/docs/">`；
   下载走资源服务列表接口（`/api/public/resources?app=nitrowater&group=velochatx`）。
 
@@ -31,7 +32,7 @@ deploy/plugin-docs/
    不会被 SPA fallback 劫持；目录首页（`/plugin/velochatx/docs/`）由 docs 容器的 nginx
    `try_files $uri $uri/ $uri/index.html` 兜底。
 4. **下载资源（不在本目录）**：Jar 由 `bin/dev/sync-res.ps1` 经内部发布端点（`POST /internal/resource/publish`）
-   写入统一资源服务，落对象存储并以 `app=nitrowater` + `group_key=<plugin>` 归纳。
+   写入统一资源服务，落本地磁盘并以 `app=nitrowater` + `group_key=<plugin>` 归纳。
    插件中心调用列表接口渲染版本列表，因此 **新增一个 Jar 无需改前端代码**。
 
 ## 发布（文档仓流水线）

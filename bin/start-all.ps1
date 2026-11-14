@@ -2,7 +2,7 @@
 # start-all.ps1 - ONE command for local preview: build the backend, start infra, run the services.
 #
 #   1. build    gradlew :<module>:bootJar for account / bff / server / resource   (-SkipBuild)
-#   2. infra    bin\start-infra.ps1: MySQL, Redis, SeaweedFS, Piston, docs(:8085) (-SkipInfra)
+#   2. infra    bin\start-infra.ps1: MySQL, Redis, Piston, docs(:8085) (-SkipInfra)
 #   3. services java -jar <module>\build\libs\app.jar  (:8090 -> :8080 / :8081 / :8093)
 #
 # Services run in their own persistent console windows by default (like infra), so the
@@ -86,7 +86,7 @@ else {
     Write-Ok 'jars rebuilt (build\libs\app.jar per module)'
 }
 
-# ---------------- 3. infra (MySQL / Redis / SeaweedFS / Piston / docs) ----------------
+# ---------------- 3. infra (MySQL / Redis / Piston / docs) ----------------
 if ($SkipInfra) { Write-Step 'infra skipped (-SkipInfra)' }
 else { & (Join-Path $PSScriptRoot 'start-infra.ps1') }
 

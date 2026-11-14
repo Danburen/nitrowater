@@ -54,7 +54,7 @@ class ApiProxyControllerTest {
         try {
             String baseUrl = "http://127.0.0.1:" + downstream.getAddress().getPort();
             ApiProxyController controller = new ApiProxyController(
-                    baseUrl, baseUrl, baseUrl, 3_000L, 5_000L,
+                    baseUrl, baseUrl, baseUrl, 3_000L, 5_000L, 5_000L,
                     tokens(mock(OAuth2AuthorizedClientManager.class)));
 
             MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/echo");
@@ -87,7 +87,7 @@ class ApiProxyControllerTest {
         try {
             String baseUrl = "http://127.0.0.1:" + account.getAddress().getPort();
             ApiProxyController controller = new ApiProxyController(
-                    baseUrl, baseUrl, baseUrl, 3_000L, 5_000L,
+                    baseUrl, baseUrl, baseUrl, 3_000L, 5_000L, 5_000L,
                     tokens(mock(OAuth2AuthorizedClientManager.class)));
 
             MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/account/me");
@@ -115,7 +115,7 @@ class ApiProxyControllerTest {
         OAuth2AuthorizedClientManager manager = mock(OAuth2AuthorizedClientManager.class);
         when(manager.authorize(any())).thenReturn(null);
         ApiProxyController controller = new ApiProxyController(
-                "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1", 1_000L, 1_000L,
+                "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1", 1_000L, 1_000L, 1_000L,
                 tokens(manager));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/echo");

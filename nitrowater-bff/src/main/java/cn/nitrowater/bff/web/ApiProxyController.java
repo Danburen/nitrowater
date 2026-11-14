@@ -50,6 +50,7 @@ public class ApiProxyController {
             @Value("${app.account.base-url:http://localhost:8090}") String accountBaseUrl,
             @Value("${app.api.connect-timeout-ms:3000}") long connectTimeoutMs,
             @Value("${app.api.read-timeout-ms:45000}") long readTimeoutMs,
+            @Value("${app.api.resource-timeout-ms:300000}") long resourceTimeoutMs,
             BffTokenService tokens) {
         // A connect timeout is not optional here: the JDK client waits forever by default, so an
         // unreachable host that drops packets would pin the request thread and every retry with it.
@@ -59,7 +60,14 @@ public class ApiProxyController {
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
         this.serverRestClient = RestClient.builder().baseUrl(rsBaseUrl).requestFactory(requestFactory).build();
-        this.resourceRestClient = RestClient.builder().baseUrl(resourceBaseUrl).requestFactory(requestFactory).build();
+        // Resource traffic carries bytes: uploads and downloads stream through this proxy, so the
+        // deadline has to cover the transfer itself. Spring's read timeout is a whole-exchange
+        // deadline (a TimeoutHandler cancels the future from request start), so the JSON-sized
+        // 45s budget above would abort every upload slower than a fast LAN.
+        JdkClientHttpRequestFactory resourceRequestFactory = new JdkClientHttpRequestFactory(httpClient);
+        resourceRequestFactory.setReadTimeout(Duration.ofMillis(resourceTimeoutMs));
+        this.resourceRestClient = RestClient.builder().baseUrl(resourceBaseUrl)
+                .requestFactory(resourceRequestFactory).build();
         this.accountRestClient = RestClient.builder().baseUrl(accountBaseUrl).requestFactory(requestFactory).build();
         this.tokens = tokens;
     }

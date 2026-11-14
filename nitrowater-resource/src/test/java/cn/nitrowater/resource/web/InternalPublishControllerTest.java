@@ -1,7 +1,7 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.application.ResourceException;
-import cn.nitrowater.resource.application.ResourceService;
+import cn.nitrowater.resource.infrastructure.exception.ResourceException;
+import cn.nitrowater.resource.service.ResourceService;
 import cn.nitrowater.resource.config.ResourceProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,7 +65,21 @@ class InternalPublishControllerTest {
         assertThatThrownBy(() -> controller.publish("app", "grp", "notes.txt", null,
                 "token", "text/plain", request))
                 .isInstanceOfSatisfying(ResourceException.class,
-                        ex -> assertThat(ex.status()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
+                        ex -> assertThat(ex.status()).isEqualTo(HttpStatus.CONTENT_TOO_LARGE));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void requiresADeclaredContentLength() throws Exception {
+        HttpServletRequest request = requestWith(-1);
+
+        assertThatThrownBy(() -> controller.publish("app", "grp", "notes.txt", null,
+                "token", "text/plain", request))
+                .isInstanceOfSatisfying(ResourceException.class, ex -> {
+                    assertThat(ex.status()).isEqualTo(HttpStatus.LENGTH_REQUIRED);
+                    assertThat(ex.code()).isEqualTo("length_required");
+                });
 
         verifyNoInteractions(service);
     }

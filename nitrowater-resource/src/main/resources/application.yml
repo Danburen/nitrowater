@@ -1,12 +1,15 @@
 # ============================================================
 # nitrowater-resource（统一资源管理服务 · 基础设施）
 # 独立库 nitrowater_resource；OAuth2 RS 校验 SSO 的 JWT；
-# 存储后端可插拔（S3 兼容 = 自托管 SeaweedFS；LOCAL 文件系统）。
+# 存储后端可插拔（默认 LOCAL 本地磁盘；可选腾讯 COS）。
 # 既有对象存储与本地托管统一走本服务。
 # ============================================================
 
 server:
   port: 8093
+  # 本服务位于 BFF 之后：解析 BFF 写入的 X-Forwarded-For，使 @RateLimit 的 per-IP 维度拿到真实客户端
+  # （否则每个桶都退化成"BFF 容器 IP"一个全局桶）。
+  forward-headers-strategy: framework
 
 spring:
   application:
@@ -49,21 +52,25 @@ spring:
           jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
 
 # -------- JWT 校验（audience 收紧；Spring 默认不校验 aud）--------
-# 注意：AS 的 app.oidc.access-token-audiences 需与本值对齐（或 BFF 按资源受众换 token）。
+# 注意：AS 的 app.oidc.access-token-audiences 必须包含 nitrowater-resource（account 已默认同时签
+# nitrowater-server 与 nitrowater-resource——BFF 只用一枚 access token 打所有下游）。
 app:
   security:
     jwt:
-      audiences: ${RESOURCE_JWT_AUDIENCES:nitrowater-resource,nitrowater-server}
+      audiences: ${RESOURCE_JWT_AUDIENCES:nitrowater-resource}
   resource:
-    default-backend: ${RESOURCE_BACKEND:s3}        # s3 | cos | local
-    # End-user upload surface (/api/resource/upload/**). false keeps the endpoints mapped but
-    # answers 503 uploads_disabled - used while "upload + moderation" is not shipped yet. Plugin
-    # publishing (/api/admin/plugin-resources, /internal/resource/publish) is unaffected.
-    user-upload-enabled: ${RESOURCE_USER_UPLOAD:true}
+    default-backend: ${RESOURCE_BACKEND:local}     # local | cos（默认本地磁盘）
+    # 是否允许客户端直连存储（presigned PUT/GET）。默认 false：所有上传/下载都经本服务与 BFF，
+    # 公网只需暴露 443 一个入口，也不需要在浏览器端可达的对象存储域名。LOCAL 后端永远不签发。
+    presign-enabled: ${RESOURCE_PRESIGN_ENABLED:false}
+    # 行政上传面（/api/resource/upload/**）的总闸；角色判定在 SecurityFilterChain 完成
+    # （仅 ROLE_ADMIN / ROLE_SUPER_ADMIN）。false 时端点仍映射但一律 503 uploads_disabled。
+    # 插件发布（/api/admin/plugin-resources、/internal/resource/publish）不受影响。
+    upload-enabled: ${RESOURCE_UPLOAD_ENABLED:true}
     presign-expiry-seconds: ${RESOURCE_PRESIGN_EXPIRY:600}
-    max-size-bytes: ${RESOURCE_MAX_SIZE:10485760}  # 10MB (end-user uploads)
+    max-size-bytes: ${RESOURCE_MAX_SIZE:10485760}  # 10MB（管理端上传）
     # Admin-published plugin artifacts (.jar only). Kept separate so raising the plugin cap does not
-    # also raise the end-user upload cap.
+    # also raise the general upload cap.
     plugin-max-size-bytes: ${RESOURCE_PLUGIN_MAX_SIZE:67108864}  # 64MB
     # Abandoned PENDING uploads (client never confirmed) are reaped after this grace period.
     # <= 0 disables the cleanup job. The job removes bytes first, then flips the row to ORPHAN.
@@ -71,22 +78,14 @@ app:
     orphan-cleanup-interval-ms: ${RESOURCE_ORPHAN_CLEANUP_INTERVAL_MS:3600000}
     orphan-cleanup-initial-delay-ms: ${RESOURCE_ORPHAN_CLEANUP_INITIAL_DELAY_MS:60000}
     read-cache-safety-margin-seconds: ${RESOURCE_CACHE_MARGIN:60}  # 缓存 TTL = 签名有效期 - 该余量
-    # S3 兼容后端：默认自托管 SeaweedFS 的 S3 网关（:8333）
-    # 反向代理时设 SeaweedFS 的 -s3.externalUrl，使 presigned URL 使用对外域名
-    s3:
-      endpoint: ${S3_ENDPOINT:http://localhost:8333}          # 服务端访问；容器内填 http://seaweedfs:8333
-      access-key: ${S3_ACCESS_KEY:nitrowater}
-      secret-key: ${S3_SECRET_KEY}
-      bucket: ${S3_BUCKET:nitrowater}
-      region: ${S3_REGION:us-east-1}
-      public-endpoint: ${S3_PUBLIC_ENDPOINT:}                 # presigned URL 用（浏览器可达）；空=同 endpoint
-    # 腾讯 COS 后端（可选：配了 secret-id 才装配；不配置不影响 s3/local）
+    # 腾讯 COS 后端（可选：配了 secret-id 才装配；不配置不影响 local）
     cos:
       secret-id: ${COS_SECRET_ID:}
       secret-key: ${COS_SECRET_KEY:}
       region: ${COS_REGION:ap-shanghai}
       bucket: ${COS_BUCKET:}
     local:
+      # 生产用挂载目录（compose 里是 /data/resource）；dev 默认落在仓库内的忽略目录。
       base-path: ${RESOURCE_LOCAL_PATH:./bin/dev/resource-storage}
     # 内部发布端点（/internal/**）共享密钥；留空则端点禁用。仅运维脚本直连服务端口使用。
     internal:

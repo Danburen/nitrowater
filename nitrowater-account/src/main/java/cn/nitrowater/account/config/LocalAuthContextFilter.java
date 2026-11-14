@@ -9,15 +9,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import cn.nitrowater.account.security.SsoUserPrincipal;
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
 import cn.nitrowater.core.infrastructure.utils.context.AuthContext;
 import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;
 
 import java.io.IOException;
 import java.util.Locale;
+import java.util.OptionalLong;
 
 /**
  * Mirrors the identity Spring Security already established into {@link UserCtxHolder}, the
@@ -55,18 +56,13 @@ public class LocalAuthContextFilter extends OncePerRequestFilter {
     /** Identity from the session / OIDC principal established by the security filter chain. */
     private static AuthContext fromSecurityContext(HttpServletRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication instanceof JwtAuthenticationToken jwt) {
-            String subject = jwt.getToken().getSubject();
-            if (subject != null) {
-                try {
-                    return new AuthContext(Long.parseLong(subject), null, null,
-                            resolveLocale(request), clientIp(request));
-                } catch (NumberFormatException ignored) {
-                    return null;
-                }
-            }
-            return null;
+        // Bearer token forwarded by the BFF: core's shared rule (uid claim first, then sub).
+        OptionalLong uid = CurrentUser.uidOf(authentication);
+        if (uid.isPresent()) {
+            return new AuthContext(uid.getAsLong(), null, null,
+                    resolveLocale(request), clientIp(request));
         }
+        // Browser session / OIDC login: the SSO principal already carries uid and did.
         if (authentication == null || !(authentication.getPrincipal() instanceof SsoUserPrincipal principal)) {
             return null;
         }

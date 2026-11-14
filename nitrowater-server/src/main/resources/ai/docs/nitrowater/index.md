@@ -29,7 +29,7 @@ NitroWater 是一个面向 Minecraft 服主与插件开发者的**多模块平�
 | 后端 | Java 25、Spring Boot 4.1、Spring Security 7、Spring Authorization Server、Spring AI 2.0、JPA + MySQL 8、Flyway、Redis |
 | 向量库 | Qdrant（文档检索与长期记忆） |
 | 沙箱 | 自托管 Piston（Docker） |
-| 存储 | SeaweedFS（S3 兼容）、腾讯 COS、本地文件系统 |
+| 存储 | 本地文件系统（默认；腾讯 COS 为可选的配置切换） |
 | 前端 | Vue 3、TypeScript、Vite、Tailwind CSS v4、vue-router |
 | 文档 | NitroWater 文档是纯 markdown 语料（不建站）；VeloChatX 文档站为 VitePress 产物 |
 

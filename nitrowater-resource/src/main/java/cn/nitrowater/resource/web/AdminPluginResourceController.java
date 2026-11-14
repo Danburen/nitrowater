@@ -1,13 +1,14 @@
 package cn.nitrowater.resource.web;
 
+import cn.nitrowater.core.infrastructure.aspect.RateLimit;
 import cn.nitrowater.lib.api.ApiResponse;
-import cn.nitrowater.resource.application.PluginArtifactPolicy;
-import cn.nitrowater.resource.application.ResourceService;
-import cn.nitrowater.resource.web.dto.ResourceMetaResp;
+import cn.nitrowater.resource.service.PluginArtifactPolicyService;
+import cn.nitrowater.resource.service.ResourceService;
+import cn.nitrowater.resource.service.dto.resp.ResourceMetaResp;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,19 +35,23 @@ import java.io.IOException;
  * so a plain {@code ROLE_ADMIN} would neither see nor delete them there. This controller scopes every
  * operation to the plugin key and lets any admin manage its jars. The upload path is a raw body (not
  * multipart) so the payload can be streamed straight into storage; the strict jar allow-list lives in
- * {@link PluginArtifactPolicy}.</p>
+ * {@link PluginArtifactPolicyService}.</p>
+ *
+ * <p>Role gate: {@code /api/admin/**} is already restricted by the filter chain, and the class-level
+ * {@link PreAuthorize} states the same requirement at the endpoint itself.</p>
  */
 @RestController
 @RequestMapping("/api/admin/plugin-resources")
+@PreAuthorize("hasAuthority('ROLE_ADMIN')")
 public class AdminPluginResourceController {
 
     /** Bytes peeked to verify the ZIP signature before the stream reaches storage. */
     private static final int MAGIC_HEAD_BYTES = 16;
 
     private final ResourceService resourceService;
-    private final PluginArtifactPolicy policy;
+    private final PluginArtifactPolicyService policy;
 
-    public AdminPluginResourceController(ResourceService resourceService, PluginArtifactPolicy policy) {
+    public AdminPluginResourceController(ResourceService resourceService, PluginArtifactPolicyService policy) {
         this.resourceService = resourceService;
         this.policy = policy;
     }
@@ -58,7 +63,7 @@ public class AdminPluginResourceController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ApiResponse.success(resourceService.listPluginArtifacts(key, keyword, page, size)
-                .map(ResourceWebMapper::toResp));
+                .map(ResourceMetaResp::from));
     }
 
     /**
@@ -71,8 +76,9 @@ public class AdminPluginResourceController {
      * @return the activated resource metadata
      * @throws IOException when the request body cannot be read
      */
+    @RateLimit(key = "ip", permits = 10, window = 300)
     @PostMapping(path = "/{key}", consumes = MediaType.ALL_VALUE)
-    public ResourceMetaResp upload(
+    public ApiResponse<ResourceMetaResp> upload(
             @PathVariable String key,
             @RequestParam String name,
             @RequestParam(required = false) String version,
@@ -87,14 +93,14 @@ public class AdminPluginResourceController {
         body.reset();
         policy.requireJarMagic(head);
 
-        return ResourceWebMapper.toResp(
-                resourceService.publishPluginArtifact(key, safeName, version, body, size));
+        return ApiResponse.success(ResourceMetaResp.from(
+                resourceService.publishPluginArtifact(key, safeName, version, body, size)));
     }
 
     /** Deletes one artifact, after checking that it belongs to this plugin. */
     @DeleteMapping("/{key}/{uuid}")
-    public ResponseEntity<Void> delete(@PathVariable String key, @PathVariable String uuid) {
+    public ApiResponse<Void> delete(@PathVariable String key, @PathVariable String uuid) {
         resourceService.deletePluginArtifact(key, uuid);
-        return ResponseEntity.noContent().build();
+        return ApiResponse.success();
     }
 }

@@ -29,7 +29,7 @@ Running a Minecraft server means juggling a dozen unrelated sites — MOTD, `ser
 | `nitrowater-bff` | Spring Boot, Spring Security OAuth2 client | Login, session, `/api/**` proxy, serves the SPA |
 | `nitrowater-account` | Spring Authorization Server, Vue 3 workspace | SSO / OIDC identity centre |
 | `nitrowater-server` | Spring Boot, Spring AI, JPA + Flyway | Plugin centre, AI agent, code runner |
-| `nitrowater-resource` | Spring Boot, SeaweedFS / S3 | Files, uploads, plugin JAR hosting |
+| `nitrowater-resource` | Spring Boot, pluggable storage | Files, uploads, plugin JAR hosting |
 | `nitrowater-core` / `nitrowater-lib` | JPA, framework-free utilities | Shared persistence and security plumbing |
 
 The browser only talks to the BFF — access and refresh tokens never leave the server.
@@ -56,7 +56,7 @@ Eleven tools, most of them running entirely in the browser (WebAssembly / worker
 
 - Browse the catalogue with versions, metadata and documentation.
 - Author documentation is a VitePress site under `deploy/plugin-docs`, served same-origin through the BFF at `/plugin/**`.
-- JARs and assets are stored by the resource service (SeaweedFS / S3, Tencent COS or local disk), uploaded through signed URLs.
+- JARs and assets are stored by the resource service on local disk (Tencent COS remains a config-only swap), uploaded through admin-only endpoints behind the BFF.
 
 ### NitroBot
 
@@ -77,7 +77,7 @@ Eleven tools, most of them running entirely in the browser (WebAssembly / worker
 |---|---|
 | JDK 25 | Backend toolchain |
 | Node 24 + pnpm 11 | `nitrowater-web` uses npm; `nitrowater-account` is a pnpm workspace |
-| Docker | Piston, SeaweedFS, Qdrant and the plugin docs site |
+| Docker | Piston, Qdrant and the plugin docs site |
 | MySQL 8 and Redis | Local services on `3306` / `6379` (`root` / `123456` by default) |
 
 ### Three commands

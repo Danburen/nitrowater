@@ -3,21 +3,16 @@ package cn.nitrowater.server.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import cn.nitrowater.core.infrastructure.security.ResourceServerJwtConfig;
 import cn.nitrowater.core.web.ApiResponseAccessDeniedHandler;
 import cn.nitrowater.core.web.ApiResponseAuthenticationEntryPoint;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.core.OAuth2TokenValidator;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtValidators;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.util.StringUtils;
@@ -25,13 +20,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import cn.nitrowater.lib.utils.StringUtil;
 
 /**
  * OAuth2 Resource Server: the business API validates the SSO-issued JWT (Bearer) on every
@@ -51,23 +41,13 @@ import cn.nitrowater.lib.utils.StringUtil;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
+@Import(ResourceServerJwtConfig.class)
 public class SecurityConfig {
 
-    private final String issuerUri;
-    private final String jwkSetUri;
-    private final List<String> acceptedAudiences;
-
-    public SecurityConfig(
-            @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuerUri,
-            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
-            @Value("${app.security.jwt.audiences}") List<String> acceptedAudiences) {
-        this.issuerUri = issuerUri;
-        this.jwkSetUri = jwkSetUri;
-        this.acceptedAudiences = acceptedAudiences;
-    }
-
+    /** The decoder and the authorities converter come from core (shared by every downstream service). */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder,
+            JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .exceptionHandling(e -> e
@@ -84,82 +64,9 @@ public class SecurityConfig {
                         .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
-                        .decoder(jwtDecoder())
-                        .jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                        .decoder(jwtDecoder)
+                        .jwtAuthenticationConverter(jwtAuthenticationConverter)));
         return http.build();
-    }
-
-    /**
-     * Verifies the signature against the Authorization Server's JWKS and enforces
-     * {@code iss} / {@code exp} / {@code nbf} plus this project's audience restriction.
-     *
-     * <p>Declaring this bean makes Spring Boot's auto-configured {@link JwtDecoder}
-     * ({@code @ConditionalOnMissingBean}) step aside, so exactly one decoder exists.
-     */
-    @Bean
-    public JwtDecoder jwtDecoder() {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
-        OAuth2TokenValidator<Jwt> validators = new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(issuerUri),
-                new AudienceValidator(acceptedAudiences));
-        decoder.setJwtValidator(validators);
-        return decoder;
-    }
-
-    /**
-     * Maps the SSO access token to authorities: {@code roles} (already {@code ROLE_}-prefixed by
-     * {@code SsoUserPrincipal#getRoles()}) and {@code scope} (kept as {@code SCOPE_*} so protocol
-     * scopes behave exactly as they do under Spring's default converter).
-     *
-     * <p>The principal name stays Spring's default {@code sub}, which the Authorization Server
-     * sets to the numeric {@code uid}.
-     */
-    @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            Collection<String> scopes = scopesOf(jwt);
-            Set<GrantedAuthority> authorities = new LinkedHashSet<>(scopes.size() + 4);
-            for (String scope : scopes) {
-                authorities.add(new SimpleGrantedAuthority("SCOPE_" + scope));
-            }
-            List<String> roles = jwt.getClaimAsStringList("roles");
-            if (roles != null) {
-                for (String role : roles) {
-                    if (StringUtil.isNotBlank(role)) {
-                        authorities.add(new SimpleGrantedAuthority(role));
-                    }
-                }
-            }
-            return new ArrayList<>(authorities);
-        });
-        return converter;
-    }
-
-    /**
-     * Reads {@code scope} (or its {@code scp} shorthand) whether the Authorization Server emitted
-     * it as a space-delimited string or as a JSON array — Spring's own converter only reliably
-     * handles one of the two shapes, and this project's tokens carry an array.
-     */
-    private static Collection<String> scopesOf(Jwt jwt) {
-        Object scope = jwt.getClaim("scope");
-        if (scope == null) {
-            scope = jwt.getClaim("scp");
-        }
-        if (scope instanceof Collection<?> values) {
-            List<String> result = new ArrayList<>(values.size());
-            for (Object value : values) {
-                if (value != null) {
-                    result.add(String.valueOf(value));
-                }
-            }
-            return result;
-        }
-        if (scope instanceof String text) {
-            String trimmed = text.trim();
-            return trimmed.isEmpty() ? List.of() : List.of(trimmed.split("\\s+"));
-        }
-        return List.of();
     }
 
     /** CORS for the SPA and the public sites; override with CORS_ALLOWED_ORIGIN_PATTERNS. */

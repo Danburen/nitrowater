@@ -70,6 +70,8 @@ services:
       - nginx_certs:/etc/nginx/certs
       - nginx_vhost:/etc/nginx/vhost.d
       - nginx_html:/usr/share/nginx/html
+      # 上传经 BFF 走边缘层：默认 1m 会把 64MB 的插件 jar 变成 413。
+      - ./nginx-proxy-client-body.conf:/etc/nginx/conf.d/nitrowater-client-body.conf:ro
     mem_limit: 96m
     restart: unless-stopped
     networks:

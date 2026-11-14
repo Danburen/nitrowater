@@ -5,20 +5,22 @@ import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
 import com.qcloud.cos.auth.COSCredentials;
 import com.qcloud.cos.region.Region;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * Builds the Tencent COS client used by {@code CosFileStorage}.
  *
- * <p>The whole COS backend is optional: the bean (and the storage implementation) is only created
- * when {@code app.resource.cos.secret-id} is configured, so S3/LOCAL-only deployments are unaffected.
- * Presigned URLs use the bucket's public {@code *.myqcloud.com} endpoint, which is directly
- * browser-reachable.</p>
+ * <p>The whole COS backend is optional and only registered when the credentials are actually
+ * configured. The condition tests the values, not just the presence of the keys: compose injects
+ * {@code COS_SECRET_ID} as an empty string when it is unset, and {@code @ConditionalOnProperty}
+ * would treat that as "configured" and wire a client with empty credentials.</p>
  */
 @Configuration
-@ConditionalOnProperty(prefix = "app.resource.cos", name = "secret-id")
+@ConditionalOnExpression("'${app.resource.cos.secret-id:}' != ''"
+        + " and '${app.resource.cos.secret-key:}' != ''"
+        + " and '${app.resource.cos.bucket:}' != ''")
 public class CosClientConfig {
 
     /**

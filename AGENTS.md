@@ -9,7 +9,7 @@
 - 命令（仓库根）：`.\gradlew.bat build`；单模块 `.\gradlew.bat :<module>:bootRun`。
 - 前端（`nitrowater-web/`）：`npm run lint` / `npm run build`（dev 固定 5173）。
 - account 前端（`nitrowater-account/`）：admin-ui/auth-ui 为 **pnpm workspace**（Node 24 + pnpm 11，共享包在 `packages/*`）；模块根 `pnpm install` 一次即可，Gradle 构建会自动调用 pnpm（`-PskipAdminUi`/`-PskipAuthUi` 可跳过，Docker 内由 node stage 构建）。
-- 运行前置：host MySQL(3306, root/123456)、Redis(6379)、SeaweedFS(8333)；account 需 `NITROWATER_KEK`（bootRun 注入 dev 默认）。
+- 运行前置：host MySQL(3306, root/123456)、Redis(6379)；资源字节落本地目录（无需对象存储）；account 需 `NITROWATER_KEK`（bootRun 注入 dev 默认）。
 
 ## 数据库 / Schema 约定（强制）
 
@@ -52,6 +52,12 @@
 - **无 subagent**：由主进程直接执行，不派子代理/后台任务。
 - **BFF 安全面（强制）**：`/api/**` 是**唯一数据命名空间**（需登录；`/api/public/**` 有意匿名）。其余路径是公开 SPA（静态资源 + history 深链接）+ OIDC 管线，故 `anyRequest().permitAll()`。`/actuator/**`、`/internal/**` 为**保留敏感前缀，默认 `denyAll`**（兜底，防新增依赖静默暴露）。**新增数据端点必须挂在 `/api/**` 下**；敏感内部接口不得落在该前缀之外。
 - **BFF 令牌刷新（强制）**：取 access token 一律走 `BffTokenService`（按会话串行 + 2 分钟内共享刷新结果），**不要**直接调 `OAuth2AuthorizedClientManager`；拿不到令牌时**失效会话**，由控制器用 `ReauthResponse` 回 **401 `session_expired`**（`X-Auth-Reason` + 过期 cookie），**禁止**让它落到 500。`MultiAccountAuthorizedClientRepository` 必须「先改副本再 `setAttribute`」（会话 `flush-mode=immediate`，先写后改会丢写）。
+- **管理端角色校验（强制）**：`/api/admin/**`、`/api/resource/upload/**` 这类前缀必须在 `SecurityFilterChain` 里兜底
+  （`hasAnyAuthority("ROLE_ADMIN","ROLE_SUPER_ADMIN")`），**同时**在控制器类上标注
+  `@PreAuthorize("hasAuthority('ROLE_ADMIN')")`（`@EnableMethodSecurity` 已开启；`ROLE_SUPER_ADMIN` 的 token 里
+  已隐含 `ROLE_ADMIN`）。链上规则保证"新控制器忘标注解也不会裸奔"，注解保证"规则就写在端点旁边"。
+  行级可见性（本人 / 超管看全部）仍在 service 判定，注解表达不了。方法级拒绝由 core
+  `GlobalExceptionHandler` 统一转 **403 `forbidden`**（不要再给每个服务复制一份 `AccessDeniedException` 处理器）。
 - **GitHub 拉取优先经代理**：`https://ghproxy.net/`（首选）或 `https://gh-proxy.com/` 前缀（直连 raw/releases 常被重置/拒绝）；例 `https://ghproxy.net/https://github.com/<org>/<repo>/...`。Docker/包管理器同理。
 - **AI 工具返回（强制）**：每个 `@Tool` 一律返回 `ToolResponse`（`service.ai.model.tool`，线形状 `{success, code, message, retryable?, data}`），码表在 `ToolCode`（`tool.*`，只追加不改）。`success`/`retryable` 由码派生、`data` 装动态载荷（失败也可带，如 `available`/`remaining`）；**禁止**再返回裸 `error` 字符串或把失败塞进成功体。`success=true` 只表示"调用被正常处理"——`tool.compile_error` 仍是成功调用（`stderr` 在 `data` 里）。工具必须用 `ToolResponse.record(trace, ...)` 落轨迹，使卡片状态与 payload 同源；前端只读 `ok` 布尔，不再比较码字符串。
 - **AI agent 流（强制）**：一条 SSE 同时承载过程与答案，但**分事件**：`step {phase, tool, callId, argument, status, resultCount, durationMs}`（`thinking` / `tool_start` / `tool_end`）与 `delta {text}`；`sources/tools/skills` 在结束时一次性发出。过程事件必须由 **`ToolCallback` 装饰器**（`StepTrackingToolCallback`）在**每次调用**边界发出（Spring AI 的批处理不提供调用级事件，不要用全局 observation 钩子跨轮次传递）；答案文本里**不写过程旁白**（`PromptBuilder` 第 7 条），前端把 `step` 渲染成独立时间线（`AgentLiveSteps`），气泡只从 `delta` 开始、光标只在有内容时显示。
@@ -73,7 +79,9 @@
     - 必须用 CSS 才能表达的（伪元素、滚动条、keyframes、状态变体 `.is-on`、`:deep()` 覆盖 Element Plus 内部、slot 内容上的第三方控件宽度）→ 写在该组件 `<style scoped>` 里，**一律原生 CSS 声明，不写 `@apply`**（SFC 的 scoped 块是独立 CSS 根，`@apply` 还得配 `@reference`，多一层依赖没换来好处；能表达成 utility 的部分本来就应该留在模板上）。同一元素上**不要**堆互相冲突的 utility（`border-line` + `border-accent/40` 谁赢取决于产物顺序），用 `.is-on` 这类状态类表达。
     - 至少 2 个不同文件、语义同一的真公共原语 → 才放 `style.css` 的 `@layer components`，且**优先原生 CSS 声明**；`@apply` 只留给成组复用的组合（`.btn`、`.input` 族）。
   - **全局样式（强制）**：`style.css` 只承载极少量跨页面原语（按钮、panel、tag、`admin-*` 骨架、表单控件基类）。判断一律以**引用数**为准：扫全量 `.vue` 的 `class` / `:class`，**单文件引用的类必须下线到场内**（模板 utility 或 `scoped`），不得留在全局。**禁止**为单个页面新增全局类；**禁止**把状态变体（`.foo.is-on`）或 `:deep()` 第三方覆盖写进全局。
-- issuer 单一来源 `jwt.issuer`（**必须是 URL**）；RS 校验 `aud` 与本服务的 audiences 对齐。
+- issuer 单一来源 `jwt.issuer`（**必须是 URL**）；RS 校验 `aud` 与本服务的 audiences 对齐。`aud` 校验一律用
+  `cn.nitrowater.core.infrastructure.security.AudienceValidator`（server / resource / account 共用），
+  不要在各服务的 `config` 包里再复制一份。
 - 密钥/凭据不入库不入仓；COS 等云凭据用环境变量，本地缺省即禁用该后端。
 
 - **后端 JSON 契约（强制）**：所有业务服务的 JSON 响应统一 `ApiResponse<T>`（`cn.nitrowater.lib.api`，线形状 `{success, code, message, data}`）；分页一律 `ApiResponse<Page<T>>`（Spring Data `Page`）。**禁止**再引入自定义分页 DTO（`PageResp` / `PageResult` 已删除）。

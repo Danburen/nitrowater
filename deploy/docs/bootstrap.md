@@ -16,9 +16,9 @@ dc() { docker compose --env-file deploy/docker/.env -f "deploy/docker/docker-com
 | 项 | 要求 |
 |---|---|
 | Docker | Engine 24+ / Compose v2；宿主机有 `bash`、`openssl`、`curl`。不需要 git / JDK / Node |
-| 端口 | 只放行 80/443；3306/6379/6333/8333/8080/8081/8090/8093/8888/9333/2000 **不要**对公网开 |
+| 端口 | 只放行 80/443；3306/6379/6333/8080/8081/8090/8093/2000 **不要**对公网开 |
 | DNS | 站点与 SSO 域名 A 记录指向本机（用 `edge` 时 80 必须公网可达） |
-| 资源 | ≥ 4 GB 内存、≥ 20 GB 磁盘 |
+| 资源 | ≥ 4 GB 内存；磁盘按资源量估（≥ 20 GB 起步，`RESOURCE_DATA_DIR` 单独规划） |
 | 镜像 | 4 个应用镜像已推到 GHCR（先手动跑一次 `build.yml`）。private 包要先在宿主机登录 |
 
 ## 2. 取部署文件
@@ -72,12 +72,14 @@ $EDITOR deploy/docker/.env
 | `JWT_ISSUER` | 必须是 URL，等于 account 对外地址 |
 | `APP_SESSION_EPOCH` | 每次发布换新值 = 旧会话全部失效 |
 | `BFF_REDIRECT_URIS` 等 7 个地址 | 一律写**浏览器看到的公网地址**，不要 localhost / 容器名 |
-| `S3_*` / `AI_*` | 用 s3 时传 S3；AI key 可用 `DEEPSEEK_API_KEY` 等回落 |
-| `AVATAR_PICTURE_BASE_URL` | 填**站点 origin**（如 `https://<WEB_DOMAIN>`）：account 会拼成 `<base>/api/public/resource/<uuid>`，走 BFF 匿名读，**不是** S3 地址 |
+| `RESOURCE_DATA_DIR` | 资源字节落盘的宿主机目录（默认 `local` 后端）。`RESOURCE_BACKEND=local` 时必填，须先 `mkdir -p` 并纳入备份 |
+| `AI_*` | AI key 可用 `DEEPSEEK_API_KEY` 等回落 |
+| `AVATAR_PICTURE_BASE_URL` | **默认留空**：当前不开放头像修改，没有写入口，`picture` claim 不会下发。未来启用默认头像时填**站点 origin**（如 `https://<WEB_DOMAIN>`），account 会拼成 `<base>/api/public/resource/<uuid>`，走 BFF 匿名读，**不是**存储地址、也不是 :8093 |
 | `RESEND_API_KEY` / `MAIL_FROM` | `COMMUNICATION_MODE=real` 时必填，缺失则 account **启动失败**（邮件无 SMTP 降级）；`MAIL_FROM` 必须是 Resend 已验证域下的地址 |
 
 换域名要同步：`JWT_ISSUER`、`BFF_REDIRECT_URIS`、`BFF_POST_LOGOUT_REDIRECT_URIS`、
-`SSO_DEFAULT_REDIRECT`、`SSO_FORM_ACTION_ORIGINS`、`POST_LOGOUT_REDIRECT_URI`、`AVATAR_PICTURE_BASE_URL`。
+`SSO_DEFAULT_REDIRECT`、`SSO_FORM_ACTION_ORIGINS`、`POST_LOGOUT_REDIRECT_URI`（`AVATAR_PICTURE_BASE_URL`
+默认空；启用头像后同样要同步）。
 
 容易踩的：值后面不要写 `# 注释`（会变成口令的一部分）；Windows 编辑后 `sed -i 's/\r$//'`；
 HTTPS 时 `SESSION_COOKIE_SECURE=true`；`CORS_ALLOWED_ORIGIN_PATTERNS` 禁止 `*`。
@@ -123,6 +125,11 @@ FLUSH PRIVILEGES;
 ## 6. 身份服务 → 业务面
 
 ```bash
+# 资源目录（app 里 resource 的 bind mount）：compose 缺它直接拒绝启动，check-env 还要求可写。
+# 备份脚本按部署账号跑，所以属主给部署账号即可（容器以 root 写入）。
+sudo mkdir -p /opt/nitrowater/data/resource
+sudo chown -R "$USER": /opt/nitrowater/data
+
 dc account pull && dc account up -d --no-build
 curl -fsS http://127.0.0.1:8090/.well-known/openid-configuration | head -1
 
@@ -161,7 +168,8 @@ proxy_read_timeout 300s; proxy_send_timeout 300s;
 location ~ ^/(actuator|internal)(/|$) { return 404; }   # 管理面双保险
 ```
 
-用 edge 时上传上限和 SSE 两条同样要加在 `nginx_vhost` 的 `default_location` 上。
+用 edge 时上传上限和 SSE 两条同样要加在 `nginx_vhost` 的 `default_location` 上
+（上传上限已由 `deploy/docker/nginx-proxy-client-body.conf` 挂进 proxy 的 `conf.d`，SSE 仍需按 vhost 配）。
 
 验收：`curl -I http://<WEB_DOMAIN>` → 301/308；`/actuator/health` → 404 或 401（不能 200）。
 

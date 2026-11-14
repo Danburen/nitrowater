@@ -8,9 +8,16 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * ThreadLocal Util
+ * Legacy request-scoped identity holder (account-module adapter).
  *
- * Use Spring Security instance
+ * <p>New code reads identity through
+ * {@link cn.nitrowater.core.infrastructure.security.CurrentUser}, which works off Spring
+ * Security's {@code SecurityContext} and owns the single uid rule ({@code uid} claim, then
+ * {@code sub}). This ThreadLocal exists only because the legacy account services still read it:
+ * the account filter fills it per request and always clears it in a {@code finally}.</p>
+ *
+ * <p>Do not add new dependencies on it, and never let it escape the request thread — async/SSE
+ * work has no context here (use {@code SecurityContext} propagation instead).</p>
  */
 public class UserCtxHolder {
     private static final ThreadLocal<AuthContext> THREAD_LOCAL = new ThreadLocal<>();

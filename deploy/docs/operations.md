@@ -24,6 +24,13 @@ bash deploy/bin/deploy.sh --skip-backup          # 跳过发版前的 MySQL 备�
 `deploy.sh` 只管镜像，**不同步文件**。CI 会先把 `deploy/` 同步上来；手动上线时如果改过
 compose / 脚本，先用 README「命令」里那三行 tar + scp 传一次。
 
+> **从 S3/SeaweedFS 版本升级**：`app.yml` 已删掉 `seaweedfs` 服务，旧容器不会自动消失。
+> 首次用新 compose 发版后手工清一次：
+> `docker rm -f nitrowater-seaweedfs; docker volume rm nitrowater-app_nitrowater-seaweedfs`（卷名以
+> `docker volume ls` 为准）。资源字节从这次起落在 `RESOURCE_DATA_DIR`；`resource.backend` 只有
+> `1=COS / 2=LOCAL` 两个编码（`0` 属于已删除的 S3 后端，永不复用），基线 `V1__resource_baseline.sql`
+> 的默认值已是 `2`。
+
 ### CI（GitHub Actions，全部手动触发）
 
 | 工作流 | 干什么 | 碰服务器 |
@@ -81,7 +88,7 @@ bash deploy/bin/deploy.sh --tag <sha> --only account      # 只回滚身份服�
   不在 tarball 里。仓库里删掉的旧文件不会自动消失（手工删）。
 - 不要在服务器上手改 `deploy/` 下的发布产物，下次同步会覆盖。
 
-> `compose pull` 会拉整份文件，`app.yml` 里第三方镜像（seaweedfs、piston）未固定 tag；
+> `compose pull` 会拉整份文件，`app.yml` 里第三方镜像（piston / qdrant）未固定 tag；
 > 某个源抽风会中止整个发布。建议预拉或固定版本。
 
 ## 2. 内容更新（都不需要重建镜像）
@@ -90,14 +97,34 @@ bash deploy/bin/deploy.sh --tag <sha> --only account      # 只回滚身份服�
 |---|---|---|
 | AI 词表 / 语料 | `deploy/content/**` | 覆盖文件 → `POST /api/admin/ai/moderation/reload` / `reindex` |
 | 插件站点文档 | `deploy/plugin-docs/<plugin>/docs/` | 覆盖产物（必要时 `docker restart nitrowater-docs`） |
-| 插件 Jar | SeaweedFS | `POST /internal/resource/publish` 或 `bin/dev/sync-res.ps1` |
+| 插件 Jar | `RESOURCE_DATA_DIR`（本地磁盘） | `POST /internal/resource/publish` 或 `bin/dev/sync-res.ps1` |
 
-用户上传默认关闭（`RESOURCE_USER_UPLOAD=false` → 503），插件发布下载不受影响。
+上传面只对 `ROLE_ADMIN` / `ROLE_SUPER_ADMIN` 开放（`/api/resource/upload/**`）；`RESOURCE_UPLOAD_ENABLED=false`
+可整面关掉（503）。插件发布走独立通道，不受影响。
+
+### 资源出入口（只有 443 一个入口）
+
+| 方向 | 路径 | 鉴权 |
+|---|---|---|
+| 上传（唯一入口） | `POST /api/resource/upload/policy` → `PUT /api/resource/upload/{uuid}` | Bearer + `ROLE_ADMIN` / `ROLE_SUPER_ADMIN`；PUT 必须带 `Content-Length`（流式，不缓冲） |
+| 公开读（匿名出口） | `GET /api/public/resource/{uuid}` `…/download` `…/meta`、`/api/public/resources` | 无需登录；**只出 `visibility=PUBLIC` 的行** |
+| 认证读（登录出口） | `GET /api/resource/{uuid}` `…/download` `…/meta`、`/api/resources` | Bearer；`PUBLIC` + **本人** `PRIVATE` |
+| 管理端下载（控制台） | `GET /api/admin/resources/{uuid}/download` | Bearer + `ROLE_ADMIN`（本人行）或 `ROLE_SUPER_ADMIN`（全部） |
+
+以上端点都按**客户端 IP** 限流（资源服务开启 `forward-headers-strategy`，按 BFF 透传的
+`X-Forwarded-For` 取真实来源）：匿名读 300 次/60s、匿名列表 60 次/60s、通用上传 20 次/300s
+（代理 PUT 10 次/300s）、插件 jar 10 次/300s、内部发布 30 次/60s；超限回
+`429 TOO_MANY_REQUEST`（与 account 的限流码一致）。匿名读不到的行一律回 **404**（不确认 uuid 存在）。
+
+`RESOURCE_PRESIGN_ENABLED=false`（默认）时不会 302 到对象存储：字节全部由 resource 服务经 BFF 转发，
+所以公网只需要 `https://<WEB_DOMAIN>`，也不需要给 bucket 配 CORS。反过来，如果打开 presign，
+两个出口都会改成跳转，`/api/public/**` 的匿名性就由对象存储的签名 URL 承担。
 
 ## 3. 备份与恢复
 
 ```bash
 bash deploy/bin/backup_mysql.sh      # 三个库全量 dump → deploy/backups/nitrowater_all_<时间>.sql.gz
+bash deploy/bin/backup_resource.sh   # 资源目录 → deploy/backups/resource/<时间>/（硬链接快照）
 
 # 恢复（先停应用，再灌回；dump 自带 CREATE DATABASE，可恢复到空实例）
 docker stop nitrowater-bff nitrowater-server nitrowater-resource nitrowater-account
@@ -112,6 +139,13 @@ gzip -dc deploy/backups/nitrowater_all_<时间>.sql.gz | \
 - 每次发版 `deploy.sh` 已经自动备份一次；另外建议每天定时跑，不要只靠发版触发：
   `0 3 * * * /opt/nitrowater/deploy/bin/backup_mysql.sh >/dev/null 2>&1`。
 - 至少做一次恢复演练（临时 mysql 校验表数与关键行数）。
+
+**资源字节必须单独备份**：`RESOURCE_DATA_DIR` 是唯一的数据面（`resource` 表只有元数据）。
+丢了它，库里的行还在但所有下载 404。`backup_resource.sh` 用 `rsync --link-dest` 做快照：
+每次写一份完整的 `deploy/backups/resource/<时间>/`，未改动的文件与上一份共享硬链接，所以每日增量
+只占变化量；默认保留 30 天。恢复先停 `nitrowater-resource`，再
+`rsync -a --delete deploy/backups/resource/<时间>/ "$RESOURCE_DATA_DIR"/` 后启动。
+同样建议进 crontab：`30 3 * * * /opt/nitrowater/deploy/bin/backup_resource.sh >/dev/null 2>&1`。
 
 Qdrant 索引可重建（要花 embedding 费用），需要时冷备卷：
 
@@ -137,8 +171,8 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 - **运维 UI 不暴露**：`bash deploy/bin/ops-tunnel.sh --host <host>` 走 SSH 隧道，不要改 `OPS_BIND`。
 - **AI 额度**：先只统计不熔断，观察 3–7 天，按峰值 ×1.5 设限再打开；误判用「解除今日熔断」。
-- **日志/磁盘**：resource/server/bff 已有 `max-size`；mysql/redis/seaweedfs/qdrant/piston 没有，
-  长期运行会涨。定期看 `docker system df`，磁盘告警阈值建议 80%。
+- **日志/磁盘**：resource/server/bff 已有 `max-size`；mysql/redis/qdrant/piston 没有，
+  长期运行会涨。定期看 `docker system df` 与 `df -h "$RESOURCE_DATA_DIR"`，磁盘告警阈值建议 80%。
 
 ## 6. 故障对照
 
@@ -162,5 +196,5 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 curl -s -o /dev/null -w '%{http_code}\n' https://<WEB_DOMAIN>/actuator/health                     # 404/401
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<WEB_DOMAIN>/internal/resource/publish  # 404/401/403
 curl -s -o /dev/null -w '%{http_code}\n' https://<WEB_DOMAIN>/api/ai/status                      # 401
-ss -lntp | grep -E ':(3306|6379|6333|8333|8081|8093|9080)\b'   # 只应出现 127.0.0.1
+ss -lntp | grep -E ':(3306|6379|6333|8081|8093|9080)\b'   # 只应出现 127.0.0.1
 ```

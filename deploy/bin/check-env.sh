@@ -365,16 +365,44 @@ else
     pass 'APP_SESSION_EPOCH' "$SESSION_EPOCH"
 fi
 
-BACKEND="${RESOURCE_BACKEND:-s3}"
-if [ "$BACKEND" = 's3' ]; then
-    for name in S3_ACCESS_KEY S3_SECRET_KEY S3_BUCKET; do
+BACKEND="${RESOURCE_BACKEND:-local}"
+if [ "$BACKEND" = 'local' ]; then
+    # 字节落宿主机目录：既要在 .env 里声明，也要真实存在且可写（compose 用它做 bind mount）。
+    if [ -z "${RESOURCE_DATA_DIR:-}" ]; then
+        fail 'RESOURCE_DATA_DIR' 'local 后端必填（宿主机上的资源目录）'
+    elif is_placeholder "$RESOURCE_DATA_DIR"; then
+        fail 'RESOURCE_DATA_DIR' '仍是模板占位值'
+    elif [ ! -d "$RESOURCE_DATA_DIR" ]; then
+        fail 'RESOURCE_DATA_DIR' '目录不存在，先 mkdir -p 并确认备份策略'
+    elif [ ! -w "$RESOURCE_DATA_DIR" ]; then
+        fail 'RESOURCE_DATA_DIR' '目录不可写（容器以 root 写入，检查属主/挂载）'
+    else
+        pass 'RESOURCE_DATA_DIR' "$RESOURCE_DATA_DIR"
+    fi
+    if [ "${RESOURCE_PRESIGN_ENABLED:-false}" != 'false' ]; then
+        warn 'RESOURCE_PRESIGN_ENABLED' 'local 后端不会签名，该开关对 local 无效'
+    fi
+elif [ "$BACKEND" = 'cos' ]; then
+    # compose 无条件挂载这个目录，所以 cos 后端也必须声明（只是不再写入）。
+    if [ -z "${RESOURCE_DATA_DIR:-}" ] || is_placeholder "$RESOURCE_DATA_DIR"; then
+        fail 'RESOURCE_DATA_DIR' '必填（compose 的 bind mount，cos 后端同样要填）'
+    else
+        pass 'RESOURCE_DATA_DIR' "$RESOURCE_DATA_DIR（cos 不使用）"
+    fi
+    for name in COS_SECRET_ID COS_SECRET_KEY COS_BUCKET; do
         value="${!name:-}"
-        if [ -z "$value" ] || [ "$value" = 'change-me' ]; then
-            fail "$name" 'S3 后端必填且不能是占位值'
+        if [ -z "$value" ] || is_placeholder "$value"; then
+            fail "$name" 'COS 后端必填且不能是占位值'
         else
             pass "$name" "$value"
         fi
     done
+    # 直连 COS 需要 bucket 域名浏览器可达且允许跨域 PUT/GET；默认 false 时全部经服务代理。
+    if [ "${RESOURCE_PRESIGN_ENABLED:-false}" = 'true' ]; then
+        warn 'RESOURCE_PRESIGN_ENABLED' 'COS 直连需确认 bucket CORS；否则保持 false（统一走 BFF 入口）'
+    fi
+else
+    fail 'RESOURCE_BACKEND' "只支持 local / cos（当前：$BACKEND）"
 fi
 
 # ---------- 3. 条件变量 ----------
@@ -531,7 +559,7 @@ else
     pass 'PUBLISH_BIND' "$BIND"
 fi
 if [ "$OPSB" = '0.0.0.0' ] && [ "$LOCAL" -eq 0 ]; then
-    fail 'OPS_BIND' '0.0.0.0：Qdrant / SeaweedFS 管理面无认证，不能对网络开放'
+    fail 'OPS_BIND' '0.0.0.0：Qdrant 管理面无认证，不能对网络开放'
 else
     pass 'OPS_BIND' "$OPSB"
 fi
@@ -559,10 +587,10 @@ if [ "$LOCAL" -eq 0 ]; then
             pass 'SESSION_COOKIE_SECURE' 'true'
         fi
     fi
-    if [ "${RESOURCE_USER_UPLOAD:-true}" != 'false' ]; then
-        warn 'RESOURCE_USER_UPLOAD' '用户上传仍开启：需审核的内容尚未上线，生产建议 false（接口保留，返回 503）'
+    if [ "${RESOURCE_UPLOAD_ENABLED:-true}" = 'false' ]; then
+        warn 'RESOURCE_UPLOAD_ENABLED' '上传总闸已关（/api/resource/upload/** 一律 503）；仅插件发布可用'
     else
-        pass 'RESOURCE_USER_UPLOAD' 'false（仅保留接口）'
+        pass 'RESOURCE_UPLOAD_ENABLED' 'true（仅 ADMIN / SUPER_ADMIN 可上传）'
     fi
     if [ -n "${WEB_DOMAIN:-}" ]; then
         EXPECTED="https://${WEB_DOMAIN}/login/oauth2/code/nitrowater"
@@ -591,7 +619,7 @@ fi
 # ---------- 8. 本地端口 ----------
 if [ "$LOCAL" -eq 1 ]; then
     if command -v nc >/dev/null 2>&1; then
-        for entry in MySQL:3306 Redis:6379 SeaweedFS:8333 Qdrant:6333; do
+        for entry in MySQL:3306 Redis:6379 Qdrant:6333; do
             name="${entry%%:*}"; port="${entry##*:}"
             if nc -z 127.0.0.1 "$port" >/dev/null 2>&1; then
                 pass "$name" "127.0.0.1:$port"

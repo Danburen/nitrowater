@@ -10,7 +10,7 @@
 | 脚本 | 用途 |
 |------|------|
 | `start-all.ps1`（或双击 `start-all.bat`） | **构建 + 启动**：`gradlew :<module>:bootJar` → infra → 4 个后端 jar |
-| `start-infra.ps1` | 仅 infra：MySQL(3306, 系统服务) / Redis(6379) / Qdrant(6334) / SeaweedFS(8333) / Piston(2000) / docs(8085) |
+| `start-infra.ps1` | 仅 infra：MySQL(3306, 系统服务) / Redis(6379) / Qdrant(6334) / Piston(2000) / docs(8085) |
 | `stop-all.ps1`（或双击 `stop-all.bat`） | 停后端 + infra 容器 + 跟踪进程；**默认不动 :5173**（加 `-WithWeb` 才停） |
 | `_common.ps1` | 共享 helper（被其余脚本点源，不直接运行） |
 
@@ -102,7 +102,7 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
   - Java 25：`NITROWATER_JAVA`（默认 `D:\Program Files\Java\openkdk-hotspot-25.0.1.1\bin\java.exe`；**不读 JAVA_HOME**）
   - Redis：`NITROWATER_REDIS_DIR`（默认 `E:\Program Files\Redis`）
   - MySQL：`NITROWATER_MYSQL`（默认 `E:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe`）；Windows 服务名固定 `MySQL`
-- Docker 不可用时 SeaweedFS / Piston / docs 会被跳过（脚本给 WARN，不报错）。
+- Docker 不可用时 Piston / docs 会被跳过（脚本给 WARN，不报错）。
 
 ## 前置配置（首次）
 
@@ -110,7 +110,7 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
 2. `NITROWATER_KEK`：32 字节 AES KEK 的 Base64（`start-all` 起 account 时注入 dev 默认）。
 3. `RESOURCE_INTERNAL_TOKEN`：`/internal/**` 的共享密钥（`start-all` 起 resource 时注入 dev 默认
    `nitrowater-internal-dev`，与 `bin\dev\sync-res.ps1` 一致）；该前缀只接受**本机/内网**来源。
-4. `BFF_CLIENT_SECRET` / `S3_SECRET_KEY`：**application.yml 里已无内置默认值**，缺失即启动失败；
+4. `BFF_CLIENT_SECRET`：**application.yml 里已无内置默认值**，缺失即启动失败；
    `start-all`（account/bff）与 `gradlew bootRun` 会注入 dev 值，手工 `java -jar` 需自行 export。
 5. 环境自检：`.\deploy\bin\check-env.ps1`。
 

@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -117,6 +118,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(ApiResponse.reject("upload_too_large", "上传文件超过大小限制", null));
+    }
+
+    /**
+     * A method-security denial ({@code @PreAuthorize} / {@code @PostAuthorize}) must be reported as
+     * 403, not swallowed by the {@link RuntimeException} fallback as a 500.
+     *
+     * <p>Filter-chain denials never reach here (they are answered by
+     * {@link ApiResponseAccessDeniedHandler}); this is the MVC-level half of the same rule, so a
+     * controller annotation and a URL rule produce the same envelope. Covers
+     * {@code AuthorizationDeniedException} too, which extends {@link AccessDeniedException}.</p>
+     *
+     * @param ex the denial raised inside a controller
+     * @return 403 with the shared envelope
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleAccessDenied(AccessDeniedException ex) {
+        log.debug("Method-security denial: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ApiResponse.reject("forbidden", "无权限访问", null));
     }
 
     /**

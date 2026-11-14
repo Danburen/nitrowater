@@ -1,9 +1,11 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.application.ResourceException;
-import cn.nitrowater.resource.application.ResourceService;
+import cn.nitrowater.core.infrastructure.aspect.RateLimit;
+import cn.nitrowater.lib.api.ApiResponse;
+import cn.nitrowater.resource.infrastructure.exception.ResourceException;
+import cn.nitrowater.resource.service.ResourceService;
 import cn.nitrowater.resource.config.ResourceProperties;
-import cn.nitrowater.resource.web.dto.ResourceMetaResp;
+import cn.nitrowater.resource.service.dto.resp.ResourceMetaResp;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -14,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -52,11 +53,12 @@ public class InternalPublishController {
      * @param version logical version recorded in {@code file_meta}, or {@code null}
      * @param token internal shared secret
      * @param contentType declared content type (recorded for reference only; never trusted)
-     * @param request raw file bytes; streamed straight to storage when Content-Length is present
+     * @param request raw file bytes; {@code Content-Length} is mandatory and streamed straight to storage
      * @return the activated resource metadata
      */
+    @RateLimit(key = "ip", permits = 30, window = 60)
     @PostMapping(path = "/publish", consumes = MediaType.ALL_VALUE)
-    public ResourceMetaResp publish(
+    public ApiResponse<ResourceMetaResp> publish(
             @RequestParam String app,
             @RequestParam(name = "group", required = false) String group,
             @RequestParam String name,
@@ -67,71 +69,37 @@ public class InternalPublishController {
         // Authorise BEFORE touching the body. With @RequestBody the whole payload was buffered by
         // Spring's argument resolver before this method ran, so an anonymous caller could force a
         // large allocation without ever presenting a token.
-        requireToken(token);
-
-        // Plugin jars are the whole point of this endpoint, so they get the plugin cap instead of
-        // the (much smaller) end-user upload cap; the admin upload path already does the same.
-        long maxBytes = isPluginArtifact(name)
-                ? properties.effectivePluginMaxSizeBytes()
-                : properties.maxSizeBytes();
-        long declared = request.getContentLengthLong();
-        if (declared > maxBytes) {
-            throw tooLarge(maxBytes);
-        }
-        if (declared >= 0) {
-            // Stream straight into storage: buffering a 64 MiB jar as byte[] was a needless heap
-            // spike, and publishSystem already accepts a sized stream.
-            return ResourceWebMapper.toResp(resourceService.publishSystem(
-                    app, group, name, version, contentType, request.getInputStream(), declared, maxBytes));
-        }
-        byte[] body = readBody(request, maxBytes);
-        return ResourceWebMapper.toResp(resourceService.publishSystem(
-                app, group, name, version, contentType, new ByteArrayInputStream(body), body.length, maxBytes));
-    }
-
-    /** @return whether the published name is a plugin artifact (.jar) */
-    private static boolean isPluginArtifact(String name) {
-        return name != null && name.toLowerCase(Locale.ROOT).endsWith(".jar");
-    }
-
-    /**
-     * Reads the payload for a chunked request (no {@code Content-Length}), refusing anything above
-     * the effective limit for this publication.
-     *
-     * @param request the publish request whose body carries the file
-     * @param maxBytes maximum accepted size for this publication
-     * @return the body bytes, never larger than {@code maxBytes}
-     */
-    private byte[] readBody(HttpServletRequest request, long maxBytes) throws IOException {
-        if (request.getContentLengthLong() > maxBytes) {
-            throw tooLarge(maxBytes);
-        }
-        // Cap the read too: a chunked upload carries no Content-Length.
-        long cap = Math.min(maxBytes + 1, Integer.MAX_VALUE - 8);
-        byte[] body = request.getInputStream().readNBytes((int) cap);
-        if (body.length > maxBytes) {
-            throw tooLarge(maxBytes);
-        }
-        return body;
-    }
-
-    private static ResourceException tooLarge(long maxBytes) {
-        return new ResourceException(HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large",
-                "Payload exceeds the " + maxBytes + "-byte limit");
-    }
-
-    /** Rejects the request unless the internal publish endpoint is enabled and the token matches. */
-    private void requireToken(String token) {
         if (!properties.internalPublishEnabled()) {
             throw new ResourceException(HttpStatus.SERVICE_UNAVAILABLE, "internal_disabled",
                     "Internal publish endpoint is disabled");
         }
-        if (token == null || !constantTimeEquals(token, properties.internalToken())) {
-            throw new ResourceException(HttpStatus.UNAUTHORIZED, "bad_token", "Invalid internal token");
+        // Constant-time comparison: a byte-wise early exit would leak the shared secret.
+        if(properties.internalToken() != null){
+            if (token == null || !MessageDigest.isEqual(
+                    token.getBytes(StandardCharsets.UTF_8),
+                    properties.internalToken().getBytes(StandardCharsets.UTF_8))
+            ) {
+                throw new ResourceException(HttpStatus.UNAUTHORIZED, "bad_token", "Invalid internal token");
+            }
         }
-    }
 
-    private static boolean constantTimeEquals(String a, String b) {
-        return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
+        // Plugin jars are the whole point of this endpoint, so they get the plugin cap instead of
+        // the (much smaller) end-user upload cap; the admin upload path already does the same.
+        long maxBytes = name != null && name.toLowerCase(Locale.ROOT).endsWith(".jar")
+                ? properties.effectivePluginMaxSizeBytes()
+                : properties.maxSizeBytes();
+        // A declared length is required: it lets the cap be enforced before the first byte reaches
+        // storage and lets the body stream through without ever being buffered in the heap.
+        long declared = request.getContentLengthLong();
+        if (declared < 0) {
+            throw new ResourceException(HttpStatus.LENGTH_REQUIRED, "length_required",
+                    "Content-Length is required");
+        }
+        if (declared > maxBytes) {
+            throw new ResourceException(HttpStatus.CONTENT_TOO_LARGE, "too_large",
+                    "Payload exceeds the " + maxBytes + "-byte limit");
+        }
+        return ApiResponse.success(ResourceMetaResp.from(resourceService.publishSystem(
+                app, group, name, version, contentType, request.getInputStream(), declared, maxBytes)));
     }
 }

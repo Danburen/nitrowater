@@ -22,7 +22,7 @@ nitrowater-server :8081  nitrowater-resource :8093  nitrowater-account :8090
         |                   |                   |
         +---------+---------+-------------------+
                   |
-        MySQL / Redis / Qdrant / SeaweedFS / Piston
+        MySQL / Redis / Qdrant / Piston / local resource dir
 ```
 
 各服务都是独立进程、独立数据库、独立启动脚本；服务之间只通过 HTTP 与逻辑键（`uid`、`uuid`）协作。
@@ -57,7 +57,8 @@ SPA -> BFF /api/admin/plugins
 4. 客户端放弃上传 -> ResourceCleanupService 超时删除对象并置 ORPHAN
 ```
 
-对象存储后端可切换：`s3`（SeaweedFS）/ `cos` / `local`，由 `app.resource.default-backend` 决定。
+存储后端可切换：`local`（默认，字节落 `RESOURCE_DATA_DIR`）/ `cos`（腾讯云），由 `app.resource.default-backend`
+决定。`app.resource.presign-enabled=false`（默认）时所有读写都经资源服务自身端点，客户端不直连存储。
 
 ### 2.4 AI 对话（SSE）
 
@@ -86,7 +87,7 @@ NitroBot 的 `runCode` 工具与 HTTP 入口共享同一套闸门，避免 Agent
 | MySQL 8 | account / biz / resource 三库，Flyway 管理 schema | `localhost:3306` |
 | Redis | BFF 会话（`nitrowater:bff:session`）、验证码、限流计数 | `localhost:6379` |
 | Qdrant | 文档向量索引（按 corpus 区分）与长期记忆 | `localhost:6334`（gRPC） |
-| SeaweedFS | S3 兼容对象存储 | `localhost:8333` |
+| 资源目录 | 资源字节（宿主机 bind mount，无独立服务） | `RESOURCE_DATA_DIR` |
 | Piston | 编译/运行沙箱 | `localhost:2000` |
 
 Qdrant 的 schema 初始化关闭（`initialize-schema: false`），索引服务首次写入时创建集合，因此 Qdrant 未启动不会阻止 server 启动。

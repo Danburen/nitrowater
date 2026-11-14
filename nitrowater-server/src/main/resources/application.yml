@@ -133,7 +133,7 @@ spring:
 app:
   security:
     jwt:
-      audiences: nitrowater-server
+      audiences: ${SERVER_JWT_AUDIENCES:nitrowater-server}
     # 浏览器跨域白名单（Bearer-only，不带 Cookie）。生产用 CORS_ALLOWED_ORIGIN_PATTERNS 覆盖。
     cors-allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn}
   # -------- Documentation assistant: corpus, retrieval and quotas --------

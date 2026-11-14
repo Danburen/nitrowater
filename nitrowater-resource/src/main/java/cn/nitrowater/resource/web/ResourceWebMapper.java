@@ -1,58 +1,44 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.application.ResourceException;
-import cn.nitrowater.resource.application.dto.ResourceMeta;
-import cn.nitrowater.resource.domain.ResourceStatus;
-import cn.nitrowater.resource.domain.ResourceVisibility;
-import cn.nitrowater.resource.domain.SourceType;
-import cn.nitrowater.resource.domain.StorageBackend;
-import cn.nitrowater.resource.web.dto.OptionResp;
-import cn.nitrowater.resource.web.dto.ResourceMetaResp;
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
+import cn.nitrowater.resource.infrastructure.exception.ResourceException;
+import cn.nitrowater.resource.infrastructure.domain.ResourceStatus;
+import cn.nitrowater.resource.infrastructure.domain.ResourceVisibility;
+import cn.nitrowater.resource.infrastructure.domain.SourceType;
+import cn.nitrowater.resource.infrastructure.domain.StorageBackend;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.function.ToIntFunction;
+import java.security.Principal;
+import java.util.OptionalLong;
 import cn.nitrowater.lib.utils.StringUtil;
 
-/** Small mapping helpers shared by the resource controllers (application DTOs -> web DTOs). */
+/**
+ * Request-side helpers shared by the resource controllers: the caller's identity from the
+ * authenticated principal and the optional filter values from query parameters. Response mapping
+ * lives on the response records themselves ({@code XxxResp.from(serviceDto)}), so this class never
+ * knows the wire shapes.
+ *
+ * <p>The uid rule is core's {@link CurrentUser} (one implementation for the whole stack); only the
+ * 401 error code stays local to this module.</p>
+ */
 final class ResourceWebMapper {
 
     private ResourceWebMapper() {
     }
 
-    /** Maps a service metadata view to the wire response, stringifying the domain enums. */
-    static ResourceMetaResp toResp(ResourceMeta meta) {
-        return new ResourceMetaResp(
-                meta.uuid(),
-                meta.app(),
-                meta.groupKey(),
-                meta.name(),
-                meta.resourceType().name(),
-                meta.mimeType(),
-                meta.sizeBytes(),
-                meta.visibility().name(),
-                meta.status().name(),
-                meta.version(),
-                meta.createdAt() == null ? null : meta.createdAt().toString(),
-                meta.url());
-    }
-
-    /** @return the caller's numeric uid from the {@code uid} claim (falling back to {@code sub}) */
-    static Long uidOf(Jwt jwt) {
-        String uid = jwt.getClaimAsString("uid");
-        if (uid == null) {
-            uid = jwt.getSubject();
-        }
-        if (StringUtil.isBlank(uid)) {
+    /**
+     * @param principal authenticated principal ({@code Authentication} or {@code Jwt})
+     * @return the caller's numeric uid from the {@code uid} claim, falling back to {@code sub}
+     * @throws ResourceException 401 when the token carries no numeric uid
+     */
+    static Long uidOf(Principal principal) {
+        OptionalLong uid = CurrentUser.uidOf(principal);
+        if (uid.isEmpty()) {
             throw new ResourceException(HttpStatus.UNAUTHORIZED, "no_uid", "Token carries no uid");
         }
-        try {
-            return Long.valueOf(uid);
-        } catch (NumberFormatException ex) {
-            throw new ResourceException(HttpStatus.UNAUTHORIZED, "bad_uid", "Token uid is not numeric");
-        }
+        return uid.getAsLong();
     }
 
     /** @return {@code PUBLIC} only for the literal "public"; anything else is {@code PRIVATE} */
@@ -60,10 +46,20 @@ final class ResourceWebMapper {
         return "public".equalsIgnoreCase(visibility) ? ResourceVisibility.PUBLIC : ResourceVisibility.PRIVATE;
     }
 
-    /** @return whether the token carries {@code ROLE_SUPER_ADMIN} (the file-management super-admin) */
-    static boolean isSuperAdmin(Jwt jwt) {
-        List<String> roles = jwt.getClaimAsStringList("roles");
-        return roles != null && roles.contains("ROLE_SUPER_ADMIN");
+    /**
+     * @param authentication caller's authorities (the filter chain maps {@code roles} here)
+     * @return whether the caller holds {@code ROLE_SUPER_ADMIN} (the file-management super-admin)
+     */
+    static boolean isSuperAdmin(Authentication authentication) {
+        if (authentication == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            if ("ROLE_SUPER_ADMIN".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -117,7 +113,11 @@ final class ResourceWebMapper {
         }
     }
 
-    /** @return the requested backend, or {@code null} to fall back to the configured default */
+    /**
+     * @param backend requested backend ({@code local} / {@code cos})
+     * @return the requested backend, or {@code null} to fall back to the configured default
+     * @throws ResourceException 400 when the value names no supported backend
+     */
     static StorageBackend backendOf(String backend) {
         if (StringUtil.isBlank(backend)) {
             return null;
@@ -125,33 +125,8 @@ final class ResourceWebMapper {
         return switch (backend.toLowerCase()) {
             case "local" -> StorageBackend.LOCAL;
             case "cos" -> StorageBackend.COS;
-            case "s3", "minio" -> StorageBackend.S3;
-            default -> null;
+            default -> throw new ResourceException(HttpStatus.BAD_REQUEST, "invalid_backend",
+                    "Unknown backend: " + backend + " (supported: local, cos)");
         };
-    }
-
-    /** @return the {@code sourceType} filter options, derived from {@link SourceType} */
-    static List<OptionResp> sourceTypeOptions() {
-        return codedOptions(SourceType.values(), SourceType::getValue);
-    }
-
-    /** @return the {@code status} filter options, derived from {@link ResourceStatus} */
-    static List<OptionResp> statusOptions() {
-        return codedOptions(ResourceStatus.values(), ResourceStatus::getValue);
-    }
-
-    /**
-     * Builds the wire options of a coded enum, labelled {@code NAME(value)} — the same convention the
-     * database column {@code COMMENT}s document, so a console select can never drift from the codes.
-     *
-     * @param values the enum constants
-     * @param code reads the persisted tinyint code off a constant
-     * @param <E> the enum type
-     * @return one option per constant, in declaration order
-     */
-    private static <E extends Enum<E>> List<OptionResp> codedOptions(E[] values, ToIntFunction<E> code) {
-        return Arrays.stream(values)
-                .map(v -> new OptionResp(v.name(), v.name() + "(" + code.applyAsInt(v) + ")"))
-                .toList();
     }
 }

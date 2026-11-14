@@ -6,14 +6,17 @@ import cn.nitrowater.lib.utils.StringUtil;
 /**
  * Configuration for the resource service ({@code app.resource.*}).
  *
- * @param defaultBackend backend used when a request does not specify one ({@code s3} / {@code cos} / {@code local})
- * @param presignExpirySeconds default lifetime of presigned upload/download URLs
+ * @param defaultBackend backend used when a request does not specify one ({@code local} / {@code cos})
+ * @param presignEnabled whether clients may receive direct (presigned) storage URLs; {@code false}
+ *        routes every read and write through this service's own endpoints, so a single public
+ *        origin (the BFF) serves all traffic. Local storage never presigns regardless.
+ * @param presignExpirySeconds default lifetime of presigned upload/download URLs (and the basis of
+ *        the client cache TTL)
  * @param maxSizeBytes maximum accepted object size for end-user uploads
  * @param pluginMaxSizeBytes maximum accepted plugin artifact size (admin uploads); {@code <= 0} uses
  *        {@link #DEFAULT_PLUGIN_MAX_SIZE_BYTES}
  * @param readCacheSafetyMarginSeconds TTL margin subtracted from a cached presigned GET URL so it is
  *        never served already-expired (defaults to {@code 60} when {@code null} or {@code <= 0})
- * @param s3 S3-compatible storage settings
  * @param cos Tencent COS storage settings (optional; the backend is only registered when credentials are set)
  * @param local local-filesystem backend settings
  * @param internal internal-caller settings (shared-secret token for the {@code /internal/**} endpoints)
@@ -21,11 +24,11 @@ import cn.nitrowater.lib.utils.StringUtil;
 @ConfigurationProperties(prefix = "app.resource")
 public record ResourceProperties(
         String defaultBackend,
+        boolean presignEnabled,
         int presignExpirySeconds,
         long maxSizeBytes,
         long pluginMaxSizeBytes,
         Integer readCacheSafetyMarginSeconds,
-        S3 s3,
         Cos cos,
         Local local,
         Internal internal) {
@@ -64,20 +67,6 @@ public record ResourceProperties(
     /** @return the configured internal token, or {@code null} when unset */
     public String internalToken() {
         return internal == null ? null : internal.token();
-    }
-
-    /**
-     * S3-compatible storage settings (default: self-hosted SeaweedFS).
-     *
-     * @param endpoint S3 endpoint used server-side, e.g. {@code http://seaweedfs:8333}
-     * @param accessKey access key
-     * @param secretKey secret key
-     * @param bucket target bucket name
-     * @param region SigV4 region (e.g. {@code us-east-1}); blank uses the SDK default
-     * @param publicEndpoint endpoint embedded in presigned URLs (must be browser-reachable); blank = endpoint
-     */
-    public record S3(String endpoint, String accessKey, String secretKey, String bucket, String region,
-            String publicEndpoint) {
     }
 
     /**

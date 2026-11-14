@@ -1,13 +1,14 @@
 package cn.nitrowater.resource.web;
 
-import cn.nitrowater.resource.application.PluginArtifactPolicy;
+import cn.nitrowater.resource.service.PluginArtifactPolicyService;
 import cn.nitrowater.core.web.ApiResponseAdvice;
-import cn.nitrowater.resource.application.ResourceService;
-import cn.nitrowater.resource.application.dto.ResourceMeta;
+import cn.nitrowater.resource.service.ResourceService;
+import cn.nitrowater.resource.service.dto.ResourceMeta;
 import cn.nitrowater.resource.config.ResourceProperties;
-import cn.nitrowater.resource.domain.ResourceStatus;
-import cn.nitrowater.resource.domain.ResourceType;
-import cn.nitrowater.resource.domain.ResourceVisibility;
+import cn.nitrowater.resource.infrastructure.domain.ResourceStatus;
+import cn.nitrowater.lib.common.io.ResourceType;
+import cn.nitrowater.resource.infrastructure.domain.ResourceVisibility;
+import cn.nitrowater.resource.infrastructure.exception.ResourceExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,7 +51,7 @@ class AdminPluginResourceControllerTest {
     private static final String NAME = "plugin.jar";
     private static final byte[] JAR = new byte[] {'P', 'K', 3, 4, 20, 0, 0, 0, 8, 0, 1, 2, 3, 4, 5, 6};
     private static final ResourceMeta META = new ResourceMeta(
-            "11111111-2222-3333-4444-555555555555", PluginArtifactPolicy.PLUGIN_APP, KEY, NAME,
+            "11111111-2222-3333-4444-555555555555", PluginArtifactPolicyService.PLUGIN_APP, KEY, NAME,
             ResourceType.ARCHIVE, MediaType.APPLICATION_OCTET_STREAM_VALUE, (long) JAR.length,
             ResourceVisibility.PUBLIC, ResourceStatus.ACTIVE, "1.2.3", Instant.parse("2026-10-27T00:00:00Z"),
             "/api/public/resource/11111111-2222-3333-4444-555555555555/download");
@@ -63,7 +64,7 @@ class AdminPluginResourceControllerTest {
     @BeforeEach
     void setUp() {
         ResourceProperties properties = new ResourceProperties(
-                "local", 600, 10L * 1024 * 1024, 64L * 1024 * 1024, null, null, null, null, null);
+                "local", false, 600, 10L * 1024 * 1024, 64L * 1024 * 1024, null, null, null, null);
         // Standalone MockMvc does not pick up @EnableSpringDataWebSupport; register the same
         // VIA_DTO page module the application uses so Page bodies serialize as {content, page}.
         JsonMapper mapper = JsonMapper.builder()
@@ -71,7 +72,7 @@ class AdminPluginResourceControllerTest {
                         new SpringDataWebSettings(EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO)))
                 .build();
         mvc = MockMvcBuilders.standaloneSetup(
-                        new AdminPluginResourceController(resourceService, new PluginArtifactPolicy(properties)))
+                        new AdminPluginResourceController(resourceService, new PluginArtifactPolicyService(properties)))
                 .setControllerAdvice(new ApiResponseAdvice(), new ResourceExceptionHandler())
                 .setMessageConverters(new JacksonJsonHttpMessageConverter(mapper))
                 .build();
@@ -140,14 +141,15 @@ class AdminPluginResourceControllerTest {
         mvc.perform(get("/api/admin/plugin-resources/{key}", KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].uuid").value(META.uuid()))
-                .andExpect(jsonPath("$.data.content[0].app").value(PluginArtifactPolicy.PLUGIN_APP))
+                .andExpect(jsonPath("$.data.content[0].app").value(PluginArtifactPolicyService.PLUGIN_APP))
                 .andExpect(jsonPath("$.data.content[0].url").value(META.url()));
     }
 
     @Test
     void deleteScopesTheUuidToThePlugin() throws Exception {
         mvc.perform(delete("/api/admin/plugin-resources/{key}/{uuid}", KEY, META.uuid()))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
 
         verify(resourceService).deletePluginArtifact(KEY, META.uuid());
     }

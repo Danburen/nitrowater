@@ -82,6 +82,23 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().getCode()).isEqualTo("upload_too_large");
     }
 
+    /**
+     * Regression: a {@code @PreAuthorize} denial raised inside a controller is a
+     * {@link RuntimeException}, so without an explicit handler it fell through to the 500 fallback —
+     * the caller saw "server error" instead of "not allowed", and the front-end could not branch on
+     * {@code forbidden}.
+     */
+    @Test
+    void methodSecurityDenialBecomes403() {
+        ResponseEntity<ApiResponse<Object>> response = handler.handleAccessDenied(
+                new org.springframework.security.authorization.AuthorizationDeniedException("denied"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getSuccess()).isFalse();
+        assertThat(response.getBody().getCode()).isEqualTo("forbidden");
+    }
+
     @Test
     void upstreamHandlerIsMoreSpecificThanTheRuntimeFallback() {
         // Spring picks the handler by exception-type specificity, so the 502 mapping only wins if

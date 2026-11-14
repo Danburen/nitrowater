@@ -74,7 +74,7 @@ Agent 的 `runCode` 不经过 HTTP 拦截器，但经过同一个 `SandboxExecut
 | `bin/start-infra.ps1` | 本机直接跑 server | 映射 `-p 2000:2000`，默认 `PISTON_BASE_URL=http://localhost:2000` |
 
 `piston` 只加入 `nitrowater-runner-net`（app compose 内创建），server 同时加入 `nitrowater-net` 与
-`nitrowater-runner-net`，因此沙箱与 mysql / redis / seaweedfs 不在同一网段。
+`nitrowater-runner-net`，因此沙箱与 mysql / redis / qdrant 不在同一网段。
 
 语言包需要预装（`bin/dev/install-piston-langs.ps1`，或首次部署后手工
 `docker exec nitrowater-piston cli/index.js ppman install <lang>`）；未安装的语言会返回错误。

@@ -3,6 +3,11 @@
 -- 枚举一律 tinyint UNSIGNED（应用层 Java 枚举 + @Converter 映射）
 -- 库内仅此服务使用；跨库对外仅暴露 owner_uid（逻辑关联 account）。
 -- 首次部署前可直接改本文件；部署后冻结，后续走 V2__...
+--
+-- 已折叠进本基线的迁移（项目尚未上线，dev 阶段按基线重放）：
+--   V1_1  下线 S3 存储后端：删除 backend = 0 的历史行，列默认值改 2。
+--         backend 的持久化编码保持稳定（1=COS, 2=LOCAL）；0 属于已删除的 S3 后端，
+--         永不复用。空库重放天然没有 0 行，故本基线只保留默认值/注释的最终状态。
 -- ============================================================
 
 CREATE TABLE resource (
@@ -10,7 +15,7 @@ CREATE TABLE resource (
   uuid          CHAR(36)         NOT NULL                                  COMMENT '对外不可猜标识',
   app           VARCHAR(32)      NOT NULL                                  COMMENT '应用/命名空间（对象键前缀），如 nitrowater',
   group_key     VARCHAR(64)      NULL                                      COMMENT '分组键（如插件 key），用于按组列举；与 app 联合',
-  backend       TINYINT UNSIGNED NOT NULL DEFAULT 0                        COMMENT '0=S3, 1=COS, 2=LOCAL',
+  backend       TINYINT UNSIGNED NOT NULL DEFAULT 2                        COMMENT '1=COS, 2=LOCAL（0 已退役：S3）',
   bucket_key    VARCHAR(512)     NOT NULL                                  COMMENT '对象存储 key 或本地相对路径',
   visibility    TINYINT UNSIGNED NOT NULL DEFAULT 0                        COMMENT '0=PRIVATE, 1=PUBLIC',
   resource_type TINYINT UNSIGNED NOT NULL DEFAULT 0                        COMMENT '0=UNKNOWN,1=IMAGE,2=VIDEO,3=AUDIO,4=TEXT,5=DOCUMENT,6=ARCHIVE,7=EXECUTABLE,99=OTHER',

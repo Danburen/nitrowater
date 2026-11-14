@@ -316,14 +316,4 @@ public class AccountCoreServiceImpl implements AccountCoreService {
         Long uid = userCoreService.resolveUid(target);
         return singleUseTokenService.generateVerifyToken(VerifyScene.FORGOT_PASSWORD.name(), uid);
     }
-
-    @Override
-    @Transactional
-    public void updateAvatarResourceUuid(long userUid, String resourceUuid) {
-        String normalized = (StringUtil.isBlank(resourceUuid)) ? null : resourceUuid.trim();
-        int updated = userRepository.updateAvatarResourceUuid(userUid, normalized);
-        if (updated == 0) {
-            throw new BizException(BaseResponseCode.USER_NOT_FOUND);
-        }
-    }
 }

@@ -45,7 +45,11 @@ dependencies {
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.springframework.security:spring-security-core'
-    implementation 'org.springframework.security:spring-security-oauth2-jose'
+    // Exported through the public AudienceValidator signature (OAuth2TokenValidator<Jwt>).
+    api 'org.springframework.security:spring-security-oauth2-jose'
+    // Exported through JwtAuthorities.converter(): every downstream service maps `roles`/`scope`
+    // to authorities with the same converter instead of keeping its own copy.
+    api 'org.springframework.security:spring-security-oauth2-resource-server'
     implementation 'org.springframework:spring-web'
     implementation 'cn.hutool:hutool-captcha:5.8.26'
     implementation 'org.mindrot:jbcrypt:0.4'

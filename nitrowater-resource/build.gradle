@@ -28,6 +28,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    // --- AOP：@RateLimit 切面（core 的 RateLimitAspect 需要 aspectjweaver 才会织入；
+    //     与 account / core 保持同一组依赖，不引 Boot 4 里已不在 BOM 的 starter）---
+    implementation 'org.springframework:spring-aop'
+    implementation 'org.aspectj:aspectjweaver:1.9.25.1'
     // --- 资源元数据库（独立库 nitrowater_resource；Flyway 管理）---
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -36,11 +40,7 @@ dependencies {
     runtimeOnly 'com.mysql:mysql-connector-j'
     // --- 读缓存：presigned GET URL 缓存（Redis），对齐 waterfun 读取缓存范式 ---
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
-    // --- S3 兼容对象存储客户端（AWS SDK v2，厂商中立；指向自托管 SeaweedFS）---
-    implementation platform('software.amazon.awssdk:bom:2.29.0')
-    implementation 'software.amazon.awssdk:s3'
-    implementation 'software.amazon.awssdk:url-connection-client'
-    // --- 腾讯 COS 对象存储客户端（可选后端；仅当 app.resource.cos.* 配置时装配）---
+    // --- 腾讯 COS 对象存储客户端（可选后端；仅当 app.resource.cos.secret-id 配置时装配）---
     implementation 'com.qcloud:cos_api:5.6.247'
 
     compileOnly 'org.projectlombok:lombok'
@@ -59,7 +59,6 @@ tasks.named('test') {
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
     environment 'RESOURCE_INTERNAL_TOKEN', System.getenv('RESOURCE_INTERNAL_TOKEN') ?: 'nitrowater-internal-dev'
-    environment 'S3_SECRET_KEY', System.getenv('S3_SECRET_KEY') ?: 'change-me'
 }
 
 // 固定 bootJar 名称，便于 Dockerfile 复制（docker compose build 前先跑 bootJar）。

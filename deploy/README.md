@@ -21,14 +21,14 @@
 公网 nginx（TLS）
   ├── <WEB_DOMAIN>  → 127.0.0.1:8080  bff     SPA + /api/** + /plugin/**
   └── <AUTH_DOMAIN> → 127.0.0.1:8090  account 登录 / OIDC / 管理端
-容器内不发布：server 8081 · resource 8093 · docs 80 · mysql · redis · piston · qdrant · seaweedfs
+容器内不发布：server 8081 · resource 8093 · docs 80 · mysql · redis · piston · qdrant
 ```
 
 | 单元 | compose | 内容 |
 |---|---|---|
 | infra | `deploy/docker/docker-compose.infra.yml` | mysql / redis（`edge` profile 带 nginx + 自动证书） |
 | account | `deploy/docker/docker-compose.account.yml` | SSO / OIDC，可独立发布 |
-| app | `deploy/docker/docker-compose.app.yml` | seaweedfs / qdrant / piston / docs / resource / server / bff |
+| app | `deploy/docker/docker-compose.app.yml` | qdrant / piston / docs / resource / server / bff |
 
 三份共享 `nitrowater-net`。**启动顺序：infra → account → app**（bff 启动要拉 account 的 OIDC discovery）。
 
@@ -57,6 +57,7 @@ bash deploy/bin/deploy.sh --help
 | 生成 JWT 密钥 | `gen-keys.sh` |
 | 环境自检 / 部署门禁 | `check-env.sh` |
 | 备份 MySQL（`deploy.sh` 发版前自动执行） | `backup_mysql.sh` |
+| 备份资源字节（`RESOURCE_DATA_DIR` 快照） | `backup_resource.sh` |
 | 运维 UI 隧道 | `ops-tunnel.sh` |
 
 全部是 `.sh`：Windows 用 Git Bash 或 WSL。开发期脚本在 `bin/dev/`，不属于上线路径。
@@ -65,15 +66,15 @@ bash deploy/bin/deploy.sh --help
 
 1. `deploy/` 下的 compose / 脚本 / 文档是**发布产物**：CI 从被部署的那个 commit 同步上来，
    改动随 commit 走。不要在服务器上手改——下次同步会被覆盖。
-2. 宿主机只保留状态：`.env`、`keys/`、`content/`、`backups/`、数据卷。它们不在同步范围内
+2. 宿主机只保留状态：`.env`、`keys/`、`content/`、`backups/`、资源目录（`RESOURCE_DATA_DIR`）与数据卷。它们不在同步范围内
    （被 gitignore），也不会被覆盖。
-3. 换机器 = 手工搬 `.env` / `keys/` / `content/` 加数据卷；`NITROWATER_KEK` 必须离线另存（丢了密文不可解）。
+3. 换机器 = 手工搬 `.env` / `keys/` / `content/` / 资源目录加数据卷；`NITROWATER_KEK` 必须离线另存（丢了密文不可解）。
 
 ## 安全红线
 
 - `CORS_ALLOWED_ORIGIN_PATTERNS` 禁止 `*`。
 - `PUBLISH_BIND` / `OPS_BIND` 保持 `127.0.0.1`。
-- 审核上线前 `RESOURCE_USER_UPLOAD=false`。
+- 上传只允许 `ROLE_ADMIN` / `ROLE_SUPER_ADMIN`；`RESOURCE_UPLOAD_ENABLED=false` 可整面关闭。
 - `piston` 只连 `runner-net`，不要接回 `nitrowater-net`。
 - `/actuator/**`、`/internal/**` 不对公网开放（容器不发布 + 反代 404）。
 

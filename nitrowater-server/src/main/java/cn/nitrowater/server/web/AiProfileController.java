@@ -1,5 +1,7 @@
 package cn.nitrowater.server.web;
 
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
+
 import cn.nitrowater.server.service.ai.memory.AiProfileService;
 import cn.nitrowater.server.web.dto.AiProfileUpdateReq;
 import cn.nitrowater.server.web.vo.AiProfileResp;

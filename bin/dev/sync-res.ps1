@@ -3,7 +3,7 @@
 #
 # The plugin center's "download" button is bound to the unified resource service
 # (nitrowater-resource, :8093) instead of a static dir: each jar is uploaded once through the
-# internal publish endpoint and afterwards served from object storage (SeaweedFS) behind a stable
+# internal publish endpoint and afterwards served from local disk behind a stable
 # public download URL. Republishing the same plugin + file name overwrites in place and keeps the
 # URL stable, so the SPA never needs a code change when a new jar is built.
 #

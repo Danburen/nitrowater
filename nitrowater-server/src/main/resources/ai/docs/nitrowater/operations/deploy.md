@@ -16,7 +16,7 @@ Compose 文件（三份纵向拆分的单元，共享外部网络 `nitrowater-ne
 |---|---|
 | `deploy/docker/docker-compose.infra.yml` | MySQL / Redis；`edge` profile = nginx-proxy + acme-companion |
 | `deploy/docker/docker-compose.account.yml` | account（SSO / OIDC），可独立发布 |
-| `deploy/docker/docker-compose.app.yml` | SeaweedFS / Qdrant / Piston / docs / resource / server / bff |
+| `deploy/docker/docker-compose.app.yml` | Qdrant / Piston / docs / resource / server / bff |
 | 根 `Dockerfile` | 多 target 构建（account / bff / server / resource），含 node stage 构建两个 SPA |
 
 ```bash
@@ -48,11 +48,13 @@ Piston 只连 `nitrowater-runner-net`（app compose 内创建），server 同时
 | `DB_USERNAME` / `DB_PASSWORD` | 全部 | 业务连库账号，手工创建（`deploy/README.md` §6）；compose 无默认值，缺失即启动失败 |
 | `SPRING_DATASOURCE_URL` | 全部 | 含 `connectionTimeZone=UTC&preserveInstants=true` |
 | `RESOURCE_INTERNAL_TOKEN` | resource / server | `/internal/**` 共享密钥 |
-| `S3_ENDPOINT` / `S3_PUBLIC_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET` | resource | S3 后端；`S3_PUBLIC_ENDPOINT` 是浏览器可达地址 |
-| `RESOURCE_BACKEND` | resource | `s3` / `cos` / `local` |
+| `RESOURCE_DATA_DIR` | resource | 资源字节落盘的宿主机目录（bind mount 到 `/data/resource`），`local` 后端必填 |
+| `RESOURCE_BACKEND` | resource | `local`（默认）/ `cos` |
+| `RESOURCE_PRESIGN_ENABLED` | resource | 默认 `false`：读写都经服务自身端点，客户端不直连存储 |
+| `RESOURCE_UPLOAD_ENABLED` | resource | 上传总闸；默认 `true`，角色仍限 `ROLE_ADMIN` / `ROLE_SUPER_ADMIN` |
 | `PISTON_BASE_URL` | server | 容器内 `http://piston:2000`；本机 `http://localhost:2000` |
 | `AI_*` | server | chat/embedding key、模型、`AI_TOP_K`、限流等 |
-| `S3_SECRET_KEY` | resource | 必填，缺失启动失败 |
+| `COS_*` | resource | 仅 `RESOURCE_BACKEND=cos` 时需要；默认整段注释。`RESOURCE_DATA_DIR` 仍必填（bind mount 不变） |
 
 密钥不入库、不入仓；生产用环境变量或密钥管理服务注入。
 
@@ -110,7 +112,7 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.acc
 2. 前端 `npm run build` 通过，产物是最新的。
 3. 如需更新 VeloChatX 文档站，先运行 `bin\dev\sync-docs.ps1`（NitroWater 文档是纯 markdown 语料，无需构建）。
 4. 新增 Flyway 版本而不是改已应用的迁移。
-5. 环境变量齐全（尤其 `JWT_ISSUER`、`NITROWATER_KEK`、`BFF_CLIENT_SECRET`、`S3_SECRET_KEY`）。
+5. 环境变量齐全（尤其 `JWT_ISSUER`、`NITROWATER_KEK`、`BFF_CLIENT_SECRET`、`RESOURCE_DATA_DIR`）。
 
 ## 7. 健康检查与日志
 

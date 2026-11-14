@@ -10,7 +10,7 @@ import cn.nitrowater.server.service.ai.ops.AiUsageService;
 import cn.nitrowater.server.service.ai.skill.SkillService;
 import cn.nitrowater.server.service.ai.model.rag.AiReindexResult;
 import cn.nitrowater.server.service.ai.model.skill.SkillExport;
-import cn.nitrowater.server.web.CurrentUser;
+import cn.nitrowater.core.infrastructure.security.CurrentUser;
 import cn.nitrowater.server.web.dto.AiAdminSettingsReq;
 import cn.nitrowater.server.web.dto.AiSkillReq;
 import cn.nitrowater.server.web.dto.AiUsageResetReq;

@@ -62,6 +62,8 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.web.SecurityFilterChain;
+import cn.nitrowater.core.infrastructure.security.AudienceValidator;
+import cn.nitrowater.core.infrastructure.security.JwtAuthorities;
 import cn.nitrowater.core.web.ApiResponseAccessDeniedHandler;
 import cn.nitrowater.core.web.ApiResponseAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
@@ -218,7 +220,11 @@ public class AuthorizationServerConfig {
                         .successHandler(ssoLoginSuccessHandler)
                         .failureHandler(ssoLoginFailureHandler))
                 // Account APIs accept either the browser SSO session or the BFF-held Bearer token.
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(accountApiJwtDecoder)))
+                // The authority mapping is core's JwtAuthorities (same as server/resource), so a
+                // bearer-authenticated admin call is role-gated exactly like a session one.
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt
+                        .decoder(accountApiJwtDecoder)
+                        .jwtAuthenticationConverter(JwtAuthorities.converter())))
                 // Registry tracks sessions (no concurrency limit) so a credential/role change can
                 // terminate them all — see SessionInvalidationListener.
                 .sessionManagement(session -> session
@@ -458,12 +464,12 @@ public class AuthorizationServerConfig {
     @Bean("accountApiJwtDecoder")
     public JwtDecoder accountApiJwtDecoder(
             @Value("${jwt.issuer:http://localhost:8090}") String issuer,
-            @Value("${app.oidc.account-api-audiences:nitrowater-bff}") List<String> audiences) {
+            @Value("${app.security.jwt.audiences:nitrowater-bff}") List<String> audiences) {
         String base = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(base + "/oauth2/jwks").build();
         OAuth2TokenValidator<@NotNull Jwt> validator = new DelegatingOAuth2TokenValidator<>(
                 JwtValidators.createDefaultWithIssuer(issuer),
-                new AccountAudienceValidator(audiences));
+                new AudienceValidator(audiences));
         decoder.setJwtValidator(validator);
         return decoder;
     }
@@ -508,8 +514,11 @@ public class AuthorizationServerConfig {
                 // the avatar's resource uuid — never a stored/presigned URL, so it cannot expire.
                 if (StringUtil.isNotBlank(principal.getAvatarUuid())
                         && !StringUtil.isBlank(pictureBaseUrl)) {
-                    claims.claim("picture", trimTrailingSlash(pictureBaseUrl)
-                            + "/api/public/resource/" + principal.getAvatarUuid());
+                    String base = pictureBaseUrl.trim();
+                    if (base.endsWith("/")) {
+                        base = base.substring(0, base.length() - 1);
+                    }
+                    claims.claim("picture", base + "/api/public/resource/" + principal.getAvatarUuid());
                 }
             }
             // RFC 9068: the access token's `aud` identifies the RESOURCE it may be used on.
@@ -577,11 +586,5 @@ public class AuthorizationServerConfig {
         }
         Authentication principal = context.getPrincipal();
         return principal != null ? principal.getName() : null;
-    }
-
-    /** @return {@code value} without a trailing slash, so path concatenation never doubles it */
-    private static String trimTrailingSlash(String value) {
-        String trimmed = value.trim();
-        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 }

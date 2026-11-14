@@ -1,8 +1,9 @@
 ﻿# ============================================================
 # seed-res.ps1 - publish a small set of SYSTEM resource fixtures to the resource service.
 #
-# Why a script and not SQL: resource BYTES live in the storage backend (SeaweedFS / local dir),
-# the `resource` table only holds metadata. Fixtures are therefore published through the same
+# Why a script and not SQL: resource BYTES live in the storage backend (the resource service's
+# local directory in dev), the `resource` table only holds metadata. Fixtures are therefore
+# published through the same
 # internal endpoint bin/dev/sync-res.ps1 uses (POST /internal/resource/publish, X-Internal-Token),
 # which is idempotent per app+group+name and keeps download URLs stable.
 #

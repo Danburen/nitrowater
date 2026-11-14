@@ -54,8 +54,9 @@
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| 上传成功但读取 403 | 预签名地址用了容器内 endpoint | `S3_PUBLIC_ENDPOINT` 必须是浏览器可达地址 |
-| 浏览器直传 CORS 失败 | SeaweedFS 未配置 CORS | 在对象存储侧允许前端来源的 `PUT` |
+| 上传被拒 403 | 调用方不是管理员 | `/api/resource/upload/**` 仅 `ROLE_ADMIN` / `ROLE_SUPER_ADMIN`；用户级上传未开放 |
+| 上传 503 `uploads_disabled` | 上传总闸关闭 | `RESOURCE_UPLOAD_ENABLED=false` → 改 true（仍需管理员角色） |
+| 上传 411 `length_required` | 代理上传未带 `Content-Length` | 客户端必须声明长度（服务端不缓冲整个 body） |
 | 资源一直 PENDING | 客户端未回调 `/upload/callback` | 客户端补回调；超时后由清理任务转 ORPHAN |
 | 头像不显示 | 头像资源 uuid 失效或不可见 | 检查 `resource.uuid` 与可见性 |
 | 插件 JAR 下载 404 | 未发布或 `plugin_key` 不匹配 | 用管理台重新上传；确认 `app`/`group_key` 约定 |
@@ -94,10 +95,9 @@ Get-Process java | Select-Object Id,Path,StartTime
 | 8093 | resource |
 | 5173 | Vite dev |
 | 6333 / 6334 | Qdrant HTTP / gRPC |
-| 8333 | SeaweedFS S3 |
 | 2000 | Piston |
 
-脚本默认 Java 路径由 `NITROWATER_JAVA` 指定（**不读 `JAVA_HOME`**）；Redis 目录 `NITROWATER_REDIS_DIR`；MySQL 客户端 `NITROWATER_MYSQL`。Docker 不可用时 SeaweedFS / Piston 会被跳过并给出 WARN。
+脚本默认 Java 路径由 `NITROWATER_JAVA` 指定（**不读 `JAVA_HOME`**）；Redis 目录 `NITROWATER_REDIS_DIR`；MySQL 客户端 `NITROWATER_MYSQL`。Docker 不可用时 Piston 会被跳过并给出 WARN；资源字节落本地目录，不需要额外服务。
 
 ## 9. 排查顺序
 

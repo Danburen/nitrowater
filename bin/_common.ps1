@@ -110,7 +110,9 @@ $ResourceInternalToken = if ($env:RESOURCE_INTERNAL_TOKEN) { $env:RESOURCE_INTER
 # No defaults live in application.yml any more (a missing prod secret must fail loudly); the dev
 # values below are injected here so a local start needs no setup.
 $BffClientSecret = if ($env:BFF_CLIENT_SECRET) { $env:BFF_CLIENT_SECRET } else { 'nitrowater-bff-secret' }
-$S3SecretKey     = if ($env:S3_SECRET_KEY) { $env:S3_SECRET_KEY } else { 'change-me' }
+# Resource bytes: local filesystem under the repo (gitignored). Absolute so the jar's working
+# directory does not matter; there is no object store in the dev loop any more.
+$ResourceLocalPath = if ($env:RESOURCE_LOCAL_PATH) { $env:RESOURCE_LOCAL_PATH } else { Join-Path $RepoRoot 'bin\dev\resource-storage' }
 $JwtKeyFile    = Join-Path $RepoRoot 'deploy\keys\private.key'
 $JwtKid        = 'nitrowater-key-1'
 $Issuer        = 'http://localhost:8090'
@@ -191,9 +193,12 @@ function Start-ModuleJar([string]$Module, [int]$Port, [switch]$NoWait, [switch]$
     # is token-gated and restricted to loopback/private networks (see InternalEndpointFilter).
     if ($Module -eq 'nitrowater-resource') { $env:RESOURCE_INTERNAL_TOKEN = $ResourceInternalToken }
     # Secrets have no built-in defaults in application.yml: inject the dev values here (account and
-    # the BFF must share BFF_CLIENT_SECRET; resource authenticates to SeaweedFS with S3_SECRET_KEY).
+    # the BFF must share BFF_CLIENT_SECRET).
     if ($Module -eq 'nitrowater-account' -or $Module -eq 'nitrowater-bff') { $env:BFF_CLIENT_SECRET = $BffClientSecret }
-    if ($Module -eq 'nitrowater-resource') { $env:S3_SECRET_KEY = $S3SecretKey }
+    if ($Module -eq 'nitrowater-resource') {
+        $env:RESOURCE_BACKEND = 'local'
+        $env:RESOURCE_LOCAL_PATH = $ResourceLocalPath
+    }
     if ($Windowed) {
         # java.exe launched straight from a console-less parent inherits the (hidden) parent
         # console and shows nothing. Go through `cmd /k` like the infra windows do: the cmd

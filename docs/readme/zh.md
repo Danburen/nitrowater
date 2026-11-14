@@ -29,7 +29,7 @@
 | `nitrowater-bff` | Spring Boot、Spring Security OAuth2 client | 登录、会话、`/api/**` 代理、托管 SPA |
 | `nitrowater-account` | Spring Authorization Server、Vue 3 workspace | SSO / OIDC 身份中心 |
 | `nitrowater-server` | Spring Boot、Spring AI、JPA + Flyway | 插件中心、AI Agent、代码运行器 |
-| `nitrowater-resource` | Spring Boot、SeaweedFS / S3 | 文件、上传、插件 JAR 托管 |
+| `nitrowater-resource` | Spring Boot、可插拔存储 | 文件、上传、插件 JAR 托管 |
 | `nitrowater-core` / `nitrowater-lib` | JPA、无框架依赖工具类 | 共享持久化与安全底座 |
 
 浏览器只跟 BFF 打交道 —— access / refresh token 永远不出服务端。
@@ -56,7 +56,7 @@
 
 - 按目录浏览插件，带版本、元数据与文档。
 - 作者文档是 `deploy/plugin-docs` 下的 VitePress 站点，经 BFF 的 `/plugin/**` 同源提供。
-- JAR 与附件由资源服务存储（SeaweedFS / S3、腾讯 COS 或本地磁盘），通过预签名地址上传。
+- JAR 与附件由资源服务存在本地磁盘（腾讯 COS 保留为纯配置切换），上传走 BFF 背后的管理员专属端点。
 
 ### NitroBot
 
@@ -77,7 +77,7 @@
 |---|---|
 | JDK 25 | 后端 toolchain |
 | Node 24 + pnpm 11 | `nitrowater-web` 用 npm；`nitrowater-account` 是 pnpm workspace |
-| Docker | Piston、SeaweedFS、Qdrant 与插件文档站 |
+| Docker | Piston、Qdrant 与插件文档站 |
 | MySQL 8 与 Redis | 本机服务，默认 `3306` / `6379`（`root` / `123456`） |
 
 ### 三条命令
