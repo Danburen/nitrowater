@@ -73,6 +73,7 @@ Remove-Item "$env:TEMP\nitrowater-deploy.tgz"
 | **上线（唯一入口，CI 与手动同一条）** | `deploy.sh` |
 | 生成 JWT 密钥 | `gen-keys.sh` |
 | 环境自检 / 部署门禁 | `check-env.sh` |
+| 按模板同步 `.env`（补新键、删废弃键、刷新注释） | `sync-env.sh` |
 | 备份 MySQL（`deploy.sh` 发版前自动执行） | `backup_mysql.sh` |
 | 备份资源字节（`RESOURCE_DATA_DIR` 快照） | `backup_resource.sh` |
 | 给 Piston 装语言包（首次 / 加语言） | `install-piston-runtimes.sh` |

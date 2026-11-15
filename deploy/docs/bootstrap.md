@@ -78,6 +78,9 @@ date +%s                  # APP_SESSION_EPOCH
 $EDITOR deploy/docker/.env
 ```
 
+> 已经有一份 `.env`（升级部署）时，先 `bash deploy/bin/sync-env.sh --dry-run` 看差异：它会按最新模板
+> 补新键、删掉模板里已不存在的键、刷新注释，**但保留你已有的值**；确认无误去掉 `--dry-run` 再跑。
+
 必须改对：
 
 | 变量 | 要点 |
