@@ -111,14 +111,6 @@ jobs:
             **/build/test-results/test
           retention-days: 7
 
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-jacoco
-          path: '**/build/reports/jacoco/test/html'
-          retention-days: 7
-
   ui-web:
     name: ui-web (vue3)
     runs-on: ubuntu-latest

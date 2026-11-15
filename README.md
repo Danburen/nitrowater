@@ -126,7 +126,7 @@ Frontend changes hot-reload through Vite; `npm run dev` must be running because 
 ### Backend
 
 ```powershell
-.\gradlew.bat build                        # all modules: compile, test, JaCoCo reports
+.\gradlew.bat build                        # all modules: compile + test
 .\gradlew.bat :nitrowater-server:bootJar   # one module → build/libs/app.jar
 ```
 
@@ -165,6 +165,13 @@ TAG=dev SHA=$(git rev-parse --short HEAD) REPO=local/nitrowater \
   docker buildx bake --load --set '*.attest='
 ```
 
+Each runtime target ships the boot jar's Spring Boot layers as separate image layers
+(`dependencies` / `spring-boot-loader` / `snapshot-dependencies` / `application`), so a code-only
+release re-pushes only the few-MB `application` layer while the dependency layers stay cached on
+the host. The jar is exploded, which means the container starts through
+`java org.springframework.boot.loader.launch.JarLauncher` — **not** `java -jar app.jar`; when
+debugging a container, the application files live in `/app/BOOT-INF/`.
+
 ### Before you push
 
 ```powershell
@@ -174,7 +181,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-Coverage lands in `<module>/build/reports/jacoco/test/html/index.html` and, aggregated, in `build/reports/jacoco/root/html/index.html`. All three pipelines are manual: `build.yml` runs the checks and then builds the four application images with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it tars `deploy/` from the commit being deployed and scps it to the host, so no git checkout is needed there, then runs `deploy/bin/deploy.sh` (the same command a manual release uses); `release.yml` chains build → deploy in one run.
+All three pipelines are manual: `build.yml` runs the checks and then builds the four application images with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it tars `deploy/` from the commit being deployed and scps it to the host, so no git checkout is needed there, then runs `deploy/bin/deploy.sh` (the same command a manual release uses); `release.yml` chains build → deploy in one run.
 
 ## 📦 Deployment
 

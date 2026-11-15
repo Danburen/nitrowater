@@ -2,7 +2,9 @@
 # ============================================================
 # NitroWater 后端 —— 单 Dockerfile 多目标（aligned with WaterFun）
 #
-# 一次构建全部模块，每个运行时 target 只提取自己的 jar（同名 app.jar）。
+# 一次构建全部模块；运行时 target 只取自己的 jar（同名 app.jar），并按 Spring Boot
+# 的 layers.idx 把它拆成「依赖 / loader / 快照 / 应用」四层，各占一个镜像层：
+# 发版只有 ~2MB 的 application 层变化，几十到上百 MB 的 dependencies 层复用宿主缓存。
 #
 # 用法：
 #   docker build --target account  -t nitrowater-account:local  .
@@ -78,27 +80,50 @@ RUN chmod +x gradlew && ./gradlew --no-daemon -x test -PskipAdminUi -PskipAuthUi
       :nitrowater-account:bootJar :nitrowater-bff:bootJar \
       :nitrowater-server:bootJar :nitrowater-resource:bootJar
 
+# Explode every boot jar into its Spring Boot layers (BOOT-INF/layers.idx ships inside the jar),
+# so the runtime targets can copy one image layer per boot layer.
+# `--launcher` is required: without it the tool emits the "thin jar + lib/" layout, which only
+# runs as one directory and therefore yields a single fat image layer.
+RUN for svc in account bff server resource; do \
+      java -Djarmode=tools -jar nitrowater-${svc}/build/libs/app.jar extract \
+        --layers --launcher --destination /app/layers/${svc}; \
+    done
+
 # ==================== Runtime base ====================
 FROM eclipse-temurin:25.0.5_8-jre AS runtime-base
 WORKDIR /app
 
+# Each target copies the extracted layers in dependency order, one image layer each: application
+# last so its BOOT-INF/classes wins over anything a sibling layer ships at the same path.
+# The on-disk layout is exactly what a boot jar unpacks to at runtime; only the start command
+# changes — `java -jar app.jar` becomes invoking the launcher class the manifest points at.
+
 # ==================== Runtime: account (SSO) ====================
 FROM runtime-base AS account
-COPY --from=build /app/nitrowater-account/build/libs/app.jar app.jar
+COPY --from=build /app/layers/account/dependencies/ ./
+COPY --from=build /app/layers/account/spring-boot-loader/ ./
+COPY --from=build /app/layers/account/snapshot-dependencies/ ./
+COPY --from=build /app/layers/account/application/ ./
 EXPOSE 8090
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 
 # ==================== Runtime: resource ====================
 FROM runtime-base AS resource
-COPY --from=build /app/nitrowater-resource/build/libs/app.jar app.jar
+COPY --from=build /app/layers/resource/dependencies/ ./
+COPY --from=build /app/layers/resource/spring-boot-loader/ ./
+COPY --from=build /app/layers/resource/snapshot-dependencies/ ./
+COPY --from=build /app/layers/resource/application/ ./
 EXPOSE 8093
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 
 # ==================== Runtime: server (business API) ====================
 FROM runtime-base AS server
-COPY --from=build /app/nitrowater-server/build/libs/app.jar app.jar
+COPY --from=build /app/layers/server/dependencies/ ./
+COPY --from=build /app/layers/server/spring-boot-loader/ ./
+COPY --from=build /app/layers/server/snapshot-dependencies/ ./
+COPY --from=build /app/layers/server/application/ ./
 EXPOSE 8081
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 
 # ==================== Runtime: bff ====================
 # Only the bff carries a healthcheck, so only it needs curl (the JRE image ships without it).
@@ -106,6 +131,9 @@ FROM runtime-base AS bff
 RUN apt-get update \
       && apt-get install -y --no-install-recommends curl \
       && rm -rf /var/lib/apt/lists/*
-COPY --from=build /app/nitrowater-bff/build/libs/app.jar app.jar
+COPY --from=build /app/layers/bff/dependencies/ ./
+COPY --from=build /app/layers/bff/spring-boot-loader/ ./
+COPY --from=build /app/layers/bff/snapshot-dependencies/ ./
+COPY --from=build /app/layers/bff/application/ ./
 EXPOSE 8080 9080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

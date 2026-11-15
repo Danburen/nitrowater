@@ -125,7 +125,7 @@ java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -jar n
 ### 后端
 
 ```powershell
-.\gradlew.bat build                        # 全模块：编译、测试、JaCoCo 报告
+.\gradlew.bat build                        # 全模块：编译 + 测试
 .\gradlew.bat :nitrowater-server:bootJar   # 单模块 → build/libs/app.jar
 ```
 
@@ -165,6 +165,12 @@ TAG=dev SHA=$(git rev-parse --short HEAD) REPO=local/nitrowater \
   docker buildx bake --load --set '*.attest='
 ```
 
+每个运行时 target 把 boot jar 的 Spring Boot 分层（`dependencies` / `spring-boot-loader` /
+`snapshot-dependencies` / `application`）各打成一个镜像层：只改代码的发版只重新推送几 MB 的
+`application` 层，几十到上百 MB 的依赖层复用宿主缓存。jar 是解包运行的，容器里靠
+`java org.springframework.boot.loader.launch.JarLauncher` 启动（**不再是** `java -jar app.jar`），
+排查容器时可 `docker exec -it <svc> sh` 看 `/app/BOOT-INF`。
+
 ### 提交之前
 
 ```powershell
@@ -174,7 +180,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-覆盖率报告在 `<module>/build/reports/jacoco/test/html/index.html`，汇总报告在 `build/reports/jacoco/root/html/index.html`。三条流水线都是手动触发：`build.yml` 先跑各项检查，再用 `docker buildx bake` 构建四个应用镜像 + `kit`（compose 文件与运维脚本）并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它），用 `docker create` + `docker cp` 解出 kit（宿主机不需要 git），再调 `deploy/bin/deploy.sh`——手动上线是同一条命令；`release.yml` 把 build → deploy 串成一次运行。
+三条流水线都是手动触发：`build.yml` 先跑各项检查，再用 `docker buildx bake` 构建四个应用镜像 + `kit`（compose 文件与运维脚本）并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 tag 通过 SSH 上线（回滚也用它），用 `docker create` + `docker cp` 解出 kit（宿主机不需要 git），再调 `deploy/bin/deploy.sh`——手动上线是同一条命令；`release.yml` 把 build → deploy 串成一次运行。
 
 ## 📦 部署
 
