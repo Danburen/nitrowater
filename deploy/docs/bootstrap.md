@@ -5,11 +5,8 @@
 > 变量以 `deploy/docker/.env.example` 为准（每项都有注释），本页只讲必填和最容易踩的。
 > 第一次跑报错先翻 **§11 常见坑**，按流水线顺序排的。
 
-下文的 `dc` 只在本页使用，先执行一次（bash）：
-
-```bash
-dc() { docker compose --env-file deploy/docker/.env -f "deploy/docker/docker-compose.$1.yml" "${@:2}"; }
-```
+本页的 compose 命令一律写全 `docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.<组>.yml <子命令>`，
+`<组>` 只取 `infra` / `account` / `app`；下文都给可直接复制的完整命令（在部署根 `/opt/nitrowater` 下执行）。
 
 ## 1. 前置
 
@@ -115,8 +112,8 @@ bash deploy/bin/check-env.sh        # 必须 0 FAIL
 
 ```bash
 docker network create nitrowater-net      # 只需一次
-dc infra up -d
-dc infra ps                               # 等 mysql healthy
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml up -d
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.infra.yml ps   # 等 mysql healthy
 docker exec -it nitrowater-mysql mysql -uroot -p   # 粘下面的 SQL
 ```
 
@@ -148,10 +145,12 @@ FLUSH PRIVILEGES;
 sudo mkdir -p /opt/nitrowater/data/resource
 sudo chown -R "$USER": /opt/nitrowater/data
 
-dc account pull && dc account up -d --no-build
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml pull
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-build
 curl -fsS http://127.0.0.1:8090/.well-known/openid-configuration | head -1
 
-dc app pull && dc app up -d --no-build
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml pull
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d --no-build
 ```
 
 顺序不能反：bff 启动时要拉 account 的 OIDC discovery。`--no-build` 保证拉镜像而不是现场构建。

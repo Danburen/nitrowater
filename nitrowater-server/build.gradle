@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '4.1.1'
+    id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -48,7 +48,7 @@ dependencies {
     implementation 'org.springframework.ai:spring-ai-markdown-document-reader'
     // --- Web search result extraction: strip HTML down to readable text before it reaches the
     // agent. Small, no transitive surprises. ---
-    implementation 'org.jsoup:jsoup:1.18.3'
+    implementation 'org.jsoup:jsoup:1.24.1'
     // --- Content moderation: DFA (trie) sensitive-word matcher. The built-in word list is NOT
     // used; the dictionary is supplied from resources / an operator-mounted file so the repo never
     // carries a violation word list. The dependency also brings the Chinese normalisation needed

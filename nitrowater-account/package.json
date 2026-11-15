@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "packageManager": "pnpm@11.18.0",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=24.18.0"
   },
   "scripts": {
     "dev:admin": "pnpm --filter admin-ui dev",

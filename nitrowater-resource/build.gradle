@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '4.1.1'
+    id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -31,7 +31,7 @@ dependencies {
     // --- AOP：@RateLimit 切面（core 的 RateLimitAspect 需要 aspectjweaver 才会织入；
     //     与 account / core 保持同一组依赖，不引 Boot 4 里已不在 BOM 的 starter）---
     implementation 'org.springframework:spring-aop'
-    implementation 'org.aspectj:aspectjweaver:1.9.25.1'
+    implementation 'org.aspectj:aspectjweaver:1.9.27'
     // --- 资源元数据库（独立库 nitrowater_resource；Flyway 管理）---
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -41,7 +41,7 @@ dependencies {
     // --- 读缓存：presigned GET URL 缓存（Redis），对齐 waterfun 读取缓存范式 ---
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     // --- 腾讯 COS 对象存储客户端（可选后端；仅当 app.resource.cos.secret-id 配置时装配）---
-    implementation 'com.qcloud:cos_api:5.6.247'
+    implementation 'com.qcloud:cos_api:5.6.283'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

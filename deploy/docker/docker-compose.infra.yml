@@ -12,7 +12,10 @@ name: nitrowater-infra
 
 services:
   mysql:
-    image: mysql:8.0
+    # MySQL 8.0 line: one patch ahead of the local dev server (8.0.40), so Flyway/DDL
+    # behaviour stays identical. Deliberately NOT on 8.4 yet - that series flips the
+    # default auth plugin and drops features, so it needs a drop+replay check first.
+    image: mysql:8.0.46
     container_name: nitrowater-mysql
     environment:
       # root 只用于首次手工建库 / 运维；业务连接走 DB_USERNAME（见 deploy/docs/bootstrap.md §5）。
@@ -37,7 +40,9 @@ services:
       - nitrowater-net
 
   redis:
-    image: redis:7-alpine
+    # Newest 7.4 patch (the local Windows port is stuck on 5.x and is not a useful
+    # reference). Staying on major 7: 8.x is a real major jump (new modules, AGPLv3).
+    image: redis:7.4.9-alpine
     container_name: nitrowater-redis
     volumes:
       - nitrowater-redis:/data
@@ -57,7 +62,7 @@ services:
   # 只有这里发布 80/443；account / bff 通过 VIRTUAL_HOST 被自动发现。
   nginx-proxy:
     profiles: ["edge"]
-    image: nginxproxy/nginx-proxy:1.7-alpine
+    image: nginxproxy/nginx-proxy:1.11-alpine
     container_name: nitrowater-nginx-proxy
     ports:
       - "80:80"
@@ -80,7 +85,7 @@ services:
   # 按容器的 LETSENCRYPT_HOST 自动签发 / 续期证书（HTTP-01）。
   acme-companion:
     profiles: ["edge"]
-    image: nginxproxy/acme-companion:2.3
+    image: nginxproxy/acme-companion:2.8.2
     container_name: nitrowater-acme
     environment:
       DEFAULT_EMAIL: ${SSL_EMAIL:-}

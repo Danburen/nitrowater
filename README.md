@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-danburen%2Fnitrowater-181717?logo=github)](https://github.com/danburen/nitrowater)
 [![Gitee](https://img.shields.io/badge/Gitee-blackwallet%2Fnitrowater-c71d23?logo=gitee)](https://gitee.com/blackwallet/nitrowater)
 ![Java](https://img.shields.io/badge/Java-25-orange)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.2-brightgreen)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
@@ -75,10 +75,10 @@ Eleven tools, most of them running entirely in the browser (WebAssembly / worker
 
 | Requirement | Notes |
 |---|---|
-| JDK 25 | Backend toolchain |
-| Node 24 + pnpm 11 | `nitrowater-web` uses npm; `nitrowater-account` is a pnpm workspace |
+| JDK 25 (Temurin) | Backend toolchain (local 25.0.4.1); Docker stages pin `eclipse-temurin:25.0.5_8-{jdk,jre}` |
+| Node 24 + pnpm 11.18.0 | Local dev on Node 24.18.0; Docker/CI pin node `24.22.3` |
 | Docker | Piston, Qdrant and the plugin docs site |
-| MySQL 8 and Redis | Local services on `3306` / `6379` (`root` / `123456` by default) |
+| MySQL 8.0 / Redis 7.4 | Local services on `3306` / `6379` (`root` / `123456` by default); compose pins `mysql:8.0.46` / `redis:7.4.9-alpine` |
 
 ### Three commands
 

@@ -63,13 +63,13 @@ Ensure-DockerContainer 'nitrowater-piston' 2000 'NitroWater - Piston' {
 
 # ---- Qdrant: third-party vector index for the documentation assistant (:6334 gRPC) ----
 # If Docker Hub is unreachable, pull through a mirror first and tag it locally, e.g.
-#   docker pull docker.m.daocloud.io/qdrant/qdrant:v1.18.3
-#   docker tag  docker.m.daocloud.io/qdrant/qdrant:v1.18.3 qdrant/qdrant:v1.18.3
+#   docker pull docker.m.daocloud.io/qdrant/qdrant:v1.20.1
+#   docker tag  docker.m.daocloud.io/qdrant/qdrant:v1.20.1 qdrant/qdrant:v1.20.1
 Ensure-DockerContainer 'nitrowater-qdrant' 6334 'NitroWater - Qdrant' {
     & docker run -d --name nitrowater-qdrant `
         -p 6333:6333 -p 6334:6334 `
         -v nitrowater-qdrant-data:/qdrant/storage `
-        qdrant/qdrant:v1.18.3 | Out-Null
+        qdrant/qdrant:v1.20.1 | Out-Null
 }
 
 # ---- docs: ONE nginx container hosting every plugin's documentation (127.0.0.1:8085) ----

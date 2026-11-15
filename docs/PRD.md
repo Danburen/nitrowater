@@ -73,7 +73,7 @@
 ### 2.1 nitrowater（当前工程，本 PRD 的落点）
 
 - **工程形态**：Gradle 多模块，`rootProject.name = nitrowater`
-  - Java 25（toolchain）、Gradle 9.7.1（wrapper）、Spring Boot **4.1.1**、`io.spring.dependency-management` 1.1.7
+  - Java 25（toolchain）、Gradle 9.7.1（wrapper）、Spring Boot **4.1.2**、`io.spring.dependency-management` 1.1.7
 - **模块清单**：
 
 | 模块                  | 现有依赖                                                                     | 当前状态（2026-10-07）   | 目标职责                                        |
@@ -228,7 +228,7 @@ nitrowater（Gradle monorepo）
 
 | 层    | 选型                                                                 |
 | ---- | ------------------------------------------------------------------ |
-| 后端   | Spring Boot 4.1.1 / Java 25 / Spring Security + OAuth2 Authorization Server |
+| 后端   | Spring Boot 4.1.2 / Java 25 / Spring Security + OAuth2 Authorization Server |
 | 认证   | OIDC（PKCE）、RS256 JWT、JWKS `/oauth2/jwks`                |
 | 存储   | MySQL 8（SSO 库 + 业务库分库）、Redis（AT jti / RT family / 验证码 / 判题会话）  |
 | 判题   | MVP：受限子进程；目标态：Docker API（每任务容器、资源限额、网络 drop）                        |
@@ -544,7 +544,7 @@ nitrowater（Gradle monorepo）
 | R3  | 上游 D1–D9 决策点未拍板 → 库表/路径返工                                         | 中  | §12 列为评审前置项；未拍板前只做接口兼容层                                       |
 | R4  | Windows（开发）与 Linux（部署）沙箱行为差异                                       | 中  | 沙箱抽象层双实现（子进程/Docker），判题用例双环境跑同一套 e2e                          |
 | R5  | wtools 合并后 hash 路由 + SSO 回调页的路径冲突                                  | 低  | 回调路径 `/auth/**` 显式加入免登白名单；保留 hash 路由避免全站改 history 模式           |
-| R6  | Spring Boot 4.1.1 + Java 25 为新版本，生态踩坑（本项目初始化已遇 wrapper 超时、悬空依赖等问题） | 低  | 锁版本、CI 每次全量构建；问题修复记入 `docs/`                                    |
+| R6  | Spring Boot 4.1.2 + Java 25 为新版本，生态踩坑（本项目初始化已遇 wrapper 超时、悬空依赖等问题） | 低  | 锁版本、CI 每次全量构建；问题修复记入 `docs/`                                    |
 | R7  | 判题并发打满服务器资源                                                | 中  | 全局并发闸门 + 单用户配额 + 队列削峰（FR-2.7）                                  |
 
 ---

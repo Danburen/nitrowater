@@ -10,6 +10,12 @@
 #   docker build --target server   -t nitrowater-server:local   .
 #   docker build --target bff      -t nitrowater-bff:local      .
 # CI（docker/build-push-action）用 target 分别构建各镜像。
+#
+# Base image tags are the newest patch of the same major/minor line as the local
+# toolchain, so a host build and an image build behave the same:
+#   local Node 24.18.0 / pnpm 11.18.0  -> image node:24.22.3-alpine
+#   local Temurin 25.0.4.1+1           -> image eclipse-temurin:25.0.5_8
+# Bump them together with the toolchain (java { toolchain } / packageManager).
 # ============================================================
 # ==================== account UIs (pnpm workspace) ====================
 # Both SPAs and the shared packages live in one pnpm workspace at nitrowater-account/.
@@ -17,7 +23,7 @@
 # nitrowater-account/src/main/resources/static/{admin,auth} (same relative layout), which
 # the gradle stage overlays. Gradle then runs with -PskipAdminUi -PskipAuthUi so it never
 # shells out to node/pnpm.
-FROM node:24-alpine AS ui-base
+FROM node:24.22.3-alpine AS ui-base
 WORKDIR /build/nitrowater-account
 # pnpm 11 requires Node >= 22.13; node:24-alpine also matches local dev.
 RUN npm install -g pnpm@11.18.0
@@ -41,7 +47,7 @@ RUN pnpm --filter auth-ui build
 # The BFF serves the built SPA from classpath:/static/ (see WebConfig + the processResources
 # hook in nitrowater-bff/build.gradle). Build it here and overlay the output into the gradle
 # stage, so the bff image is self-contained — no host-side `npm run build`, no bind mount.
-FROM node:24-alpine AS web-ui
+FROM node:24.22.3-alpine AS web-ui
 WORKDIR /build/nitrowater-web
 COPY nitrowater-web/package.json nitrowater-web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -49,7 +55,7 @@ COPY nitrowater-web/ ./
 RUN npm run build
 
 # ==================== build (gradle, all modules) ====================
-FROM eclipse-temurin:25-jdk AS build
+FROM eclipse-temurin:25.0.5_8-jdk AS build
 WORKDIR /app
 
 COPY gradlew settings.gradle build.gradle ./
@@ -73,7 +79,7 @@ RUN chmod +x gradlew && ./gradlew --no-daemon -x test -PskipAdminUi -PskipAuthUi
       :nitrowater-server:bootJar :nitrowater-resource:bootJar
 
 # ==================== Runtime base ====================
-FROM eclipse-temurin:25-jre AS runtime-base
+FROM eclipse-temurin:25.0.5_8-jre AS runtime-base
 WORKDIR /app
 
 # ==================== Runtime: account (SSO) ====================

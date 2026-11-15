@@ -1,6 +1,6 @@
 plugins {
     id 'java-library'
-    id 'org.springframework.boot' version '4.1.1'
+    id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -33,7 +33,7 @@ dependencies {
     // Spring MVC / Security types, so consumers compile against them.
     api 'org.springframework:spring-webmvc'
     api 'org.springframework.security:spring-security-web'
-    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.0.0'
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     compileOnly 'org.slf4j:slf4j-api'
 
     compileOnly 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -41,8 +41,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'org.springframework:spring-aop'
-    implementation 'org.aspectj:aspectjweaver:1.9.25.1'
-    implementation 'com.github.ben-manes.caffeine:caffeine:3.2.3'
+    implementation 'org.aspectj:aspectjweaver:1.9.27'
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.3.1'
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.springframework.security:spring-security-core'
     // Exported through the public AudienceValidator signature (OAuth2TokenValidator<Jwt>).
@@ -51,12 +51,12 @@ dependencies {
     // to authorities with the same converter instead of keeping its own copy.
     api 'org.springframework.security:spring-security-oauth2-resource-server'
     implementation 'org.springframework:spring-web'
-    implementation 'cn.hutool:hutool-captcha:5.8.26'
+    implementation 'cn.hutool:hutool-captcha:5.8.48'
     implementation 'org.mindrot:jbcrypt:0.4'
-    implementation 'org.jetbrains:annotations:26.0.2'
-    implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
-    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+    implementation 'org.jetbrains:annotations:26.1.0'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.7'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.7'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.7'
     implementation 'tools.jackson.core:jackson-databind'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
