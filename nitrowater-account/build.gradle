@@ -29,7 +29,7 @@ dependencies {
 
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.springframework.security:spring-security-oauth2-jose'
-    implementation 'io.swagger.core.v3:swagger-annotations:2.2.55'
+    implementation 'io.swagger.core.v3:swagger-annotations:3.0.0'
 
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
@@ -53,9 +53,9 @@ dependencies {
     implementation 'cn.hutool:hutool-captcha:5.8.48'
     implementation 'org.mindrot:jbcrypt:0.4'
     implementation 'org.jetbrains:annotations:26.1.0'
-    implementation 'io.jsonwebtoken:jjwt-api:0.12.7'
-    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.7'
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.7'
+    implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
 
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     runtimeOnly 'org.flywaydb:flyway-mysql'

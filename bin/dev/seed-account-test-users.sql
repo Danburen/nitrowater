@@ -25,6 +25,8 @@ SET @aes_key_id = (
 
 -- Deterministic 90000000xx uids never collide with the 10-digit generated uid space
 -- (generator prefix=1, length=10).
+-- MySQL 8.4: the row alias (`AS new`) is the supported replacement for VALUES(col) in
+-- ON DUPLICATE KEY UPDATE, which is deprecated since 8.0.20.
 INSERT INTO `user`
     (uid, username, password_hash, account_status, user_type, level, exp, nickname)
 VALUES
@@ -33,11 +35,12 @@ VALUES
     (9000000003, 'testdisabled', @pwd_hash, 1, 0, 1, 0, 'Disabled'),
     (9000000004, 'testnopwd',    NULL,      0, 0, 1, 0, 'No Password'),
     (9000000005, 'testadminpw',  @pwd_hash, 0, 1, 1, 0, 'Pwd Admin')
+AS new
 ON DUPLICATE KEY UPDATE
-    password_hash  = VALUES(password_hash),
-    account_status = VALUES(account_status),
-    user_type      = VALUES(user_type),
-    nickname       = VALUES(nickname);
+    password_hash  = new.password_hash,
+    account_status = new.account_status,
+    user_type      = new.user_type,
+    nickname       = new.nickname;
 
 -- A user_data row is required by the account-info API. It can carry no phone/email:
 -- both hash columns are NULL, and MySQL unique indexes allow multiple NULLs.
@@ -47,7 +50,7 @@ SELECT u.uid, @aes_key_id, 0, 0
   FROM `user` u
  WHERE u.username IN ('testops', 'testlab', 'testdisabled', 'testnopwd', 'testadminpw')
 ON DUPLICATE KEY UPDATE
-    encryption_key_id = VALUES(encryption_key_id);
+    encryption_key_id = @aes_key_id;
 
 INSERT IGNORE INTO user_role (uid, role_id)
 SELECT u.uid, r.id

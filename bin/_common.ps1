@@ -96,7 +96,21 @@ function Resolve-JavaExe {
     throw 'java.exe not found; set NITROWATER_JAVA to a JDK 25 java.exe'
 }
 $JavaExe     = Resolve-JavaExe
-$MysqlExe    = if ($env:NITROWATER_MYSQL) { $env:NITROWATER_MYSQL } else { 'E:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe' }
+# MySQL client: newest installed server wins (8.4 after the LTS upgrade), then PATH.
+# Override with NITROWATER_MYSQL when a specific client is required.
+function Resolve-MysqlExe {
+    if ($env:NITROWATER_MYSQL) { return $env:NITROWATER_MYSQL }
+    foreach ($v in @('8.4', '8.0')) {
+        foreach ($root in @('E:\Program Files\MySQL', 'C:\Program Files\MySQL')) {
+            $p = Join-Path $root "MySQL Server $v\bin\mysql.exe"
+            if (Test-Path -LiteralPath $p) { return $p }
+        }
+    }
+    $cmd = Get-Command mysql.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    throw 'mysql.exe not found; set NITROWATER_MYSQL to a mysql client path'
+}
+$MysqlExe    = Resolve-MysqlExe
 $RedisDir    = if ($env:NITROWATER_REDIS_DIR) { $env:NITROWATER_REDIS_DIR } else { 'E:\Program Files\Redis' }
 $RedisCli    = Join-Path $RedisDir 'redis-cli.exe'
 $Gradlew     = Join-Path $RepoRoot 'gradlew.bat'
@@ -232,9 +246,19 @@ function Start-ModuleJar([string]$Module, [int]$Port, [switch]$NoWait, [switch]$
     return $false
 }
 
-# ---- Redis helper (returns $null for a missing key) ----
+# ---- Redis helper (returns $null for a missing key; Docker-first, see below) ----
 function Get-RedisValue([string]$Key) {
-    $v = & $RedisCli -h 127.0.0.1 -p 6379 GET $Key 2>$null
+    # Dev Redis runs in Docker (container nitrowater-redis, redis:8.10.3 - see bin/start-infra.ps1).
+    # Read through `docker exec` when it is up so the value comes from the SAME server the
+    # backend services talk to; fall back to a local Windows redis-cli otherwise.
+    $v = $null
+    $containers = @()
+    try { $containers = @(& docker ps --format '{{.Names}}' 2>$null) } catch { }
+    if ($containers -contains 'nitrowater-redis') {
+        $v = & docker exec nitrowater-redis redis-cli --no-auth-warning GET $Key 2>$null
+    } elseif (Test-Path -LiteralPath $RedisCli) {
+        $v = & $RedisCli -h 127.0.0.1 -p 6379 GET $Key 2>$null
+    }
     if ($null -eq $v -or $v -eq '(nil)') { return $null }
     return $v
 }

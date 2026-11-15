@@ -12,10 +12,9 @@ name: nitrowater-infra
 
 services:
   mysql:
-    # MySQL 8.0 line: one patch ahead of the local dev server (8.0.40), so Flyway/DDL
-    # behaviour stays identical. Deliberately NOT on 8.4 yet - that series flips the
-    # default auth plugin and drops features, so it needs a drop+replay check first.
-    image: mysql:8.0.46
+    # 8.4 LTS - the same line as the local dev server (8.4.13), so Flyway/DDL behave
+    # identically on the host and in compose. Keep this tag in step with the local install.
+    image: mysql:8.4.13
     container_name: nitrowater-mysql
     environment:
       # root 只用于首次手工建库 / 运维；业务连接走 DB_USERNAME（见 deploy/docs/bootstrap.md §5）。
@@ -40,9 +39,10 @@ services:
       - nitrowater-net
 
   redis:
-    # Newest 7.4 patch (the local Windows port is stuck on 5.x and is not a useful
-    # reference). Staying on major 7: 8.x is a real major jump (new modules, AGPLv3).
-    image: redis:7.4.9-alpine
+    # 8.10.3 - dev now runs Redis from Docker on the same version as production, so the
+    # local Windows port (stuck on 5.x) is out of the picture. Start it with
+    # bin/start-infra.ps1 (container nitrowater-redis).
+    image: redis:8.10.3-alpine
     container_name: nitrowater-redis
     volumes:
       - nitrowater-redis:/data

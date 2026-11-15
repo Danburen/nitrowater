@@ -78,7 +78,7 @@ Eleven tools, most of them running entirely in the browser (WebAssembly / worker
 | JDK 25 (Temurin) | Backend toolchain (local 25.0.4.1); Docker stages pin `eclipse-temurin:25.0.5_8-{jdk,jre}` |
 | Node 24 + pnpm 11.18.0 | Local dev on Node 24.18.0; Docker/CI pin node `24.22.3` |
 | Docker | Piston, Qdrant and the plugin docs site |
-| MySQL 8.0 / Redis 7.4 | Local services on `3306` / `6379` (`root` / `123456` by default); compose pins `mysql:8.0.46` / `redis:7.4.9-alpine` |
+| MySQL 8.4 / Redis 8 | Local dev: MySQL 8.4.13 Windows service; Redis runs in Docker (`bin/start-infra.ps1`, `redis:8.10.3-alpine`). Compose pins `mysql:8.4.13` / `redis:8.10.3-alpine` |
 
 ### Three commands
 

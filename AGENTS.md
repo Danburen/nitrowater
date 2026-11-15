@@ -9,7 +9,7 @@
 - 命令（仓库根）：`.\gradlew.bat build`；单模块 `.\gradlew.bat :<module>:bootRun`。
 - 前端（`nitrowater-web/`）：`npm run lint` / `npm run build`（dev 固定 5173）。
 - account 前端（`nitrowater-account/`）：admin-ui/auth-ui 为 **pnpm workspace**（Node 24 + pnpm 11，共享包在 `packages/*`）；模块根 `pnpm install` 一次即可，Gradle 构建会自动调用 pnpm（`-PskipAdminUi`/`-PskipAuthUi` 可跳过，Docker 内由 node stage 构建）。
-- 运行前置：host MySQL(3306, root/123456)、Redis(6379)；资源字节落本地目录（无需对象存储）；account 需 `NITROWATER_KEK`（bootRun 注入 dev 默认）。
+- 运行前置：host MySQL 8.4（3306, root/123456）、Redis 8.10.3（docker 容器 `nitrowater-redis`，6379，由 `bin/start-infra.ps1` 拉起）；资源字节落本地目录（无需对象存储）；account 需 `NITROWATER_KEK`（bootRun 注入 dev 默认）。
 
 ## 数据库 / Schema 约定（强制）
 

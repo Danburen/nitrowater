@@ -1,10 +1,10 @@
 ﻿# ============================================================
 # stop-all.ps1 - Stop everything started by start-all / start-infra.
 #
-#   - backend listeners  : 8090 account, 8080 bff, 8081 server, 8093 resource, 6379 redis
+#   - backend listeners  : 8090 account, 8080 bff, 8081 server, 8093 resource
 #   - web listener       : 5173 Vite dev server - ONLY with -WithWeb (you start the frontend
 #                          yourself, so by default it is left alone)
-#   - docker containers  : nitrowater-piston, nitrowater-docs, nitrowater-qdrant
+#   - docker containers  : nitrowater-piston, nitrowater-docs, nitrowater-qdrant, nitrowater-redis
 #   - tracked PIDs       : the exact PIDs recorded by the start scripts in bin\.run\*.pid
 #   - MySQL              : left running by default (system service); -StopMysql to stop it
 #
@@ -20,7 +20,11 @@ param(
     [switch]$WithWeb
 )
 
-$MysqlService = 'MySQL'
+# Service name follows the installed server (MySQL84 after the 8.4 LTS upgrade).
+$MysqlService = @('MySQL84', 'MySQL8.4', 'MySQL', 'MySQL80') |
+    Where-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } |
+    Select-Object -First 1
+if (-not $MysqlService) { $MysqlService = 'MySQL' }
 
 # Shared helpers: Write-*, Test-Port, $RunDir. See _common.ps1 for why we must NEVER
 # kill by window title with a wildcard (it wiped the desktop once).
@@ -38,8 +42,7 @@ $targets = @(
     [pscustomobject]@{ Port = 8090; Name = 'account'  },
     [pscustomobject]@{ Port = 8080; Name = 'bff'      },
     [pscustomobject]@{ Port = 8081; Name = 'server'   },
-    [pscustomobject]@{ Port = 8093; Name = 'resource' },
-    [pscustomobject]@{ Port = 6379; Name = 'redis'    }
+    [pscustomobject]@{ Port = 8093; Name = 'resource' }
 )
 if ($WithWeb) { $targets += [pscustomobject]@{ Port = 5173; Name = 'web' } }
 
@@ -60,7 +63,7 @@ Write-Step 'Stopping docker containers'
 try {
     & docker info *> $null
     if ($LASTEXITCODE -eq 0) {
-        foreach ($c in @('nitrowater-piston', 'nitrowater-docs', 'nitrowater-qdrant')) {
+        foreach ($c in @('nitrowater-piston', 'nitrowater-docs', 'nitrowater-qdrant', 'nitrowater-redis')) {
             $running = @(& docker ps --format '{{.Names}}')
             if ($running -contains $c) { & docker stop $c | Out-Null; Write-Ok "stopped container $c" }
             else {

@@ -1,8 +1,9 @@
 ﻿# ============================================================
 # start-infra.ps1 - One-click start of ALL infra services (local dev).
 #
-#   MySQL      3306 : Windows service 'MySQL'                 (no window)
-#   Redis      6379 : redis-server.exe                        -> own console window
+#   MySQL      3306 : Windows service 'MySQL84'/'MySQL'      (no window; auto-detected)
+#   Redis      6379 : docker container nitrowater-redis       -> docker logs -f window
+#                     (redis:8.10.3-alpine - same major as production)
 #   Piston     2000 : docker container nitrowater-piston      -> docker logs -f window
 #   docs       8085 : docker container nitrowater-docs        -> docker logs -f window
 #                     (nginx hosting ALL plugin docs; the BFF forwards /plugin/** here)
@@ -28,7 +29,11 @@ $ErrorActionPreference = 'Stop'
 $RedisDir     = if ($env:NITROWATER_REDIS_DIR) { $env:NITROWATER_REDIS_DIR } else { 'E:\Program Files\Redis' }
 $RedisServer  = Join-Path $RedisDir 'redis-server.exe'
 $RedisConf    = Join-Path $RedisDir 'redis.conf'
-$MysqlService = 'MySQL'
+# Service name follows the installed server (MySQL84 after the 8.4 LTS upgrade).
+$MysqlService = @('MySQL84', 'MySQL8.4', 'MySQL', 'MySQL80') |
+    Where-Object { Get-Service -Name $_ -ErrorAction SilentlyContinue } |
+    Select-Object -First 1
+if (-not $MysqlService) { $MysqlService = 'MySQL' }
 
 # ---- MySQL (Windows service; no window) ----
 Write-Step 'MySQL (3306)'
@@ -39,15 +44,28 @@ else {
     if (Wait-Port 3306 40) { Write-Ok 'up (3306)' } else { Write-Err 'MySQL not reachable on 3306' }
 }
 
-# ---- Redis (own window; launched from its install dir so no path quoting is needed) ----
-Write-Step 'Redis (6379)'
-if (Test-Port 6379) { Write-Ok 'already up' }
-elseif (-not (Test-Path -LiteralPath $RedisServer)) { Write-Err "redis-server.exe not found: $RedisServer" }
-else {
-    $conf = if (Test-Path -LiteralPath $RedisConf) { Split-Path $RedisConf -Leaf } else { '' }
-    Save-WindowPid 'redis' (Start-Window 'NitroWater - Redis' "redis-server.exe $conf" $RedisDir)
-    if (Wait-Port 6379 20) { Write-Ok 'up (6379)' } else { Write-Warn 'Redis not reachable on 6379 yet (see its window)' }
+# ---- Redis (docker: redis:8.10.3-alpine) ----
+# Dev runs the same major as production, so the Windows port (stuck on 5.x) is retired.
+# A redis-server.exe still holding 6379 is stopped first - otherwise the container cannot bind.
+Write-Step 'Redis (6379, docker)'
+$RedisImage = 'redis:8.10.3-alpine'
+$holder = Get-NetTCPConnection -State Listen -LocalPort 6379 -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($holder) {
+    $proc = Get-Process -Id $holder.OwningProcess -ErrorAction SilentlyContinue
+    if ($proc -and $proc.ProcessName -eq 'redis-server') {
+        Write-Warn "stopping local redis-server.exe (pid $($proc.Id)) so the container can bind 6379"
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        $release = (Get-Date).AddSeconds(10)
+        while ((Test-Port 6379) -and ((Get-Date) -lt $release)) { Start-Sleep -Milliseconds 300 }
+    }
 }
+Ensure-DockerContainer 'nitrowater-redis' 6379 'NitroWater - Redis' {
+    & docker rm -f nitrowater-redis *> $null
+    & docker run -d --name nitrowater-redis `
+        -p 6379:6379 `
+        -v nitrowater-redis-dev:/data `
+        $RedisImage redis-server --appendonly yes | Out-Null
+} -Recreate
 
 # ---- Docker containers (+ live log windows); Ensure-DockerContainer comes from _common.ps1 ----
 Ensure-DockerContainer 'nitrowater-piston' 2000 'NitroWater - Piston' {
