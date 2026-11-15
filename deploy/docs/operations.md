@@ -186,7 +186,7 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 | 上传 413，容器日志无请求 | 反代 `client_max_body_size` 1m | 改 100m |
 | AI 回答断流 / 整段刷出 | 反代 timeout / buffering | `proxy_buffering off; proxy_read_timeout 300s;` |
 | `/plugin/*` 404 | `plugin-docs` 没传 | 见 bootstrap §7 |
-| 点"运行"报错 | Piston 语言包没装 | `ppman install java/c/c++` |
+| 点"运行"报错 / 语言不可用 | Piston 镜像不含语言包 | 跑 §8 第一条安装命令（见 §8） |
 | `manifest unknown` | `GITHUB_REPOSITORY` 仍是 your-org | 改 `.env` 或由 CI 注入 |
 | bff 不健康 | OIDC discovery / 连库 / KEK | `docker logs nitrowater-bff` |
 
@@ -198,3 +198,84 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<WEB_DOMAIN>/internal/r
 curl -s -o /dev/null -w '%{http_code}\n' https://<WEB_DOMAIN>/api/ai/status                      # 401
 ss -lntp | grep -E ':(3306|6379|6333|8081|8093|9080)\b'   # 只应出现 127.0.0.1
 ```
+
+## 8. Piston 语言运行时（加语言）
+
+镜像**没有语言包**，也没有 `cli/ppman`。加语言和下节首次装包用的是同一个脚本，指定包名即可：
+
+```bash
+bash deploy/bin/install-piston-runtimes.sh rust            # 索引里最新版
+bash deploy/bin/install-piston-runtimes.sh rust:1.72.0     # 指定版本
+bash deploy/bin/install-piston-runtimes.sh --list          # 索引里有哪些包/版本
+```
+
+脚本做四件事：下官方 tarball → 解到 `/piston/packages/<包>/<版本>/` → 补 `.ppman-installed` 标记 →
+重启 piston 并校验 `/api/v2/runtimes`。包在 `/piston` 卷里，重建 piston 不会丢。
+
+**已安装的处理**：卷里已经有某个版本时默认不动它（打印 `skip rust (installed: 1.68.2, use --upgrade to move on)`）；
+装了一半的目录（没有标记）会 `warn … reinstalling` 就地重装；`--upgrade` 才会去装索引里的最新版（旧版本目录保留）。
+
+> **别用 `POST /api/v2/packages`**：它每次都会去 GitHub 拉包索引，跨境拉不动时会把 piston API 进程打死
+> （`curl: (52) Empty reply`，之后要 `docker restart`）。脚本完全绕开它。
+> 首次装齐见 `bootstrap.md` §7。
+
+### 版本与源
+
+| 需求 | 做法 |
+|---|---|
+| 要最新版（且没装过） | 只写包名（`rust`）；脚本用 `sort -V` 比较，不会把 `3.9.4` 当成比 `3.12.0` 新 |
+| 已经装过、想升到最新 | `--upgrade`（`bash deploy/bin/install-piston-runtimes.sh --upgrade rust`）；旧版本目录保留，确认后再删 |
+| 要可复现 | 写完整版号（`python:3.12.0`），`--list` 里挑 |
+| 换代理 | `PISTON_MIRROR=https://ghproxy.net/ bash deploy/bin/install-piston-runtimes.sh …` |
+| 换下载缓存目录 | `PISTON_DL_DIR=/data/piston-dl …`（默认 `/var/tmp/piston-dl`，断点续传用） |
+| 换容器名 | `PISTON_CONTAINER=nitrowater-piston …`（默认就是它） |
+
+### 验收
+
+```bash
+# 清单（脚本末尾已经打过一次）
+docker exec nitrowater-piston node -e "require('http').get('http://127.0.0.1:2000/api/v2/runtimes',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log(d))})"
+
+# 真跑一段比看列表靠谱（借一次性 curl 容器连 piston）
+docker run --rm --network container:nitrowater-piston curlimages/curl:latest \
+  -fsS -X POST http://127.0.0.1:2000/api/v2/execute \
+  -H 'Content-Type: application/json' \
+  -d '{"language":"rust","version":"1.72.0","files":[{"name":"main.rs","content":"fn main(){println!(\"ok\");}"}]}'
+```
+
+### 包名 ≠ 语言名（一个包提供多个语言）
+
+| 包 | 提供的语言 |
+|---|---|
+| `gcc` | `c` / `c++` / `d` / `fortran` |
+| `node` | `javascript`（别名 `js` / `node-js` …） |
+| `typescript` | `typescript`（包里自带 `bin/node`，不用另装 `node`） |
+| `java` / `python` / `lua` | 各自一个 |
+
+脚本安装完会按这张表校验：`gcc` 装完应有 `c`，`node` 装完应有 `javascript`，缺了会报 `MISSING`。
+
+### 装完 ≠ 用户能选：接到应用里
+
+Piston 里装好只是第一步：后端有一张**白名单**、前端有一份**语言目录**，缺一处就会点不到，
+或者点了报 `unsupported_language`。
+
+| 改动点 | 说明 |
+|---|---|
+| `nitrowater-server/.../service/sandbox/LanguageMapper.java` | `TARGETS` 加一条 `前端id → (piston 语言, 版本, 文件名)`。版本写 `"*"`（取已装里最新，和现有条目一致）或固定完整版号；**编译型文件名不带扩展名**（Piston 自己补，带了会变成 `main.rs.rs`），脚本型带真实扩展名 |
+| `nitrowater-web/src/features/tools/code-runner/langCatalog.ts` | `RUNNER_LANGUAGES` 加一条（`id/label/badge/engine:'server'/available:true/cacheKey/defaultCode`），并把 id 加进 `ServerLanguageId` 联合类型 |
+| `nitrowater-web/src/features/tools/code-runner/samples.json` | 给新 id 一份起手示例（`SAMPLES` 是 `Record<RunnerLanguageId, string>`，漏了会编译报错） |
+| 可选 `service/shared/LanguagePrelude.java`、`CompileErrors.java` | 想给默认 import/头文件就加一个 `case`；不加则原样执行、编译错误按运行时错误展示 |
+
+示例（接 Rust，`rust` 包已装）：
+
+```java
+// LanguageMapper.TARGETS
+Map.entry("rust", new Target("rust", "*", "main")),
+```
+
+```ts
+// langCatalog.ts
+export type ServerLanguageId = 'java' | 'c' | 'cpp' | 'rust'
+```
+
+改完重新构建并发布镜像 —— `deploy/bin/deploy.sh` 只拉镜像、不做构建，所以必须先在 CI 出 image。

@@ -70,6 +70,7 @@ Remove-Item "$env:TEMP\nitrowater-deploy.tgz"
 | 环境自检 / 部署门禁 | `check-env.sh` |
 | 备份 MySQL（`deploy.sh` 发版前自动执行） | `backup_mysql.sh` |
 | 备份资源字节（`RESOURCE_DATA_DIR` 快照） | `backup_resource.sh` |
+| 给 Piston 装语言包（首次 / 加语言） | `install-piston-runtimes.sh` |
 | 运维 UI 隧道 | `ops-tunnel.sh` |
 
 全部是 `.sh`：Windows 用 Git Bash 或 WSL。开发期脚本在 `bin/dev/`，不属于上线路径。

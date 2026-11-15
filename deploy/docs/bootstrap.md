@@ -159,15 +159,50 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app
 
 验收：`nitrowater-bff` healthy；`curl http://127.0.0.1:8080/api/public/ping` 返回 pong。
 
-## 7. 收尾
+## 7. 收尾：Piston 语言包 + 插件文档
+
+piston 镜像里**一个语言包都没有**（也没有 `cli/ppman`）。它启动时只注册 `/piston/packages/<包>/<版本>/`
+里**带 `.ppman-installed` 标记**的目录，而官方 tarball 不带这个标记。仓库里的脚本把这几步都做了：
 
 ```bash
-# Piston 语言包（只装一次；漏装 = 用户点"运行"才 500）
-docker exec nitrowater-piston cli/index.js ppman install java
-docker exec nitrowater-piston cli/index.js ppman install c
-docker exec nitrowater-piston cli/index.js ppman install c++
+bash deploy/bin/install-piston-runtimes.sh
+```
 
-# 插件站点文档（约 1.8 MB，不在仓库里；不传则 /plugin/* 404）
+它按默认清单装 6 个包（`java` `gcc` `node` `python` `typescript` `lua`；`gcc` 提供 `c`/`c++`，
+`node` 提供 `javascript`），版本取索引里最高版，包经 `PISTON_MIRROR`（默认 `https://gh-proxy.org/`）
+下载——**服务器不需要直连 GitHub**。
+
+- 包先落 `/var/tmp/piston-dl`，有进度条；**Ctrl-C 中止后重跑会断点续传**，已装的打印 `skip`。
+- **已安装的会自动跳过**（`skip java (installed: 15.0.2)`），不会重复下载；装了一半的目录会 `warn … reinstalling` 就地重装。
+- 要升到索引里的最新版用 `--upgrade`（旧版本目录保留在卷里，确认没问题再手动删）。
+- 装完自动 `docker restart nitrowater-piston`，再打印 `/api/v2/runtimes`。
+- 退出码：`0` 请求的包都在位并已注册；`1` 有包失败（其余照装）；`2` 容器/参数有问题。
+
+常用变体：
+
+```bash
+bash deploy/bin/install-piston-runtimes.sh --dry-run                     # 只看会装什么（含已装的跳过）
+bash deploy/bin/install-piston-runtimes.sh --list                        # 索引里有哪些包/版本
+bash deploy/bin/install-piston-runtimes.sh --upgrade                     # 有新版才装
+bash deploy/bin/install-piston-runtimes.sh rust:1.72.0                   # 只装某个语言的指定版本
+PISTON_MIRROR=https://ghproxy.net/ bash deploy/bin/install-piston-runtimes.sh   # 换代理
+```
+
+### 验收
+
+脚本末尾会打印 runtimes，应看到 **9 条**：`c` / `c++` / `d` / `fortran`（都来自 `gcc`）、`java`、`lua`、
+`javascript`（来自 `node`）、`python`、`typescript`。手工再查一次：
+
+```bash
+docker exec nitrowater-piston node -e "require('http').get('http://127.0.0.1:2000/api/v2/runtimes',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log(d))})"
+```
+
+以后加语言见 `operations.md` §8。
+
+### 插件站点文档
+
+```bash
+# 约 1.8 MB，不在仓库里；不传则 /plugin/* 404
 scp -r deploy/plugin-docs/* <host>:/opt/nitrowater/deploy/plugin-docs/
 ```
 
@@ -218,7 +253,7 @@ WHERE u.username = '<用户名>';"
 - [ ] `deploy/` 已上传；`.env` 无占位值，`check-env` 0 FAIL
 - [ ] mysql/redis healthy；三个库 + 业务账号存在
 - [ ] account discovery 可达；bff healthy；`/api/public/ping` pong
-- [ ] Piston 语言包装好；`plugin-docs` 已上传
+- [ ] Piston 6 个语言包已装（§7 的 `install-piston-runtimes.sh` 跑完，`/api/v2/runtimes` 能看到 `java` / `c` / `javascript` / `python` / `typescript` / `lua`）；`plugin-docs` 已上传
 - [ ] https 生效；`/actuator/health` 非 200；上传 5 MB 不是 413
 - [ ] 首个 `SUPER_ADMIN` 已授权并重新登录
 - [ ] MySQL 基线备份完成；KEK 已离线保存
@@ -247,6 +282,9 @@ WHERE u.username = '<用户名>';"
 | 入口（§8） | 登录后跳 `localhost:5173`，或 `invalid redirect_uri` | 7 个地址写浏览器看到的公网地址；反代必须发 `X-Forwarded-Proto` 与 `X-Forwarded-Host` |
 | 入口（§8） | 上传 413，或 AI 回答整段刷出 | 反代 `client_max_body_size 100m`、`proxy_buffering off`、`proxy_read_timeout 300s` |
 | 入口（§8） | `/actuator/health` 返回 200 | 管理面必须不可达：反代 `location ~ ^/(actuator\|internal)(/\|$){ return 404; }` |
-| 运行期（§7） | 点「运行」才 500 | Piston 语言包没装：`ppman install java` / `c` / `c++` |
+| 运行期（§7） | 点「运行」才 500 | Piston 语言包没装：跑 §7 的 `install-piston-runtimes.sh`（**没有 `ppman`/`cli/`**，`docker exec … cli/index.js` 一定报 ENOENT） |
+| 运行期（§7） | 装完 `/api/v2/runtimes` 里没有 | 少了 `.ppman-installed` 标记文件（piston 只注册带标记的目录）：重跑脚本会自动补；仍不行看 `docker logs nitrowater-piston` |
+| 运行期（§7） | 装包时 `curl: (52) Empty reply` | 那是 `POST /api/v2/packages`（会去拉 GitHub 索引，拉不到就打挂 API）：`docker restart nitrowater-piston`，改用 §7 的脚本 |
+| 运行期（§7） | 脚本报 `FAILED … (download)` | 代理不可用：换前缀重跑（`PISTON_MIRROR=https://ghproxy.net/ bash deploy/bin/install-piston-runtimes.sh`），已装的会 `skip` |
 | 运行期（§7） | `/plugin/*` 404 | `plugin-docs` 被 gitignore，**不在**同步包里，必须手工上传 |
 | 运行期（§4） | `check-env` 输出一堆 `[WARN]` | WARN 不阻断（写了但没被 compose 引用）；只清 `[FAIL]` |
