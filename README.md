@@ -55,7 +55,8 @@ Eleven tools, most of them running entirely in the browser (WebAssembly / worker
 ### Plugin centre
 
 - Browse the catalogue with versions, metadata and documentation.
-- Author documentation is a VitePress site under `deploy/plugin-docs`, served same-origin through the BFF at `/plugin/**`.
+- Author documentation is a set of VitePress sites built into one image (`nitrowater-plugin-docs`),
+  served same-origin through the BFF at `/plugin/**` (one site per plugin at `/plugin/<id>/`).
 - JARs and assets are stored by the resource service on local disk (Tencent COS remains a config-only swap), uploaded through admin-only endpoints behind the BFF.
 
 ### NitroBot

@@ -55,7 +55,7 @@
 ### 插件中心
 
 - 按目录浏览插件，带版本、元数据与文档。
-- 作者文档是 `deploy/plugin-docs` 下的 VitePress 站点，经 BFF 的 `/plugin/**` 同源提供。
+- 作者文档是多个 VitePress 站点，构建进一个镜像（`nitrowater-plugin-docs`），经 BFF 的 `/plugin/**` 同源提供（每个插件一个 `/plugin/<id>/`，没有门户页）。
 - JAR 与附件由资源服务存在本地磁盘（腾讯 COS 保留为纯配置切换），上传走 BFF 背后的管理员专属端点。
 
 ### NitroBot

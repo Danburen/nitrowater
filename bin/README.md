@@ -80,7 +80,6 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
 | `bin\dev\reset-sso-db.{ps1,sh}` | 老版本：只清 SSO 表（`reset-db.ps1` 已覆盖，保留兼容） |
 | `bin\dev\seed-test-users.ps1` | 测试用户 `testadmin` / `testuser1` / `testuser`（密码 `Passw0rd123`） |
 | `bin\dev\seed-res.ps1` | 经 `/internal/resource/publish` 发资源夹具（`smoke-plugin`、`samples`） |
-| `bin\dev\sync-docs.ps1` | 构建 VeloChatX 文档站（VitePress），同时镜像到 `deploy\plugin-docs\velochatx\docs`（/plugin/**）与 `static\docs\velochatx`（/docs/**） |
 | `bin\dev\sync-res.ps1` | 把插件 jar 发布到资源服务（`:8093` 直连，不经 BFF） |
 | `bin\dev\install-piston-langs.ps1` | 给 Piston **一次性**装语言运行时（经 `ghproxy.net`） |
 | `bin\dev\common-dev-secrets.yml` | 开发密钥（KEK / DEVICE_SALT / 短信 / Resend），被 account·server 的 `spring.config.import` 读取（**gitignored**） |

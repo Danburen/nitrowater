@@ -1,9 +1,9 @@
 ﻿# ============================================================
 # dev-seed.ps1 - one command to rebuild dev data: reset -> start -> users -> resources.
 #
-# The migrations are the source of truth for SCHEMA + real content; every piece of TEST data
-# (users, resource fixtures) is seeded by script, never baked into a migration, so
-# changing test data never invalidates a Flyway checksum again.
+# The migrations are the source of truth for SCHEMA only: no content is baked into them (changing
+# content would invalidate a Flyway checksum). Catalogue content (plugin rows) is inserted by hand /
+# in the admin console, and every piece of TEST data (users, resource fixtures) is seeded by script.
 #
 # Usage:
 #   .\bin\dev\dev-seed.ps1                       # drop biz, start services, seed everything
@@ -71,5 +71,5 @@ if (-not $SkipResources) {
 Write-Step 'dev-seed done'
 Write-Host '  test users : testadmin / testuser1 / testuser   (password Passw0rd123)'
 Write-Host '  password-only fixtures : testops (SUPER_ADMIN) / testlab / testadminpw / testdisabled / testnopwd'
-Write-Host '  plugin     : velochatx (seeded by the V1 baseline migration)'
+Write-Host '  plugin     : 不在迁移里（运营内容）—— 后台/手工插入'
 Write-Host '  resources  : app=nitrowater group=smoke-plugin / samples'

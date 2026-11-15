@@ -106,8 +106,8 @@ Qdrant 的 schema 初始化关闭（`initialize-schema: false`），索引服务
 
 - 文档语料：`nitrowater-server/src/main/resources/ai/docs/{nitrowater,velochatx}`，由索引器读 markdown 写入 Qdrant。
 - **NitroWater 文档只有 markdown**：不构建站点、不部署静态页，引用只带标题/章节/相对路径（`url` 为空）。
-- VeloChatX 是唯一发布静态站的语料：外部仓库独立演进，产物发布到 `deploy/plugin-docs/velochatx/docs`，由 docs nginx（:8085）托管、BFF 以 `/plugin/**` 同源代理，引用 URL 前缀也是 `/plugin/velochatx/docs/`。
-- 站点不进 jar：`static/docs` 已废弃并忽略，文档更新是纯文件发布（rsync/scp），不需要重新构建 server。
+- VeloChatX 是唯一发布静态站的语料：外部仓库 `nitrowater-plugin-docs` 独立演进，构建成**镜像**后由 docs 容器托管、BFF 以 `/plugin/**` 同源代理，引用 URL 前缀是 `/plugin/velochatx/`。
+- 站点不进 jar：`static/docs` 已废弃并忽略；文档更新要么换镜像 tag（生产），要么在文档仓库重新 build（dev 容器挂载那份 `dist`），都不需要重新构建 server。
 - 改语料后重启（或重建 jar）触发索引，或调用管理员重建接口。
 
 ## 6. 关键源码

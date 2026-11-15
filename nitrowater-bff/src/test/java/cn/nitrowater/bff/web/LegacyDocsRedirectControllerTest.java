@@ -16,7 +16,7 @@ class LegacyDocsRedirectControllerTest {
         ResponseEntity<Void> response = controller.redirectLegacyVelochatx(request("/docs/velochatx"));
 
         assertThat(response.getStatusCode().value()).isEqualTo(301);
-        assertThat(response.getHeaders().getLocation()).hasToString("/plugin/velochatx/docs/");
+        assertThat(response.getHeaders().getLocation()).hasToString("/plugin/velochatx/");
     }
 
     @Test
@@ -28,7 +28,7 @@ class LegacyDocsRedirectControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(301);
         assertThat(response.getHeaders().getLocation())
-                .hasToString("/plugin/velochatx/docs/guide/config/main.html?lang=zh");
+                .hasToString("/plugin/velochatx/guide/config/main.html?lang=zh");
     }
 
     private static MockHttpServletRequest request(String path) {

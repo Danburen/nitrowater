@@ -20,6 +20,8 @@
 #
 # 前提：宿主机有 docker + compose 插件、bash、curl。**不需要 git / JDK / Node**。
 #       GHCR 包是 private 时先 `docker login ghcr.io`（或由 CI 的 GHCR_PAT 完成）。
+# 注意：--tag 只作用于 account / app 的镜像；文档站镜像来自独立仓库（nitrowater-plugin-docs），
+#       由 .env 的 DOCS_IMAGE_TAG 单独控制 —— 它跟着 app 单元一起 pull/up，但版本独立。
 # 退出码：0 = 全部起来且探活通过；非 0 = 任一门禁/拉取/启动/探活失败（set -e）。
 # ============================================================
 set -euo pipefail
@@ -213,6 +215,9 @@ done
 case " ${UNITS[*]} " in
     *" app "*)
         echo '==> verify'
+        # docs first: it is a static site, so a failure here is either a bad image tag or a
+        # broken nginx conf - both worth reporting before the business services.
+        wait_healthy nitrowater-docs
         wait_http http://127.0.0.1:8080/api/public/ping 100
         wait_healthy nitrowater-bff
         ;;

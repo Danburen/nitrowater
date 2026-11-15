@@ -91,12 +91,12 @@ bash deploy/bin/deploy.sh --tag <sha> --only account      # 只回滚身份服�
 > `compose pull` 会拉整份文件，`app.yml` 里第三方镜像（piston / qdrant）未固定 tag；
 > 某个源抽风会中止整个发布。建议预拉或固定版本。
 
-## 2. 内容更新（都不需要重建镜像）
+## 2. 内容更新（多数不需要重建镜像）
 
 | 内容 | 放哪 | 动作 |
 |---|---|---|
 | AI 词表 / 语料 | `deploy/content/**` | 覆盖文件 → `POST /api/admin/ai/moderation/reload` / `reindex` |
-| 插件站点文档 | `deploy/plugin-docs/<plugin>/docs/` | 覆盖产物（必要时 `docker restart nitrowater-docs`） |
+| 插件站点文档 | 不在宿主机：在 `nitrowater-plugin-docs` 的镜像里 | 改 `.env` 的 `DOCS_IMAGE_TAG` → `up -d docs`（见 §9）；不要往服务器目录里写，容器不挂载 |
 | 插件 Jar | `RESOURCE_DATA_DIR`（本地磁盘） | `POST /internal/resource/publish` 或 `bin/dev/sync-res.ps1` |
 
 上传面只对 `ROLE_ADMIN` / `ROLE_SUPER_ADMIN` 开放（`/api/resource/upload/**`）；`RESOURCE_UPLOAD_ENABLED=false`
@@ -185,7 +185,7 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 | 管理端 403 | 未绑角色或未重新登录 | 授权 SQL + 重登 |
 | 上传 413，容器日志无请求 | 反代 `client_max_body_size` 1m | 改 100m |
 | AI 回答断流 / 整段刷出 | 反代 timeout / buffering | `proxy_buffering off; proxy_read_timeout 300s;` |
-| `/plugin/*` 404 | `plugin-docs` 没传 | 见 bootstrap §7 |
+| `/plugin/*` 404 或 nginx 默认页 | 文档站镜像没换成功 | 看 `docker inspect nitrowater-docs --format '{{.Config.Image}}'`，对照 `.env` 的 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG`（见 bootstrap §7） |
 | 点"运行"报错 / 语言不可用 | Piston 镜像不含语言包 | 跑 §8 第一条安装命令（见 §8） |
 | `manifest unknown` | `GITHUB_REPOSITORY` 仍是 your-org | 改 `.env` 或由 CI 注入 |
 | bff 不健康 | OIDC discovery / 连库 / KEK | `docker logs nitrowater-bff` |
@@ -279,3 +279,62 @@ export type ServerLanguageId = 'java' | 'c' | 'cpp' | 'rust'
 ```
 
 改完重新构建并发布镜像 —— `deploy/bin/deploy.sh` 只拉镜像、不做构建，所以必须先在 CI 出 image。
+
+## 9. 文档站发版与回滚（镜像）
+
+插件文档站（每个插件一个 VitePress 站点，URL `/plugin/<id>/`）由**独立仓库**
+`nitrowater-plugin-docs` 构建成一个镜像，本仓库只负责拉取和路由：
+
+| 谁 | 管什么 |
+|---|---|
+| `nitrowater-plugin-docs` 的 CI | 构建静态树 + 镜像（必须 `--build-arg DOCS_BASE_PREFIX=/plugin`）；每次 main push 推 `:latest` 和 `:<短 sha>` |
+| 本仓库 `docker-compose.app.yml` | 引用镜像：`DOCS_IMAGE_REPO`（owner/repo）+ `DOCS_IMAGE_TAG` |
+| 本仓库 `docs-nginx.conf` | 路由 / 缓存 / `/healthz`；内容发布改不动它（故意的） |
+
+### 发版
+
+```bash
+# A. 跟主项目一起（docs 属于 app 单元，deploy.sh 会一并 pull + up -d）
+bash deploy/bin/deploy.sh
+
+# B. 只更新文档站（业务服务不动；tag 写在进程环境里，优先级高于 .env）
+DOCS_IMAGE_TAG=1a2b3c4 docker compose --env-file deploy/docker/.env \
+  -f deploy/docker/docker-compose.app.yml up -d --no-build docs
+curl -fsS http://127.0.0.1:8085/healthz      # ok
+```
+
+验证没问题后把 tag 写回 `.env`（`DOCS_IMAGE_TAG=1a2b3c4`）。不写回去的话，下次 `deploy.sh` 会按 `.env`
+里的旧值把文档站退回上一个版本 —— 这是唯一一个"改了看起来生效、下次发布又变回去"的坑。
+
+### 回滚
+
+```bash
+DOCS_IMAGE_TAG=<上一个短 sha> docker compose --env-file deploy/docker/.env \
+  -f deploy/docker/docker-compose.app.yml up -d --no-build docs
+```
+
+一个 tag 覆盖整站（所有插件站点一起进退），不会出现"一半新一半旧"。
+
+### 注意
+
+| 要点 | 说明 |
+|---|---|
+| `--tag` 不管文档站 | `deploy.sh --tag v1.2.3` 只设 account / app 的 tag；文档站由 `DOCS_IMAGE_TAG` 独立控制 |
+| `latest` 会飘 | 那个仓库每次 main push 都覆盖 `:latest`；想可复现/可回滚就写短 sha（history 里挑） |
+| 私有包 | 服务器先 `docker login ghcr.io`（`read:packages`）；或把 package 设 public（可匿名 pull） |
+| 按 digest 固定（可选） | 把 compose 那行写成 `image: …@sha256:…`；代价是 `DOCS_IMAGE_TAG` 对它不生效，升级要改文件 |
+| 别往服务器目录里写 | 生产容器**不挂载任何文档目录**（`deploy/plugin-docs/` 已删）：写文件不会生效，只能换 tag |
+| 换 nginx 配置 | 改完 `docker restart nitrowater-docs`（或 `docker exec nitrowater-docs nginx -s reload`）；`up -d` 对 `:ro` 挂载的文件变更不保证重建 |
+| 镜像里那份 `docker/nginx.conf` | 部署时被本仓库的 `docs-nginx.conf` 挂载覆盖，只服务「本地 `docker run` 单独看镜像」；改路由请改本仓库这份 |
+| 文档站 404 / 资源全挂 | 先看 `docker inspect nitrowater-docs --format '{{.Config.Image}}'` 是不是 `.env` 里那个 tag；资源 404 则是镜像没用 `DOCS_BASE_PREFIX=/plugin` 构建 |
+
+本地预览不用镜像：在 `nitrowater-plugin-docs` 里 `DOCS_BASE_PREFIX=/plugin npm run build`，然后
+`bin\start-infra.ps1`（dev 容器只读挂载 `../nitrowater-plugin-docs/dist`，路径可换 `DOCS_SITE_DIR`）→
+`http://localhost:8085/plugin/<id>/`。`/plugin/` 本身是 404：**没有门户页**，入口在 SPA 的插件中心。
+
+## 10. 已废弃的通道
+
+- **SSH 推目录 / `scp` 上传文档**：`deploy/plugin-docs/` 已删除，生产容器不挂载任何文档目录，写文件
+  不会生效。文档内容统一走 §9 的镜像（`receive-plugin-docs.sh` 也一并删了）。
+- **`POST /api/v2/packages` 装 Piston 语言包**：会去拉 GitHub 索引，跨境拉不动会把 piston API 打死；
+  改用 `deploy/bin/install-piston-runtimes.sh`（§8）。

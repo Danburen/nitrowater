@@ -397,7 +397,7 @@ function fmtDate(iso: string | null): string {
               <input
                 v-model="form.docsUrl"
                 class="input"
-                placeholder="/plugin/velochatx/docs/"
+                placeholder="/plugin/velochatx/"
               >
             </label>
             <label class="flex flex-col gap-1">

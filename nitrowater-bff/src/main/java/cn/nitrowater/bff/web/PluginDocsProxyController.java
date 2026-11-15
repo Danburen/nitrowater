@@ -67,7 +67,7 @@ public class PluginDocsProxyController {
               <div class="card">
                 <h1>文档站暂时不可用</h1>
                 <p>插件文档服务当前无法访问，请稍后重试。</p>
-                <p><small>本地预览：启动 <code>deploy/docker</code> 的 <code>docs</code> 容器（nginx，挂载 <code>deploy/plugin-docs</code>）。</small></p>
+                <p><small>本地预览：启动 <code>deploy/docker</code> 的 <code>docs</code> 容器（nginx，挂载文档仓库构建出的 <code>dist</code>，见 <code>docker-compose.docs-local.yml</code>）。</small></p>
                 <p><a href="/plugins">← 返回插件中心</a></p>
               </div>
             </body>

@@ -6,7 +6,9 @@
 #                     (redis:8.10.3-alpine - same major as production)
 #   Piston     2000 : docker container nitrowater-piston      -> docker logs -f window
 #   docs       8085 : docker container nitrowater-docs        -> docker logs -f window
-#                     (nginx hosting ALL plugin docs; the BFF forwards /plugin/** here)
+#                     (nginx serving the built docs tree from nitrowater-plugin-docs/dist; the BFF
+#                      forwards /plugin/** here. Production serves the same paths from that repo's
+#                      image instead of a mount.)
 #
 # Resource bytes need no infra: the resource service writes them to a local directory
 # (RESOURCE_LOCAL_PATH, default ./bin/dev/resource-storage).
@@ -90,15 +92,22 @@ Ensure-DockerContainer 'nitrowater-qdrant' 6334 'NitroWater - Qdrant' {
         qdrant/qdrant:v1.20.1 | Out-Null
 }
 
-# ---- docs: ONE nginx container hosting every plugin's documentation (127.0.0.1:8085) ----
+# ---- docs: one nginx serving every plugin site (127.0.0.1:8085) ----
 # The BFF only proxies /plugin/** here (app.plugin-docs.upstream default = http://localhost:8085).
-# Created from compose (mounts + nginx config live there); started by name when it already exists.
-$composeFile = Join-Path $RepoRoot 'deploy/docker/docker-compose.app.yml'
+# Production serves that content from the nitrowater-plugin-docs image; dev mounts a built tree
+# instead (deploy/docker/docker-compose.docs-local.yml - standalone, so it needs no prod .env).
+# The tree must be built with the /plugin prefix, otherwise every URL 404s through the BFF:
+#   cd ..\nitrowater-plugin-docs ; $env:DOCS_BASE_PREFIX='/plugin' ; npm run build
+$docsCompose = Join-Path $RepoRoot 'deploy/docker/docker-compose.docs-local.yml'
+$docsSite = if ($env:DOCS_SITE_DIR) { $env:DOCS_SITE_DIR } else { Join-Path $RepoRoot '..\nitrowater-plugin-docs\dist' }
+if (-not (Test-Path (Join-Path $docsSite 'plugin'))) {
+    Write-Warn "docs tree not found at $docsSite\plugin - build it with DOCS_BASE_PREFIX=/plugin (or set DOCS_SITE_DIR); :8085 will answer 404 until then"
+}
 Ensure-DockerContainer 'nitrowater-docs' 8085 'NitroWater - docs' {
     # compose declares `nitrowater-net` as external, so it must exist before `up`.
     & docker network inspect nitrowater-net *> $null
     if ($LASTEXITCODE -ne 0) { & docker network create nitrowater-net *> $null }
-    & docker compose -f $composeFile up -d docs *> $null
+    & docker compose -f $docsCompose up -d docs *> $null
 }
 
 Write-Step 'Infra ready'

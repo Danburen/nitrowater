@@ -23,7 +23,7 @@
 宿主机不需要 git。在**本地仓库根**执行（`deploy/` 里只有配置文件与脚本，状态文件不在 git 里）：
 
 ```bash
-# 本地仓库根：git archive 只打 tracked 文件（.env / keys/ / plugin-docs 产物不会进包）
+# 本地仓库根：git archive 只打 tracked 文件（.env / keys/ / content/ 不会进包）
 git archive --format=tar.gz HEAD deploy > /tmp/nitrowater-deploy.tgz
 scp /tmp/nitrowater-deploy.tgz <host>:/tmp/
 
@@ -48,7 +48,7 @@ tar -tzf /tmp/nitrowater-deploy.tgz | grep -E '\.key$|deploy/docker/\.env$|deplo
 ```
 
 不要用 `tar -czf /tmp/… -C . deploy`：`tar` 打包的是磁盘目录，会把**被 gitignore 忽略但本机存在**的文件一起带上——
-`deploy/keys/private.key`、`deploy/docker/.env*`、`deploy/plugin-docs/*/` 一旦存在，解包就会覆盖服务器上的
+`deploy/keys/private.key`、`deploy/docker/.env*`、`deploy/content/*` 一旦存在，解包就会覆盖服务器上的
 生产签名密钥与配置（`keys/` 只应由服务器上的 `gen-keys.sh` 生成）。`git archive` 与 CI 的干净检出行为一致。
 
 也可以在服务器上 `git clone` 后把仓库的 `deploy/` 复制到 `/opt/nitrowater/`，效果一样；
@@ -199,12 +199,45 @@ docker exec nitrowater-piston node -e "require('http').get('http://127.0.0.1:200
 
 以后加语言见 `operations.md` §8。
 
-### 插件站点文档
+### 插件站点文档（镜像，不需要上传）
+
+文档站（每个插件一个 VitePress 站点）在**独立仓库** `nitrowater-plugin-docs` 里构建；那边 CI 每次
+push 到 `main` 就推镜像（`:latest` + `:<短 sha>`）。服务器这边**只拉不传**：`.env` 里给两行，
+`deploy/bin/deploy.sh` 就把它当 app 单元的一个服务一起 `pull` + `up -d`。
 
 ```bash
-# 约 1.8 MB，不在仓库里；不传则 /plugin/* 404
-scp -r deploy/plugin-docs/* <host>:/opt/nitrowater/deploy/plugin-docs/
+# deploy/docker/.env
+DOCS_IMAGE_REPO=<你的 GitHub owner>/nitrowater-plugin-docs
+DOCS_IMAGE_TAG=latest        # 或某个短 sha（那个仓库每次 main push 都推 :latest 和 :<sha>）
 ```
+
+首次部署前确认：
+
+```bash
+docker login ghcr.io                       # 私有包才需要（read:packages）；public 可跳过
+curl -fsS http://127.0.0.1:8085/healthz    # ok
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8085/plugin/velochatx/   # 200
+```
+
+URL 只有 `/plugin/<id>/`。**没有门户页**：`/plugin/` 本身 404，入口由 SPA 的插件中心提供。镜像必须
+用 `DOCS_BASE_PREFIX=/plugin` 构建（VitePress 的 `base` 是构建期固定的），否则站点会是 `/<id>/`、
+经 BFF 全部 404。
+
+> **这条链路为什么换掉了**：以前 `deploy/plugin-docs/` 靠 `scp`/推目录同步，而 `deploy.yml` 的
+> tar 包只含仓库里跟踪的文件（内容是 gitignore 的），所以每次发布都要人肉补一步，且线上内容
+> 没有版本、出问题只能重传。镜像化后内容跟着 tag 走：**回滚 = 把 `DOCS_IMAGE_TAG` 改回上一个
+> sha 再 `up -d`**，多机也天然一致。
+
+本地开发不用镜像（两个仓库同级时开箱可用）：
+
+```bash
+# 在 nitrowater-plugin-docs 里
+DOCS_BASE_PREFIX=/plugin npm run build      # 产物 dist/plugin/<id>/
+```
+
+`bin\start-infra.ps1` 把 `../nitrowater-plugin-docs/dist` 只读挂进 docs 容器
+（`deploy/docker/docker-compose.docs-local.yml`），URL 与线上一致；仓库不在同级就用
+`DOCS_SITE_DIR` 指过去。它找不到 `dist/plugin/` 时会打 WARN，提醒你先按上面那条命令构建。
 
 ## 8. 公网入口
 
@@ -253,7 +286,7 @@ WHERE u.username = '<用户名>';"
 - [ ] `deploy/` 已上传；`.env` 无占位值，`check-env` 0 FAIL
 - [ ] mysql/redis healthy；三个库 + 业务账号存在
 - [ ] account discovery 可达；bff healthy；`/api/public/ping` pong
-- [ ] Piston 6 个语言包已装（§7 的 `install-piston-runtimes.sh` 跑完，`/api/v2/runtimes` 能看到 `java` / `c` / `javascript` / `python` / `typescript` / `lua`）；`plugin-docs` 已上传
+- [ ] Piston 6 个语言包已装（§7 的 `install-piston-runtimes.sh` 跑完，`/api/v2/runtimes` 能看到 `java` / `c` / `javascript` / `python` / `typescript` / `lua`）；`.env` 的 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG` 已填，`/plugin/<id>/` 能打开、`/healthz` 返回 `ok`
 - [ ] https 生效；`/actuator/health` 非 200；上传 5 MB 不是 413
 - [ ] 首个 `SUPER_ADMIN` 已授权并重新登录
 - [ ] MySQL 基线备份完成；KEK 已离线保存
@@ -286,5 +319,8 @@ WHERE u.username = '<用户名>';"
 | 运行期（§7） | 装完 `/api/v2/runtimes` 里没有 | 少了 `.ppman-installed` 标记文件（piston 只注册带标记的目录）：重跑脚本会自动补；仍不行看 `docker logs nitrowater-piston` |
 | 运行期（§7） | 装包时 `curl: (52) Empty reply` | 那是 `POST /api/v2/packages`（会去拉 GitHub 索引，拉不到就打挂 API）：`docker restart nitrowater-piston`，改用 §7 的脚本 |
 | 运行期（§7） | 脚本报 `FAILED … (download)` | 代理不可用：换前缀重跑（`PISTON_MIRROR=https://ghproxy.net/ bash deploy/bin/install-piston-runtimes.sh`），已装的会 `skip` |
-| 运行期（§7） | `/plugin/*` 404 | `plugin-docs` 被 gitignore，**不在**同步包里，必须手工上传 |
+| 运行期（§7） | `/plugin/*` 404 或 `/plugin/` 是 nginx 默认页 | docs 镜像没换成功：`.env` 的 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG` 不对，或 `docker compose … pull` 拉到的还是旧 tag；`docker inspect nitrowater-docs --format '{{.Config.Image}}'` 看实际镜像 |
+| 运行期（§7） | `deploy.sh` 在 `app: pull` 就失败（`manifest unknown` / `denied`） | 文档站镜像在**独立仓库**：`DOCS_IMAGE_REPO` 要写 `<owner>/nitrowater-plugin-docs`（不是 `nitrowater/docs`）；private 包先 `docker login ghcr.io` |
+| 运行期（§7） | 本地改了文档但容器没变 | dev 用的是**挂载**不是镜像：在文档仓库 `DOCS_BASE_PREFIX=/plugin npm run build` 后刷新；换了 `docs-nginx.conf` 要 `docker rm -f nitrowater-docs` 重建 |
+| 运行期（§7） | `/plugin/<id>/` 打开后资源全 404 | 文档仓库是用默认前缀构建的（`/<id>/`）：VitePress 的 `base` 是构建期固定的，必须 `DOCS_BASE_PREFIX=/plugin npm run build`，镜像同理（CI 要带 `--build-arg`，或 Dockerfile 默认就是它） |
 | 运行期（§4） | `check-env` 输出一堆 `[WARN]` | WARN 不阻断（写了但没被 compose 引用）；只清 `[FAIL]` |

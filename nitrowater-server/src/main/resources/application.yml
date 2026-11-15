@@ -205,8 +205,9 @@ app:
       - corpus: velochatx
         description: VeloChatX 插件文档（安装、命令与权限、占位符、配置、排障）
         location: classpath:ai/docs/velochatx
-        # Published by bin/dev/sync-docs.ps1 into deploy/plugin-docs (mounted by the docs nginx).
-        public-base-url: /plugin/velochatx/docs/
+        # Served at base /plugin/velochatx/ from the plugin-docs image (dev: the docs repo's dist,
+        # built with DOCS_BASE_PREFIX=/plugin, mounted by the dev docs container).
+        public-base-url: /plugin/velochatx/
       - corpus: nitrowater
         description: NitroWater 平台自身文档（架构、SSO/BFF、资源服务、API、部署与运维）
         location: classpath:ai/docs/nitrowater

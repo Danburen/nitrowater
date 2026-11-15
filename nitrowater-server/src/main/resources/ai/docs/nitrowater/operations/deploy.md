@@ -110,7 +110,7 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.acc
 
 1. `.\gradlew.bat build` 全绿。
 2. 前端 `npm run build` 通过，产物是最新的。
-3. 如需更新 VeloChatX 文档站，先运行 `bin\dev\sync-docs.ps1`（NitroWater 文档是纯 markdown 语料，无需构建）。
+3. 如需更新 VeloChatX 文档站，在 `nitrowater-plugin-docs` 里 `DOCS_BASE_PREFIX=/plugin npm run build`（dev 容器挂载那份 `dist`）；NitroWater 文档是纯 markdown 语料，无需构建。
 4. 新增 Flyway 版本而不是改已应用的迁移。
 5. 环境变量齐全（尤其 `JWT_ISSUER`、`NITROWATER_KEK`、`BFF_CLIENT_SECRET`、`RESOURCE_DATA_DIR`）。
 
@@ -134,6 +134,6 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.acc
 | 重建 AI 索引 | `POST /api/admin/ai/reindex`（管理员） |
 | 重置业务库 | `bin\dev\reset-db.ps1 -Db biz -Force -Restart` |
 | 装 Piston 语言 | `bin\dev\install-piston-langs.ps1` |
-| 同步 VeloChatX 文档 | `bin\dev\sync-docs.ps1` |
+| 同步 VeloChatX 文档 | 在 `nitrowater-plugin-docs` 里 `DOCS_BASE_PREFIX=/plugin npm run build`（dev 挂载其 `dist`） |
 | 重新生成 JWT 密钥 | `deploy\bin\gen-keys.ps1`（会使现有 token 失效） |
 | 环境自检 | `deploy\bin\check-env.ps1` |

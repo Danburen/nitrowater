@@ -548,7 +548,7 @@ onMounted(() => {
           >
             <el-input
               v-model="form.docsUrl"
-              placeholder="/plugin/velochatx/docs/"
+              placeholder="/plugin/velochatx/"
             />
           </el-form-item>
           <el-form-item label="首页 URL（可空）">

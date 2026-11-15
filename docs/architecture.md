@@ -46,7 +46,7 @@ NitroWater 的解决方式是把这些能力收敛到一个同源平台：**一�
 | 插件中心 | 插件元数据与分发 | 插件元数据、管理端 CRUD、JAR 下载、文档入口 |
 | 代码运行器 | 浏览器 + 服务端双模式 | 匿名走浏览器 WASM；登录用户走 Piston；Redis 分钟/日配额；进程内排队；输出截断 |
 | 资源服务 | 可插拔文件存储 | 本地磁盘（默认）、腾讯 COS；统一上传/下载入口；仅管理员可上传；读取分公开（匿名）与认证两条出口；可见性/owner；管理端文件管理；孤儿回收；插件 JAR 托管 |
-| 文档站 | VeloChatX VitePress | 9 篇中文 + 9 篇英文 + README；构建产物发布到 `deploy/plugin-docs`；nginx :8085；BFF `/plugin/**` 同源代理 |
+| 文档站 | VeloChatX VitePress | 9 篇中文 + 9 篇英文 + README；由独立仓库 `nitrowater-plugin-docs` 构建成镜像（`/plugin/velochatx/`）；nginx :8085；BFF `/plugin/**` 同源代理 |
 | AI Agent | 工具调用问答 | 多语料索引、`searchDocs`/`loadSkill`/`webSearch`/`runCode`；工具预算、AgentTrace、技能覆盖、引用 `[n]`、SSE 步骤卡片、会话落库 |
 | AI 运营 | 配额与管理 | 登录校验、每分钟限流、每日 token 计量；运行时开关；`/admin/ai/{settings,usage,catalog}` |
 | 工程化 | 构建与运维 | Gradle 多模块、Flyway 三库隔离、Docker compose、一键启停/播种/同步脚本、日志与测试 |
@@ -56,7 +56,7 @@ NitroWater 的解决方式是把这些能力收敛到一个同源平台：**一�
 - **登录**：浏览器 → BFF → account OIDC → 回调 → BFF 会话 → 受保护 API。
 - **文档问答**：提问 → 检索 VeloChatX/NitroWater 文档 → 带引用回答 → SSE 流式展示。
 - **Agent 任务**：提问 → 模型决定是否检索/联网/跑代码 → 工具结果回灌 → 最终回答 + 工具轨迹。
-- **文档发布**：VeloChatX 源仓 → VitePress 构建 → `deploy/plugin-docs` → nginx → BFF `/plugin/**`。
+- **文档发布**：VeloChatX 源仓 → VitePress 构建 → `nitrowater-plugin-docs` 镜像 → nginx → BFF `/plugin/**`。
 - **代码运行**：前端代码块 → 运行器 → 服务端 Piston（登录）或浏览器 WASM（匿名）→ 结果回显。
 - **资源管理**：上传 → 预签名 → 读/下载 → 可见性/owner 校验 → 管理端软删/回收。
 
@@ -177,17 +177,17 @@ question
 ### 4.4 文档发布
 
 ```text
-VeloChatX 源仓（9 zh + 9 en）
-  -> VitePress build
-  -> deploy/plugin-docs/velochatx/docs
-  -> docs nginx :8085
+nitrowater-plugin-docs 源仓（每个插件一个 VitePress 站点）
+  -> CI: VitePress build -> 镜像 ghcr.io/<owner>/nitrowater-plugin-docs:<tag>
+  -> 服务器 docker compose pull（DOCS_IMAGE_TAG）
+  -> docs nginx :8085（路由/缓存由 deploy/docker/docs-nginx.conf 决定）
   -> BFF /plugin/**
   -> 浏览器
 ```
 
 - 文档站与检索语料是两条链路：站点面向人，classpath 语料面向 `searchDocs` 工具。
 - 语料当前精选 5 篇，源站有 18 篇；这是有意的“先保证质量，再扩覆盖”。
-- `bin/dev/sync-docs.ps1` 负责构建/同步；BFF 负责同源代理。
+- 本地开发直接在文档仓库里 `DOCS_BASE_PREFIX=/plugin npm run build`，dev 容器挂载那份 `dist`；生产只换镜像 tag。
 
 ### 4.5 代码运行与资源
 
@@ -274,7 +274,7 @@ VeloChatX 源仓（9 zh + 9 en）
 1. 先读 `README.md`、`AGENTS.md`、`.ai/PROJECT.md`、`.ai/context/current.md`。
 2. 改认证/BFF：从 `nitrowater-account` 的 `AuthorizationServerConfig` 与 `nitrowater-bff` 的 `SecurityConfig` / 代理控制器进入。
 3. 改 AI/Agent：从 `nitrowater-server/src/main/java/cn/nitrowater/server/service/ai` 进入（工具在 `service/ai/tool`、提示词在 `PromptBuilder`、SSE 在 `web/AiAgentController`）；前端从 `nitrowater-web/src/features/ai` 进入。
-4. 改文档/站点：源仓 `velochatx-docs`，产物 `deploy/plugin-docs`，代理 `/plugin/**`。
+4. 改文档/站点：源仓 `nitrowater-plugin-docs` 构建成镜像，URL 前缀 `/plugin/**`。
 5. 遵守项目约定：Servlet/WebMVC、`/api/**` 数据命名空间、Flyway 迁移冻结、枚举整数编码、时间列 `TIMESTAMP(3)`、Redis `nitrowater:*`、无 subagent。
 
 > 如果后续 Agent 无法访问仓库，以上第 1-6 节已经提供了自包含的项目摘要；第 9 节仅用于能拿到代码时的导航。

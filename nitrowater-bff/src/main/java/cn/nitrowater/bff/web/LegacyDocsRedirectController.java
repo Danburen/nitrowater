@@ -12,10 +12,9 @@ import java.net.URI;
 /**
  * Permanent redirect from the retired {@code /docs/velochatx/**} mount.
  *
- * <p>VeloChatX documentation is published dynamically into
- * {@code deploy/plugin-docs/velochatx/docs} and served under {@code /plugin/velochatx/docs/} by the
- * docs container, which the BFF already fronts. The old {@code /docs/velochatx/**} URL is kept as a
- * redirect so bookmarks and citations stored by older conversations still open.</p>
+ * <p>VeloChatX documentation is served under {@code /plugin/velochatx/} by the docs container
+ * (content baked into the {@code nitrowater-plugin-docs} image), which the BFF already fronts. The
+ * old {@code /docs/velochatx/**} URL is kept as a redirect so bookmarks still open.</p>
  *
  * <p>There is no other {@code /docs/**} route: NitroWater documentation is a markdown-only corpus
  * for the assistant and has no published site.</p>
@@ -25,13 +24,13 @@ public class LegacyDocsRedirectController {
 
     /**
      * @param request the inbound legacy request
-     * @return {@code 301} to the corresponding {@code /plugin/velochatx/docs/...} URL
+     * @return {@code 301} to the corresponding {@code /plugin/velochatx/...} URL
      */
     @GetMapping({"/docs/velochatx", "/docs/velochatx/**"})
     public ResponseEntity<Void> redirectLegacyVelochatx(HttpServletRequest request) {
         String path = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
         String suffix = path.substring("/docs/velochatx".length());
-        String target = "/plugin/velochatx/docs" + (suffix.isEmpty() ? "/" : suffix);
+        String target = "/plugin/velochatx" + (suffix.isEmpty() ? "/" : suffix);
         String query = request.getQueryString();
         if (query != null && !query.isEmpty()) {
             target += "?" + query;

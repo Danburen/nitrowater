@@ -32,12 +32,17 @@
 
 三份共享 `nitrowater-net`。**启动顺序：infra → account → app**（bff 启动要拉 account 的 OIDC discovery）。
 
+`docs` 的内容不来自本仓库：独立仓库 `nitrowater-plugin-docs` 的 CI 把各插件站构建成镜像（必须带
+`--build-arg DOCS_BASE_PREFIX=/plugin`），`.env` 用 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG` 指过去
+（发版/回滚见 `docs/operations.md` §9）。本地 dev 用 `deploy/docker/docker-compose.docs-local.yml`
+挂载 `../nitrowater-plugin-docs/dist`（先 `DOCS_BASE_PREFIX=/plugin npm run build`）。
+
 ## 命令
 
 ```bash
 # 首次（详见 docs/bootstrap.md）：本地仓库根打包，再在服务器上解开。
 # 打包用 git archive（只含 tracked 文件），不要用 tar：tar 不认 .gitignore，
-# 会把本机的 deploy/keys/*.key、deploy/docker/.env*、deploy/plugin-docs/*/ 一起打进去，
+# 会把本机的 deploy/keys/*.key、deploy/docker/.env*、deploy/content/* 一起打进去，
 # 解包时直接覆盖服务器上的生产密钥与配置。
 git archive --format=tar.gz HEAD deploy > /tmp/nitrowater-deploy.tgz
 scp /tmp/nitrowater-deploy.tgz <host>:/tmp/
