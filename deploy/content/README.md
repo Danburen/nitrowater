@@ -32,8 +32,8 @@ deploy/content/
 
 生产（`DEPLOY_ROOT=/opt/nitrowater`，tarball 解到 `deploy/`）里 `CONTENT_ROOT=/opt/nitrowater/deploy/content`，
 所以语料就是 `/opt/nitrowater/deploy/content/docs`；本地相对路径 `../content` 与之等价（相对 `deploy/docker/`）。
-宿主机侧固定是 `${CONTENT_ROOT}/docs`，容器内路径由 `AI_DOCS_ROOT` 决定（默认 `/etc/nitrowater/docs`，
-compose 同时用它做挂载点）。bootRun 没有容器，`AI_DOCS_ROOT` 就是宿主机路径；未配置时服务依次尝试
+**`.env` 只需要配 `CONTENT_ROOT`**：容器内路径固定是 `/etc/nitrowater/docs`（compose 拿它当挂载点和
+`AI_DOCS_ROOT`，不随环境变，`.env` 里不用填）。bootRun 没有容器，未配置 `AI_DOCS_ROOT` 时服务依次尝试
 `deploy/content/docs` → `../deploy/content/docs` → `/etc/nitrowater/docs`。
 
 启动 / 更新：
