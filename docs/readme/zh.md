@@ -1,9 +1,15 @@
+<p align="center">
+  <a href="https://nitrowater.cn">
+    <img src="https://nitrowater.cn/favicon.svg" alt="NitroWater" width="120">
+  </a>
+</p>
+
 # NitroWater
 
 [![GitHub](https://img.shields.io/badge/GitHub-danburen%2Fnitrowater-181717?logo=github)](https://github.com/danburen/nitrowater)
 [![Gitee](https://img.shields.io/badge/Gitee-blackwallet%2Fnitrowater-c71d23?logo=gitee)](https://gitee.com/blackwallet/nitrowater)
 ![Java](https://img.shields.io/badge/Java-25-orange)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.2-brightgreen)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 

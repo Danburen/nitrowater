@@ -5,7 +5,7 @@
 #   gate           deploy/bin/check-env.sh
 #   pull           the four images of <tag> — all of them, before any container is touched
 #   backup         deploy/bin/backup_mysql.sh (the only pre-Flyway recovery point)
-#   apply          account -> app, `up -d --no-build` (infra is deployed by hand, see operations.md)
+#   apply          account -> app, `up -d --no-build` (infra is deployed by hand, see deploy/README.md)
 #   verify         account discovery, /api/public/ping, bff health — a red bff fails the run
 #
 # <tag> defaults to the commit sha of `ref`, so "deploy this commit" means "the images

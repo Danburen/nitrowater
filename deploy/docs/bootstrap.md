@@ -1,12 +1,10 @@
 # 首次部署
 
 > 从空机器到能登录，**一次性、不可回滚**。按顺序做，每节末尾是验收点。
-> 之后的上线 / 回滚 / 运维见 [`operations.md`](operations.md)。
-> 变量以 `deploy/docker/.env.example` 为准（每项都有注释），本页只讲必填和最容易踩的。
-> 第一次跑报错先翻 **§11 常见坑**，按流水线顺序排的。
+> 日常发版 / 回滚 / 备份见 [`../README.md`](../README.md)；变量以 `deploy/docker/.env.example` 为准。
+> 报错先翻 **§11 常见坑**。
 
-本页的 compose 命令一律写全 `docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.<组>.yml <子命令>`，
-`<组>` 只取 `infra` / `account` / `app`；下文都给可直接复制的完整命令（在部署根 `/opt/nitrowater` 下执行）。
+下文命令都在部署根 `/opt/nitrowater` 下执行，`<组>` 取 `infra` / `account` / `app`，均写成可直接复制的完整命令。
 
 ## 1. 前置
 
@@ -41,23 +39,20 @@ scp "$env:TEMP\nitrowater-deploy.tgz" <host>:/tmp/
 Remove-Item "$env:TEMP\nitrowater-deploy.tgz"
 ```
 
-解包前自查（有输出就中止，说明包里混进了私钥或已填好的 env；PowerShell 把路径换成 `"$env:TEMP\nitrowater-deploy.tgz"`）：
+解包前自查（有输出就中止）：
 
 ```bash
 tar -tzf /tmp/nitrowater-deploy.tgz | grep -E '\.key$|deploy/docker/\.env$|deploy/docker/\.env\.(prod|local|secrets|bak)'
 ```
 
-不要用 `tar -czf /tmp/… -C . deploy`：`tar` 打包的是磁盘目录，会把**被 gitignore 忽略但本机存在**的文件一起带上——
-`deploy/keys/private.key`、`deploy/docker/.env*`、`deploy/content/*` 一旦存在，解包就会覆盖服务器上的
-生产签名密钥与配置（`keys/` 只应由服务器上的 `gen-keys.sh` 生成）。`git archive` 与 CI 的干净检出行为一致。
+别用 `tar -czf … -C . deploy` 打包：它会把本机被 gitignore 的 `.env`、`keys/*.key` 一起带上，解包直接覆盖生产配置。
 
-也可以在服务器上 `git clone` 后把仓库的 `deploy/` 复制到 `/opt/nitrowater/`，效果一样；
-之后每次迭代由 CI 同步，**不需要在服务器上保留工作区**。
+之后每次迭代由 CI 同步，**服务器上不需要保留工作区**。
 
 - [ ] `/opt/nitrowater/deploy/docker/` 里有 `infra` / `account` / `app` 三份 compose 和 `.env.example`
 - [ ] `/opt/nitrowater/deploy/docs/` 也在（排障时不用回仓库翻）
 
-GHCR 是 private 时，先在这台机器上登录一次（凭据会留在 `~/.docker/config.json`，之后 `compose pull` 直接可用）：
+GHCR 是 private 时，先在这台机器上登录一次：
 
 ```bash
 printf '%s' '<PAT>' | docker login ghcr.io -u <github-user> --password-stdin
@@ -69,7 +64,7 @@ printf '%s' '<PAT>' | docker login ghcr.io -u <github-user> --password-stdin
 cp deploy/docker/.env.example deploy/docker/.env && chmod 600 deploy/docker/.env
 bash deploy/bin/gen-keys.sh && chmod 600 deploy/keys/private.key
 
-openssl rand -base64 32   # NITROWATER_KEK（丢了加密列永久不可解 → 离线备份）
+openssl rand -base64 32   # NITROWATER_KEK（丢了加密列永久不可解）
 openssl rand -base64 32   # DEVICE_SALT
 openssl rand -base64 24   # MYSQL_ROOT_PASSWORD / DB_PASSWORD / REDIS_PASSWORD（三个不同）
 openssl rand -hex 32      # BFF_CLIENT_SECRET
@@ -78,8 +73,7 @@ date +%s                  # APP_SESSION_EPOCH
 $EDITOR deploy/docker/.env
 ```
 
-> 已经有一份 `.env`（升级部署）时，先 `bash deploy/bin/sync-env.sh --dry-run` 看差异：它会按最新模板
-> 补新键、删掉模板里已不存在的键、刷新注释，**但保留你已有的值**；确认无误去掉 `--dry-run` 再跑。
+> 已有 `.env`（升级部署）时先 `bash deploy/bin/sync-env.sh --dry-run` 看差异（保留已有值），确认后去掉 `--dry-run` 再跑。
 
 必须改对：
 
@@ -108,8 +102,7 @@ HTTPS 时 `SESSION_COOKIE_SECURE=true`；`CORS_ALLOWED_ORIGIN_PATTERNS` 禁止 `
 bash deploy/bin/check-env.sh        # 必须 0 FAIL
 ```
 
-它按 compose 的 `environment:` 反推每个 `${VAR}`：缺值、回落成 `123456`/`root`/`change-me`、
-仍是 `YOUR_*_HERE` 都算 FAIL；写了却没被 compose 引用的键报 WARN。
+缺值、dev 默认值、`YOUR_*_HERE` 占位都算 FAIL。
 
 ## 5. 网络 + 中间件 + 建库
 
@@ -132,13 +125,11 @@ GRANT ALL PRIVILEGES ON `nitrowater_resource`.* TO 'nitrowater'@'%';
 FLUSH PRIVILEGES;
 ```
 
-账号名与 `.env` 的 `DB_USERNAME` 一致，口令与 `DB_PASSWORD` 一致。重复执行无害；
-数据卷是旧的、服务能连上就跳过本节。表结构由 Flyway 首次启动时建，不用管。
+账号名 / 口令与 `.env` 的 `DB_USERNAME` / `DB_PASSWORD` 一致，重复执行无害；表结构由 Flyway 首次启动时建。
 
 验收：`mysqladmin -uroot -p ping` → `mysqld is alive`；`SHOW DATABASES;` 能看到三个库。
 
-> MySQL 不需要 keyring：敏感字段是应用层 AES-256-GCM 加密（`NITROWATER_KEK` 包 DEK），
-> 落库本来就是密文。**KEK 与备份分开保管**，否则备份解不开。
+> 敏感字段是应用层 AES-256-GCM 加密的，落库即密文；`NITROWATER_KEK` 丢了就永久解不开。
 
 ## 6. 身份服务 → 业务面
 
@@ -156,30 +147,22 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app
 docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d --no-build
 ```
 
-顺序不能反：bff 启动时要拉 account 的 OIDC discovery。`--no-build` 保证拉镜像而不是现场构建。
-`pull` 的目标由 `.env` 的 `REGISTRY` / `GITHUB_REPOSITORY` / `ACCOUNT_IMAGE_TAG`·`APP_IMAGE_TAG` 拼出，
-`manifest unknown` 基本就是这三处和实际推上去的不一致。
+顺序不能反（bff 启动要拉 account 的 discovery）。`manifest unknown` = `.env` 的 `REGISTRY` / `GITHUB_REPOSITORY` / 镜像 tag 与实际推送不一致。
 
-> **用内置 edge（§8）时，真正的顺序是 `account → edge → bff`。**
-> bff 启动就要拉 `JWT_ISSUER/.well-known/openid-configuration`，而那是公网域名，必须有 edge + 已签发的
-> 证书才能通。首次部署可以先只起 infra 和 account，按 §8 把 edge 起好、证书签发完，再回来起 app。
-> bff 容器自身会先等这段 issuer（最多 5 分钟）再启动，但**工作流不预检公网 issuer**：证书没签好时
-> bff 会反复重启，发布以探活失败告终。所以顺序还是要对，别指望自动兜底。
+> 用 edge（§8）时真实顺序是 `account → edge → bff`：bff 启动要拉公网 `JWT_ISSUER` 的 discovery，
+> 必须有已签发的证书。证书没签好就先别起 app（bff 会反复重启）。
 
 验收：`nitrowater-bff` healthy；`curl http://127.0.0.1:8080/api/public/ping` 返回 pong。
 
 ## 7. 收尾：Piston 语言包 + 插件文档
 
-piston 镜像里**一个语言包都没有**（也没有 `cli/ppman`）。它启动时只注册 `/piston/packages/<包>/<版本>/`
-里**带 `.ppman-installed` 标记**的目录，而官方 tarball 不带这个标记。仓库里的脚本把这几步都做了：
+piston 镜像里没有任何语言包。仓库脚本负责下载、补 `.ppman-installed` 标记并重启容器：
 
 ```bash
 bash deploy/bin/install-piston-runtimes.sh
 ```
 
-它按默认清单装 6 个包（`java` `gcc` `node` `python` `typescript` `lua`；`gcc` 提供 `c`/`c++`，
-`node` 提供 `javascript`），版本取索引里最高版，包经 `PISTON_MIRROR`（默认 `https://gh-proxy.org/`）
-下载——**服务器不需要直连 GitHub**。
+默认装 6 个包（`java` `gcc` `node` `python` `typescript` `lua`），经 `PISTON_MIRROR`（默认 `https://gh-proxy.org/`）下载。
 
 - 包先落 `/var/tmp/piston-dl`，有进度条；**Ctrl-C 中止后重跑会断点续传**，已装的打印 `skip`。
 - **已安装的会自动跳过**（`skip java (installed: 15.0.2)`），不会重复下载；装了一半的目录会 `warn … reinstalling` 就地重装。
@@ -206,7 +189,7 @@ PISTON_MIRROR=https://ghproxy.net/ bash deploy/bin/install-piston-runtimes.sh   
 docker exec nitrowater-piston node -e "require('http').get('http://127.0.0.1:2000/api/v2/runtimes',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log(d))})"
 ```
 
-以后加语言见 `operations.md` §8。
+以后加语言 / 升级见 [`../README.md`](../README.md#piston-加语言)。
 
 ### 插件站点文档（镜像，不需要上传）
 
@@ -232,10 +215,7 @@ URL 只有 `/plugin/<id>/`。**没有门户页**：`/plugin/` 本身 404，入�
 用 `DOCS_BASE_PREFIX=/plugin` 构建（VitePress 的 `base` 是构建期固定的），否则站点会是 `/<id>/`、
 经 BFF 全部 404。
 
-> **这条链路为什么换掉了**：以前 `deploy/plugin-docs/` 靠 `scp`/推目录同步，而 `deploy.yml` 的
-> tar 包只含仓库里跟踪的文件（内容是 gitignore 的），所以每次发布都要人肉补一步，且线上内容
-> 没有版本、出问题只能重传。镜像化后内容跟着 tag 走：**回滚 = 把 `DOCS_IMAGE_TAG` 改回上一个
-> sha 再 `up -d`**，多机也天然一致。
+> 以前 `deploy/plugin-docs/` 靠 `scp`/推目录同步，内容不在版本里；镜像化后回滚 = 换 `DOCS_IMAGE_TAG`。
 
 本地开发不用镜像（两个仓库同级时开箱可用）：
 
@@ -274,12 +254,10 @@ proxy_send_timeout 300s;
 docker exec nitrowater-nginx-proxy nginx -s reload
 ```
 
-> 证书没签下来时，nginx-proxy 不会生成该域名的 HTTPS server 块，443 会落到自签的 `default.crt`（浏览器报不安全）。
-> 别去改 vhost —— 先看 `docker logs nitrowater-acme` 卡在哪一步（验证 / 下载）。
+> 没签下证书时不会生成 HTTPS 块，443 落到自签证书（浏览器报不安全）。看 `docker logs nitrowater-acme`，别改 vhost。
 
-**首次部署时这一步要排在 §6 的 `app` 之前**：`VIRTUAL_HOST` / `LETSENCRYPT_HOST` 是容器创建时读取的环境变量，
-edge 起得晚或域名当时为空，vhost 和证书都不会生成；而 bff 启动就要拉这个域名上的 discovery。
-标签改动后必须重建容器才会生效：
+**首次部署时这一步要排在 §6 的 `app` 之前**：`VIRTUAL_HOST` / `LETSENCRYPT_HOST` 在容器创建时读取。
+标签改动后要重建容器才生效：
 
 ```bash
 docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-build --force-recreate
@@ -309,7 +287,7 @@ SELECT u.uid, r.id FROM \`user\` u JOIN \`role\` r ON r.code = 'SUPER_ADMIN'
 WHERE u.username = '<用户名>';"
 ```
 
-最后：`bash deploy/bin/backup_mysql.sh` 导一份空库基线，并把 `NITROWATER_KEK` 存进密码管理器。
+最后：`bash deploy/bin/backup_mysql.sh` 导一份空库基线。
 
 ## 10. 检查单
 
@@ -319,7 +297,7 @@ WHERE u.username = '<用户名>';"
 - [ ] Piston 6 个语言包已装（§7 的 `install-piston-runtimes.sh` 跑完，`/api/v2/runtimes` 能看到 `java` / `c` / `javascript` / `python` / `typescript` / `lua`）；`.env` 的 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG` 已填，`/plugin/<id>/` 能打开、`/healthz` 返回 `ok`
 - [ ] https 生效；`/actuator/health` 非 200；上传 5 MB 不是 413
 - [ ] 首个 `SUPER_ADMIN` 已授权并重新登录
-- [ ] MySQL 基线备份完成；KEK 已离线保存
+- [ ] MySQL 基线备份完成；KEK 已记录
 
 ## 11. 常见坑
 
@@ -338,7 +316,7 @@ WHERE u.username = '<用户名>';"
 | 配置（§3） | `check-env` 的 `compose-coverage` 缺的是 `SPRING_DATASOURCE_USERNAME` 这类**容器侧**名字 | 同上：compose 文件是 CRLF，脚本没解析到 `${DB_USERNAME:?…}`。转成 LF 后重跑，缺的会变回 `DB_USERNAME` |
 | 配置（§3） | `check-env` 判 `GITHUB_REPOSITORY` FAIL | 必须**全小写**的 `<org>/nitrowater`，且与 GHCR 里的实际路径一致 |
 | 配置（§3） | `DB_USERNAME` 被判 FAIL | 不能用 `root`；必须与 §5 建库 SQL 里的账号同名 |
-| 配置（§3） | `NITROWATER_KEK` 换掉或丢失 | 加密列**永久不可解**（备份也救不回来）；生成后立刻离线另存，且与数据库备份**分开**保管 |
+| 配置（§3） | `NITROWATER_KEK` 换掉或丢失 | 加密列**永久不可解**（备份也救不回来） |
 | 建库（§5） | 应用启动报 `Unknown database` | Flyway 只建表不建库：先跑 §5 的三库 + 账号 SQL |
 | 拉镜像（§6） | `manifest unknown` | 该 tag 没推 / 拼错 / 仓库路径不对；private 包先在宿主机 `docker login ghcr.io` |
 | 发布（§6） | 第一次部署打印 `backup: MySQL dump before replacing containers` | 正常：空库也会备份，`deploy/backups/` 多一个几 KB 的 `.sql.gz` |

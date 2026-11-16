@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://nitrowater.cn">
+    <img src="https://nitrowater.cn/favicon.svg" alt="NitroWater" width="120">
+  </a>
+</p>
+
 # NitroWater
 
 [![GitHub](https://img.shields.io/badge/GitHub-danburen%2Fnitrowater-181717?logo=github)](https://github.com/danburen/nitrowater)
@@ -195,11 +201,8 @@ bash deploy/bin/check-env.sh                       # must report 0 FAIL
 
 First deployment is a manual runbook (DNS, TLS, secrets, first admin): [`deploy/docs/bootstrap.md`](deploy/docs/bootstrap.md).
 Day-2 releases go through the `release` / `deploy` workflows (pull an already-built image, back up MySQL,
-`up -d`, verify); rollback re-runs `deploy` with `ref` set to the commit that produced the images —
-see [`deploy/docs/operations.md`](deploy/docs/operations.md).
-
-Every variable is annotated in `.env.example` (the only template); backup, tunnels, certificates
-and AI quota live in the same operations doc.
+`up -d`, verify); rollback re-runs `deploy` with `ref` set to the commit that produced the images.
+Backups, rollback, the plugin-docs image and Piston runtimes live in [`deploy/README.md`](deploy/README.md).
 
 ## 📚 Documentation
 
