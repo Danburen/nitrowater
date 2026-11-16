@@ -160,6 +160,12 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app
 `pull` 的目标由 `.env` 的 `REGISTRY` / `GITHUB_REPOSITORY` / `ACCOUNT_IMAGE_TAG`·`APP_IMAGE_TAG` 拼出，
 `manifest unknown` 基本就是这三处和实际推上去的不一致。
 
+> **用内置 edge（§8）或自建反代时，真正的顺序是 `account → edge → bff`。**
+> bff 启动就要拉 `JWT_ISSUER/.well-known/openid-configuration`，而那是公网域名，必须有 edge + 已签发的
+> 证书才能通。首次部署可以先只起 infra 和 account，按 §8 把 edge 起好、证书签发完，再回来起 app。
+> `deploy/bin/deploy.sh` 已内置这道门禁（拦在 app 之前，`--skip-issuer-gate` 可跳过），
+> bff 容器自身也会先等待 issuer 再启动，所以顺序错了不会再变成崩溃重启循环。
+
 验收：`nitrowater-bff` healthy；`curl http://127.0.0.1:8080/api/public/ping` 返回 pong。
 
 ## 7. 收尾：Piston 语言包 + 插件文档
@@ -259,6 +265,21 @@ location ~ ^/(actuator|internal)(/|$) { return 404; }   # 管理面双保险
 用 edge 时上传上限和 SSE 两条同样要加在 `nginx_vhost` 的 `default_location` 上
 （上传上限已由 `deploy/docker/nginx-proxy-client-body.conf` 挂进 proxy 的 `conf.d`，SSE 仍需按 vhost 配）。
 
+```bash
+docker compose --env-file deploy/docker/.env \
+  -f deploy/docker/docker-compose.infra.yml --profile edge up -d
+docker logs -f nitrowater-acme            # 等证书签发完成（HTTP-01，需 80 端口从公网可达）
+```
+
+**首次部署时这一步要排在 §6 的 `app` 之前**：`VIRTUAL_HOST` / `ACME_HOST` 是容器创建时读取的标签，
+edge 起得晚或域名当时为空，vhost 和证书都不会生成；而 bff 启动就要拉这个域名上的 discovery。
+标签改动后必须重建容器才会生效：
+
+```bash
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-build --force-recreate
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d --no-build --force-recreate bff
+```
+
 验收：`curl -I http://<WEB_DOMAIN>` → 301/308；`/actuator/health` → 404 或 401（不能 200）。
 
 ## 9. 验收 + 首个管理员 + 基线备份
@@ -288,7 +309,7 @@ WHERE u.username = '<用户名>';"
 
 - [ ] `deploy/` 已上传；`.env` 无占位值，`check-env` 0 FAIL
 - [ ] mysql/redis healthy；三个库 + 业务账号存在
-- [ ] account discovery 可达；bff healthy；`/api/public/ping` pong
+- [ ] account discovery 可达；**公网 `JWT_ISSUER` 的 discovery 也通**（edge 已起、证书已签发）后再起 app；bff healthy；`/api/public/ping` pong
 - [ ] Piston 6 个语言包已装（§7 的 `install-piston-runtimes.sh` 跑完，`/api/v2/runtimes` 能看到 `java` / `c` / `javascript` / `python` / `typescript` / `lua`）；`.env` 的 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG` 已填，`/plugin/<id>/` 能打开、`/healthz` 返回 `ok`
 - [ ] https 生效；`/actuator/health` 非 200；上传 5 MB 不是 413
 - [ ] 首个 `SUPER_ADMIN` 已授权并重新登录

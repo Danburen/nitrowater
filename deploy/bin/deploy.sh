@@ -4,7 +4,8 @@
 #
 # 流程：.env 存在性 → check-env 门禁 → compose 结构预检
 #       → MySQL 备份（替换容器前，失败即停）→ 列出将要使用的镜像
-#       → infra → account → app（pull + up -d --no-build）→ 探活 → 清理 24h 前的旧镜像
+#       → infra → account → 公网 issuer 门禁 → app（pull + up -d --no-build）
+#       → 探活 → 清理 24h 前的旧镜像
 #
 # 为什么要有这条脚本：同一串命令以前内联在 .github/workflows/deploy.yml 的 SSH 段里，
 # 于是「手动上线」和「CI 上线」是两份实现——改一处忘一处就会漂移（顺序、--no-build、
@@ -17,6 +18,7 @@
 #   bash deploy/bin/deploy.sh --only account             # 只动 account（等价 README 的 --no-deps 场景）
 #   bash deploy/bin/deploy.sh --no-prune                 # 不清理旧镜像
 #   bash deploy/bin/deploy.sh --skip-backup              # 跳过发版前的 MySQL 备份（确认无 schema 变更时）
+#   bash deploy/bin/deploy.sh --skip-issuer-gate         # 跳过公网 issuer 门禁（edge 暂时不可用但仍要发 app）
 #
 # 前提：宿主机有 docker + compose 插件、bash、curl。**不需要 git / JDK / Node**。
 #       GHCR 包是 private 时先 `docker login ghcr.io`（或由 CI 的 GHCR_PAT 完成）。
@@ -36,6 +38,7 @@ TAG=""
 COMPOSE_PROFILE_ARG="${COMPOSE_PROFILE:-}"
 PRUNE=1
 SKIP_BACKUP=0
+SKIP_ISSUER_GATE=0
 ONLY=""
 
 usage() {
@@ -46,6 +49,7 @@ Usage: bash deploy/bin/deploy.sh [options]
   --only <unit>      only one unit: infra | account | app
   --profile <name>   compose profile for the infra unit (e.g. edge)
   --skip-backup      skip the pre-deploy MySQL dump
+  --skip-issuer-gate skip the public issuer probe (bff will then restart until it is up)
   --no-prune         keep images older than 24h
   -h, --help         show this help
 
@@ -62,6 +66,7 @@ while [ $# -gt 0 ]; do
         --only)     ONLY="${2:?--only needs infra|account|app}"; shift 2 ;;
         --no-prune) PRUNE=0; shift ;;
         --skip-backup) SKIP_BACKUP=1; shift ;;
+        --skip-issuer-gate) SKIP_ISSUER_GATE=1; shift ;;
         -h|--help)  usage ;;
         *) echo "ERROR: unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
@@ -148,8 +153,8 @@ wait_http() {
 }
 
 wait_healthy() {
-    local name="$1" tries=0
-    while [ "$tries" -lt 40 ]; do
+    local name="$1" limit="${2:-40}" tries=0
+    while [ "$tries" -lt "$limit" ]; do
         if [ "$(docker inspect -f '{{.State.Health.Status}}' "$name" 2>/dev/null || echo missing)" = "healthy" ]; then
             echo "    healthy: $name"
             return 0
@@ -179,6 +184,32 @@ pre_deploy_backup() {
     bash deploy/bin/backup_mysql.sh
 }
 
+# bff 启动时要从 JWT_ISSUER 拉 OIDC discovery（application.yml 的 provider.issuer-uri），拉不到
+# 就崩溃重启。这个地址走公网，需要 edge 证书已签发 + frp/反代链路通，所以在拉起 app 之前探测：
+# 一次明确的失败，好过 bff 崩十几次再回来翻日志。
+require_public_issuer() {
+    local issuer
+    issuer="$(env_get JWT_ISSUER)"
+    issuer="${issuer%/}"
+    if [ -z "$issuer" ]; then
+        echo '    SKIP: JWT_ISSUER is empty in deploy/docker/.env' >&2
+        return 0
+    fi
+    wait_http "$issuer/.well-known/openid-configuration" 60 && return 0
+    cat >&2 <<EOF
+ERROR: public issuer is unreachable: $issuer
+
+  bff 启动时要拉这个地址的 OIDC discovery，拉不到会反复重启，所以在拉起 app 之前停下。
+  排查顺序：
+    1) edge 是否在跑（--profile edge 下的 nginx-proxy / acme）
+    2) 证书是否已签发：docker logs nitrowater-acme
+    3) 80/443 是否真能从公网回来：frp / 反代 / 安全组
+    4) JWT_ISSUER 是否等于 AUTH_DOMAIN（必须是 AS 的域名，不是站点域名）
+  确认要跳过本门禁时加 --skip-issuer-gate（bff 会自己重试）。
+EOF
+    return 1
+}
+
 echo '==> gate 1/2: vars and content (deploy/bin/check-env.sh)'
 bash deploy/bin/check-env.sh
 
@@ -203,6 +234,10 @@ esac
 # Fixed order: infra -> account (bff fetches discovery at boot) -> app.
 # No --remove-orphans: with a profile mismatch it would delete nginx-proxy/acme.
 for unit in "${UNITS[@]}"; do
+    if [ "$unit" = "app" ] && [ "$SKIP_ISSUER_GATE" -eq 0 ]; then
+        echo '==> gate: public AS discovery (bff boot dependency)'
+        require_public_issuer
+    fi
     echo "==> ${unit}: pull"
     docker compose "${COMPOSE_ARGS[@]}" -f "deploy/docker/docker-compose.${unit}.yml" pull
     echo "==> ${unit}: up -d"
@@ -219,7 +254,7 @@ case " ${UNITS[*]} " in
         # broken nginx conf - both worth reporting before the business services.
         wait_healthy nitrowater-docs
         wait_http http://127.0.0.1:8080/api/public/ping 100
-        wait_healthy nitrowater-bff
+        wait_healthy nitrowater-bff 60
         ;;
 esac
 

@@ -17,7 +17,13 @@ services:
     container_name: nitrowater-account
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8090:8090"
-    # 只有 bff 带 healthcheck；本服务靠 restart 策略 + 日志。
+    # TCP 探针：镜像里没有 curl/wget（JRE 基础镜像），bash 的 /dev/tcp 就够判断连接器已监听。
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8090'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
     logging:
       driver: json-file
       options:
