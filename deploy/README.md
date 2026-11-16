@@ -5,15 +5,18 @@
 
 | 场景 | 怎么做 | 文档 |
 |---|---|---|
-| **首次部署**（一次性，不可回滚） | 人工执行，碰 DNS / TLS / 密钥 / KEK | [`docs/bootstrap.md`](docs/bootstrap.md) |
-| **日常运维 + 版本迭代** | CI 同步 `deploy/` + `bash deploy/bin/deploy.sh --tag <tag>` | [`docs/operations.md`](docs/operations.md) |
+| **首次部署**（一次性，碰 DNS / TLS / 密钥 / KEK） | 人工执行 | [`docs/bootstrap.md`](docs/bootstrap.md) |
+| **日常发版** | `release.yml`（build + deploy）或 `deploy.yml`（只上线已有镜像） | [`docs/operations.md`](docs/operations.md) §1 |
+| **infra 变更**（mysql / redis / edge） | 人工：改 compose 后 `up -d`，不随业务发版走 | [`docs/operations.md`](docs/operations.md) §1 |
+| **备份 / 恢复 / 证书 / 隧道** | 人工 | [`docs/operations.md`](docs/operations.md) §2–§6 |
 
-首次部署不进 CI：失败会留下半初始化的机器。CI 只负责已运行机器上的"文件同步 + 镜像替换"。
-第一次跑的常见坑（传文件、权限、`manifest unknown`、`invalid redirect_uri`、413、语言包）
-按顺序整理在 [`docs/bootstrap.md`](docs/bootstrap.md) §11。
+发版只换镜像，不碰宿主机状态。`deploy.yml` 的完整动作：同步 `deploy/` → `check-env` 门禁 →
+**先拉齐 4 个镜像** → MySQL 备份 → `account` → `app`（`up -d --no-build`）→ 探活。
+拉取失败不会留下"新 account + 旧 server"，备份失败不会继续替换容器。
 
-**回滚**（手动，够用就好）：`deploy.sh --tag <旧 sha>`，并把 `deploy/` 同步回同一个 commit
-（CI 用 `deploy.yml` 的 `ref`）；要退数据就用 `deploy/backups/` 里发版前那份 dump。暂不做自动回滚。
+**回滚**：`deploy.yml` 填 `ref=<产出镜像的那个 commit>`，`tag` **留空**（自动取该 commit 的 sha），
+`deploy/` 与镜像自然同源；要退数据就用 `deploy/backups/` 里发版前那份 dump。`release` 会重建镜像，
+不用来回滚。
 
 ## 拓扑
 
@@ -24,11 +27,11 @@
 容器内不发布：server 8081 · resource 8093 · docs 80 · mysql · redis · piston · qdrant
 ```
 
-| 单元 | compose | 内容 |
-|---|---|---|
-| infra | `deploy/docker/docker-compose.infra.yml` | mysql / redis（`edge` profile 带 nginx + 自动证书） |
-| account | `deploy/docker/docker-compose.account.yml` | SSO / OIDC，可独立发布 |
-| app | `deploy/docker/docker-compose.app.yml` | qdrant / piston / docs / resource / server / bff |
+| 单元 | compose | 内容 | 谁部署 |
+|---|---|---|---|
+| infra | `deploy/docker/docker-compose.infra.yml` | mysql / redis（`edge` profile 带 nginx + 自动证书） | **人工** |
+| account | `deploy/docker/docker-compose.account.yml` | SSO / OIDC，可独立发布 | `deploy.yml` |
+| app | `deploy/docker/docker-compose.app.yml` | qdrant / piston / docs / resource / server / bff | `deploy.yml` |
 
 三份共享 `nitrowater-net`。**启动顺序：infra → account → app**（bff 启动要拉 account 的 OIDC discovery）。
 
@@ -40,25 +43,38 @@
 ## 命令
 
 ```bash
-# 首次（详见 docs/bootstrap.md）：本地仓库根打包，再在服务器上解开。
-# 打包用 git archive（只含 tracked 文件），不要用 tar：tar 不认 .gitignore，
-# 会把本机的 deploy/keys/*.key、deploy/docker/.env*、deploy/content/* 一起打进去，
-# 解包时直接覆盖服务器上的生产密钥与配置。
+# 首次部署：本地按 tracked 文件打包，服务器上解开（详见 docs/bootstrap.md）
+# 必须用 git archive：tar 不认 gitignore，会把本机 keys/*.key、.env*、content/* 覆盖到生产
 git archive --format=tar.gz HEAD deploy > /tmp/nitrowater-deploy.tgz
 scp /tmp/nitrowater-deploy.tgz <host>:/tmp/
-# 服务器上（$USER = 你的 SSH 账号，CI 也用同一个写 deploy/）
 sudo mkdir -p /opt/nitrowater && sudo tar -xzf /tmp/nitrowater-deploy.tgz -C /opt/nitrowater
 sudo chown -R "$USER": /opt/nitrowater/deploy && rm -f /tmp/nitrowater-deploy.tgz
 # 之后：cp .env.example → .env、gen-keys → check-env → infra + 建库 → account → app → 收尾 → 验收
-# （.env 与 keys/ 只在服务器上生成，永远不随包走）
-
-# 每次上线（CI 会先同步 deploy/；手动改过文件就按上面打包那一组再传一次，用同一个账号解包就不用 sudo）
-bash deploy/bin/deploy.sh --tag <tag>       # 门禁 → 备份 → pull → up -d --no-build → 探活
-bash deploy/bin/deploy.sh --only account    # 只动身份服务
-bash deploy/bin/deploy.sh --help
 ```
 
-Windows PowerShell 用这版（`-o` 让 git 自己写文件；`>` 在 PowerShell 里是 `Out-File`，会把 gzip 当文本写坏）：
+日常发版走 CI（全部手动触发）：
+
+```bash
+gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线（tag 只是人类别名，部署按 sha）
+gh workflow run deploy.yml                  # 只上线当前 commit 已构建的镜像
+gh workflow run deploy.yml -f ref=<sha>     # 回滚：镜像与 deploy/ 一起回到那个 commit
+```
+
+不经 CI 的应急动作（等价于 CI 的某一段，务必先确认 `.env` 在）：
+
+```bash
+# 只重发身份服务 / 只重发业务面
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-build
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml     up -d --no-build
+# 换 tag：把 ACCOUNT_IMAGE_TAG / APP_IMAGE_TAG 写进环境（进程环境优先于 --env-file）
+ACCOUNT_IMAGE_TAG=<sha> APP_IMAGE_TAG=<sha> docker compose ... up -d --no-build
+# 发版前的备份（CI 会自动跑；手工发布前请自己跑一次）
+bash deploy/bin/backup_mysql.sh
+# 探活
+curl -fsS http://127.0.0.1:8080/api/public/ping && docker inspect -f '{{.State.Health.Status}}' nitrowater-bff
+```
+
+Windows PowerShell 打包（`-o` 让 git 自己写文件；`>` 是 `Out-File`，会把 gzip 当文本写坏）：
 
 ```powershell
 git archive --format=tar.gz -o "$env:TEMP\nitrowater-deploy.tgz" HEAD deploy
@@ -70,11 +86,10 @@ Remove-Item "$env:TEMP\nitrowater-deploy.tgz"
 
 | 用途 | 脚本 |
 |---|---|
-| **上线（唯一入口，CI 与手动同一条）** | `deploy.sh` |
+| 环境自检 / 部署门禁（`deploy.yml` 每次必跑） | `check-env.sh` |
 | 生成 JWT 密钥 | `gen-keys.sh` |
-| 环境自检 / 部署门禁 | `check-env.sh` |
 | 按模板同步 `.env`（补新键、删废弃键、刷新注释） | `sync-env.sh` |
-| 备份 MySQL（`deploy.sh` 发版前自动执行） | `backup_mysql.sh` |
+| 备份 MySQL（`deploy.yml` 发版前自动执行） | `backup_mysql.sh` |
 | 备份资源字节（`RESOURCE_DATA_DIR` 快照） | `backup_resource.sh` |
 | 给 Piston 装语言包（首次 / 加语言） | `install-piston-runtimes.sh` |
 | 运维 UI 隧道 | `ops-tunnel.sh` |
@@ -83,12 +98,12 @@ Remove-Item "$env:TEMP\nitrowater-deploy.tgz"
 
 ## 三条硬规则
 
-1. `deploy/` 下的 compose / 脚本 / 文档是**发布产物**：CI 从被部署的那个 commit 同步上来，
+1. `deploy/` 下的 compose / 脚本 / 文档是**发布产物**：`deploy.yml` 从被部署的那个 commit 同步上来，
    改动随 commit 走。不要在服务器上手改——下次同步会被覆盖。
-2. 宿主机只保留状态：`.env`、`keys/`、`content/`、`backups/`、资源目录（`RESOURCE_DATA_DIR`）与数据卷。它们被 gitignore，
-   所以用 `git archive` 打包或 CI 同步都不会带上来、也不会被覆盖 —— 但 `tar` 不认 gitignore，
-   手动打包必须用 `git archive`（见「命令」）。
-3. 换机器 = 手工搬 `.env` / `keys/` / `content/` / 资源目录加数据卷；`NITROWATER_KEK` 必须离线另存（丢了密文不可解）。
+2. 宿主机只保留状态：`.env`、`.env.prod.secrets`、`keys/`、`content/`、`backups/`、资源目录
+   （`RESOURCE_DATA_DIR`）与数据卷。它们被 gitignore，`git archive` 与 CI 同步都不会覆盖 ——
+   但 `tar` 不认 gitignore，手动打包必须用 `git archive`。
+3. 换机器 = 手工搬上面这些状态加数据卷；`NITROWATER_KEK` 必须离线另存（丢了密文不可解）。
 
 ## 安全红线
 

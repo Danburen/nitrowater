@@ -1,11 +1,17 @@
-# Release: build + deploy in one run. Both steps use the same tag.
+# Release: build + deploy in one run, both pinned to the same commit sha.
 #
-#   build  -> build.yml   (checks, then 4 images to GHCR)
-#   deploy -> deploy.yml  (preflight, then pull + up -d on the server)
+#   build  -> build.yml   (probe, checks, then 4 images to GHCR)
+#   deploy -> deploy.yml  (preflight, then pull + backup + up -d on the host)
+#
+# The deploy uses build's `sha` output, not the `tag` input: sha tags are what the
+# commit actually produced, while `tag` is a moving name (latest / v1.2.3) that a later
+# build can repoint. When the probe finds all four images already pushed for this sha,
+# build.yml skips checks + bake, the called workflow still reports success, and this
+# run becomes "deploy the existing images" — the intended no-op fast path.
 #
 # needs: deploy only runs if build succeeded, so a red commit never reaches the host.
-# Rollback: use Deploy with a previous sha (`ref` = the commit that produced it) — Release
-# would rebuild the tag from the current branch instead of restoring the old artifacts.
+# Rollback: use Deploy with `ref` = the commit that produced the images (leave `tag`
+# empty so it resolves to that commit's sha); Release would rebuild instead of restoring.
 
 name: Release (build + deploy)
 
@@ -13,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag (default latest; prefer v1.2.3)'
+        description: 'Image tag for a human-readable alias (default latest; deployment uses the sha)'
         required: false
         default: 'latest'
 
@@ -21,6 +27,10 @@ on:
 concurrency:
   group: release
   cancel-in-progress: false
+
+# Every job below narrows or widens this explicitly; the default token stays read-only.
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -36,13 +46,14 @@ jobs:
     needs: [build]
     uses: ./.github/workflows/deploy.yml
     with:
-      # Build's normalized tag (empty input already fell back to latest).
-      tag: ${{ needs.build.outputs.tag }}
+      # Immutable ref of what was just built (or already existed) for this commit.
+      tag: ${{ needs.build.outputs.sha }}
       skip_preflight: false
     secrets:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
+      SSH_FINGERPRINT: ${{ secrets.SSH_FINGERPRINT }}
       GHCR_USER: ${{ secrets.GHCR_USER }}
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
     permissions:

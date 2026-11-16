@@ -7,6 +7,12 @@
 # deploy/ is not an image: deploy.yml ships it over SSH from the same commit.
 # Tests run in this workflow only — the Dockerfile builds with `-x test`.
 #
+# Short-circuit: `probe` checks first whether all four <sha> tags already exist. If
+# they do, every verify job and the bake are skipped and the run ends in seconds
+# (only `alias` still runs, to point a requested <tag> at that sha). Rebuilding the
+# same commit would not give the same digest anyway (COPY layers keep file mtimes),
+# so "already pushed for this sha" is the only reliable "nothing to do" signal.
+#
 # Everything is manual; auto triggers are commented out in `on:` below.
 
 name: Build
@@ -80,11 +86,88 @@ jobs:
           echo "resolved: $repo/*:$tag (sha $GITHUB_SHA)"
 
   # ---------------------------------------------------------------------------
+  # probe: are all four <sha> images already in GHCR? If yes, skip everything.
+  # ---------------------------------------------------------------------------
+  probe:
+    name: probe (images for sha)
+    runs-on: ubuntu-latest
+    needs: [resolve]
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - id: check
+        env:
+          REPO: ${{ needs.resolve.outputs.repo }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -u
+          missing=0
+          for svc in account resource server bff; do
+            ref="ghcr.io/$REPO/$svc:$SHA"
+            if docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "hit   $ref"
+            else
+              echo "miss  $ref"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo '::notice::all four images already exist for this sha — checks and bake skipped'
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # alias: images already exist for this sha, but a human-readable tag was asked
+  # for. Point that tag at the existing manifest — 4 registry calls, no rebuild.
+  # (Without this, `release -f tag=v1.2.3` on an already-built commit would skip
+  # the bake and silently never create v1.2.3.)
+  # ---------------------------------------------------------------------------
+  alias:
+    name: alias tag
+    runs-on: ubuntu-latest
+    needs: [resolve, probe]
+    if: needs.probe.outputs.exists == 'true' && needs.resolve.outputs.tag != needs.resolve.outputs.sha
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - env:
+          REPO: ${{ needs.resolve.outputs.repo }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -eu
+          for svc in account resource server bff; do
+            docker buildx imagetools create \
+              -t "ghcr.io/$REPO/$svc:$TAG" "ghcr.io/$REPO/$svc:$SHA"
+            echo "aliased $svc:$TAG -> $svc:$SHA"
+          done
+
+  # ---------------------------------------------------------------------------
   # verify: cheap gates. All four run in parallel and must pass before the build.
   # ---------------------------------------------------------------------------
   backend:
     name: backend (java 25)
     runs-on: ubuntu-latest
+    needs: [probe]
+    if: needs.probe.outputs.exists != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -114,6 +197,8 @@ jobs:
   ui-web:
     name: ui-web (vue3)
     runs-on: ubuntu-latest
+    needs: [probe]
+    if: needs.probe.outputs.exists != 'true'
     defaults:
       run:
         working-directory: nitrowater-web
@@ -136,6 +221,8 @@ jobs:
   ui-account:
     name: ui-account (pnpm workspace)
     runs-on: ubuntu-latest
+    needs: [probe]
+    if: needs.probe.outputs.exists != 'true'
     defaults:
       run:
         working-directory: nitrowater-account
@@ -160,6 +247,8 @@ jobs:
   guard:
     name: deploy guard
     runs-on: ubuntu-latest
+    needs: [probe]
+    if: needs.probe.outputs.exists != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -203,9 +292,9 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     name: bake (push 4 images)
-    needs: [resolve, backend, ui-web, ui-account, guard]
-    # Checks still run on pull_request, images are not built.
-    if: github.event_name != 'pull_request'
+    needs: [resolve, probe, backend, ui-web, ui-account, guard]
+    # Skipped when probe found all four <sha> images (nothing to build).
+    if: needs.probe.outputs.exists != 'true'
     runs-on: ubuntu-latest
     env:
       REGISTRY: ghcr.io

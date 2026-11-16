@@ -1,18 +1,18 @@
-# Deploy: roll an already-built image tag out to the server. Never builds anything.
+# Deploy: roll an already-built image tag out to the host. Never builds anything.
 #
-# The four images for that tag must exist in GHCR (run Build / Release first);
-# preflight verifies all four before touching the host.
+# One SSH session does the whole sequence (nothing of it is duplicated in docs):
+#   ship deploy/   tar + scp, merged into DEPLOY_ROOT (.env / keys/ / content/ / backups stay)
+#   gate           deploy/bin/check-env.sh
+#   pull           the four images of <tag> — all of them, before any container is touched
+#   backup         deploy/bin/backup_mysql.sh (the only pre-Flyway recovery point)
+#   apply          account -> app, `up -d --no-build` (infra is deployed by hand, see operations.md)
+#   verify         account discovery, /api/public/ping, bff health — a red bff fails the run
 #
-# Server side: three steps.
-#   checkout + tar + scp        ship deploy/ from the commit being deployed
-#   tar -xzf /tmp/...           merge it into DEPLOY_ROOT; .env, keys/, content/, backups/ untouched
-#   deploy/bin/deploy.sh        gates -> MySQL backup -> compose config --images
-#                               -> infra/account/app pull + up -d --no-build -> health checks -> prune
-# Nothing of that sequence lives in this YAML, so CI and a manual release cannot drift apart.
+# <tag> defaults to the commit sha of `ref`, so "deploy this commit" means "the images
+# built from this commit". Pass `tag` only to move a mutable tag (latest) or a version tag.
 #
-# The commit is the alignment unit: images carry <tag>/<sha>, deploy/ comes from the
-# same ref. Rolling back means deploying that tag with `ref` set to the same commit,
-# so compose files, scripts and docs match the images again.
+# Rollback = run this again with `ref` set to the commit that produced the images; the
+# default tag then follows that commit and deploy/ comes from the same tree.
 
 name: Deploy
 
@@ -20,11 +20,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to deploy (default latest; for rollback use a previous commit sha)'
+        description: 'Image tag (empty = the commit sha of `ref`; use a tag only for rollback by name)'
         required: false
-        default: 'latest'
+        default: ''
       ref:
-        description: 'Git ref/sha to take deploy/ from (default: the commit this run is on)'
+        description: 'Git ref/sha to deploy deploy/ from (empty = this run''s commit)'
         required: false
         default: ''
       skip_preflight:
@@ -36,12 +36,12 @@ on:
   workflow_call:
     inputs:
       tag:
-        description: 'Image tag to deploy'
+        description: 'Image tag (empty = the commit sha of `ref`)'
         required: false
         type: string
-        default: 'latest'
+        default: ''
       ref:
-        description: 'Git ref/sha to take deploy/ from (empty = this run commit)'
+        description: 'Git ref/sha to deploy deploy/ from (empty = this run''s commit)'
         required: false
         type: string
         default: ''
@@ -57,19 +57,12 @@ on:
         required: true
       SSH_KEY:
         required: true
+      SSH_FINGERPRINT:
+        required: false
       GHCR_USER:
         required: false
       GHCR_PAT:
         required: false
-
-  # ---------------- auto trigger (disabled) ----------------
-  # Deploy automatically after a successful build. If you enable it, the tag must
-  # come from the triggering run (github.event.workflow_run.head_sha), otherwise
-  # every deploy lands on `latest` and rollback loses its meaning.
-  # workflow_run:
-  #   workflows: [Build]
-  #   types: [completed]
-  #   branches: [main]
 
 # Deploys are globally serial. This group is declared here only: release.yml must
 # not declare the same group, or caller and callee wait on each other.
@@ -77,15 +70,17 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+# Nothing here needs the default write-scoped GITHUB_TOKEN; jobs narrow this further.
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT || '/opt/nitrowater' }}
-  # Set to `edge` when the infra compose brings its own 80/443 proxy; empty otherwise.
-  COMPOSE_PROFILE: ${{ vars.COMPOSE_PROFILE || '' }}
 
 jobs:
   # ---------------------------------------------------------------------------
-  # preflight: fail here instead of on the server
+  # preflight: resolve the tag, then fail here instead of on the server
   # ---------------------------------------------------------------------------
   preflight:
     name: preflight (images)
@@ -96,12 +91,22 @@ jobs:
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
     steps:
+      # The tag default is the sha of the tree being deployed, so it must be resolved
+      # after checking out the same ref the deploy job uses.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
+          persist-credentials: false
+
       - id: resolve
         env:
+          # The tag comes from a form input: read it via env, never inline it in the script.
           RAW_TAG: ${{ inputs.tag }}
         run: |
           set -eu
-          tag="${RAW_TAG:-latest}"
+          sha="$(git rev-parse HEAD)"
+          tag="${RAW_TAG:-$sha}"
+          # It ends up in a docker tag, so whitelist the allowed characters.
           case "$tag" in
             ''|*[!A-Za-z0-9._-]*) echo "::error::invalid tag: $tag"; exit 1 ;;
           esac
@@ -110,7 +115,7 @@ jobs:
             echo "tag=$tag"
             echo "repo=$repo"
           } >> "$GITHUB_OUTPUT"
-          echo "target: ghcr.io/$repo/*:$tag"
+          echo "target: ghcr.io/$repo/*:$tag (deploy/ from $sha)"
 
       - uses: docker/login-action@v3
         if: ${{ !inputs.skip_preflight }}
@@ -130,7 +135,8 @@ jobs:
           for svc in account resource server bff; do
             ref="ghcr.io/$REPO/$svc:$TAG"
             if docker manifest inspect "$ref" >/dev/null 2>&1; then
-              echo "ok    $ref"
+              digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo n/a)"
+              echo "ok    $ref  $digest"
             else
               echo "::error::missing $ref (run Build with the same tag first)"
               missing=1
@@ -139,7 +145,7 @@ jobs:
           [ "$missing" -eq 0 ]
 
   # ---------------------------------------------------------------------------
-  # deploy: ssh, pull, up -d --no-build
+  # deploy: ship deploy/, pull, backup, apply, verify
   # ---------------------------------------------------------------------------
   deploy:
     name: deploy (ssh)
@@ -149,34 +155,35 @@ jobs:
     permissions:
       contents: read
     steps:
-      # The host keeps no git checkout, so deploy/ is shipped from the commit being
-      # deployed. `ref` defaults to this run's commit; for a rollback pass the commit
-      # that produced the images (or the git tag name).
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
           persist-credentials: false
 
       - name: Bundle deploy/
-        run: tar -czf /tmp/nitrowater-deploy.tgz -C . deploy
+        # git archive, not tar: only tracked files. tar would also pack any local
+        # deploy/docker/.env or deploy/keys/*.key that happens to exist in the workspace.
+        run: git archive --format=tar.gz -o /tmp/nitrowater-deploy.tgz HEAD deploy
 
       - name: Copy bundle to host
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
-        run: |
+        run: |-
           set -eu
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           scp -q -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             /tmp/nitrowater-deploy.tgz "$SSH_USER@$SSH_HOST:/tmp/nitrowater-deploy.tgz"
+          # The bundle carries no secrets (tracked files only), but the key does not belong
+          # in a shared/self-hosted runner's home.
+          rm -f ~/.ssh/deploy_key
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
-          # Passed through `envs` (never inlined into the script: secrets would hit the log).
           REGISTRY: ${{ env.REGISTRY }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           # compose reads ACCOUNT_IMAGE_TAG / APP_IMAGE_TAG (not IMAGE_TAG), and process
@@ -184,21 +191,23 @@ jobs:
           ACCOUNT_IMAGE_TAG: ${{ needs.preflight.outputs.tag }}
           APP_IMAGE_TAG: ${{ needs.preflight.outputs.tag }}
           DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
-          COMPOSE_PROFILE: ${{ env.COMPOSE_PROFILE }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          # Pin the host key when the secret is set (optional; empty = TOFU like scp above).
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           timeout: 30s
           command_timeout: 30m
-          envs: REGISTRY,GITHUB_REPOSITORY,ACCOUNT_IMAGE_TAG,APP_IMAGE_TAG,DEPLOY_ROOT,COMPOSE_PROFILE,GHCR_USER,GHCR_PAT
-          script: |
+          envs: REGISTRY,GITHUB_REPOSITORY,ACCOUNT_IMAGE_TAG,APP_IMAGE_TAG,DEPLOY_ROOT,GHCR_USER,GHCR_PAT
+          script: |-
             # The remote side is usually sh: POSIX only (no arrays, no ${var,,}).
             set -eu
 
             cd "$DEPLOY_ROOT"
+            TAG="${APP_IMAGE_TAG:?APP_IMAGE_TAG is required}"
 
             # compose image refs use ${REGISTRY}/${GITHUB_REPOSITORY}; the org must be lowercase.
             GITHUB_REPOSITORY="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
@@ -207,26 +216,79 @@ jobs:
             if [ -n "${GHCR_PAT:-}" ]; then
               echo '==> docker login ghcr.io'
               printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:?GHCR_USER is required when GHCR_PAT is set}" --password-stdin
+              # The token is only needed for the pull; keep it out of the rest of the session
+              # so a later `env` dump / failing command cannot surface it.
+              unset GHCR_PAT
             fi
 
-            # deploy/ arrives as a tarball from the same commit as the images. It is
-            # extracted in place (merge): tracked files are overwritten, while .env,
-            # keys/, content/moderation/ and backups/ are host state and are not in the bundle.
+            # Fail here — with the host's own credentials, before anything is replaced —
+            # instead of in the middle of the pull.
+            echo '==> images'
+            for svc in account resource server bff; do
+              img="$REGISTRY/$GITHUB_REPOSITORY/$svc:$TAG"
+              docker manifest inspect "$img" >/dev/null || { echo "ERROR: not visible from this host: $img" >&2; exit 1; }
+              echo "    ok $img"
+            done
 
-            # The documentation corpora are tracked now (deploy/content/docs), so a deleted or
-            # renamed markdown file has to disappear here as well: tar merges into the existing
-            # tree, which would keep the old files and keep them indexed. moderation/ stays host
-            # state and is not part of the bundle.
+            # deploy/ arrives as a tarball from the same commit as the images. The documentation
+            # corpora are tracked, so a renamed/deleted markdown file has to disappear here too
+            # (tar merges into the existing tree). .env, keys/, content/moderation/ and backups/
+            # are host state and are not in the bundle.
             rm -rf deploy/content/docs
             echo '==> sync deploy/ from the workflow commit'
             tar -xzf /tmp/nitrowater-deploy.tgz
             rm -f /tmp/nitrowater-deploy.tgz
 
-            # Everything after that lives in deploy/bin/deploy.sh: one entry point
-            # shared with a manual deploy, so the sequence cannot drift between CI and ops.
-            echo '==> release (deploy/bin/deploy.sh)'
-            if [ -n "${COMPOSE_PROFILE:-}" ]; then
-              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG" --profile "$COMPOSE_PROFILE"
+            echo '==> gate: vars and content (deploy/bin/check-env.sh)'
+            bash deploy/bin/check-env.sh
+
+            # Pull everything first: a failed pull must leave the running containers alone
+            # (pulling per unit would leave a new account next to an old server).
+            echo '==> pull'
+            for svc in account resource server bff; do
+              docker pull "$REGISTRY/$GITHUB_REPOSITORY/$svc:$TAG"
+            done
+
+            ENVF="--env-file deploy/docker/.env"
+            [ -f deploy/docker/.env.prod.secrets ] && ENVF="$ENVF --env-file deploy/docker/.env.prod.secrets"
+
+            # Flyway runs inside the app on boot, so this dump is the only recovery point for a
+            # release that changes the schema. A missing container means "not deployed yet".
+            if docker inspect -f '{{.State.Running}}' nitrowater-mysql >/dev/null 2>&1; then
+              echo '==> backup: MySQL dump before replacing containers'
+              bash deploy/bin/backup_mysql.sh
             else
-              bash deploy/bin/deploy.sh --tag "$ACCOUNT_IMAGE_TAG"
+              echo '==> backup: skipped (nitrowater-mysql not found)'
             fi
+
+            echo '==> account: up -d --no-build'
+            docker compose $ENVF -f deploy/docker/docker-compose.account.yml up -d --no-build
+            # bff fetches this at boot; wait for it instead of letting bff crash-loop.
+            curl -fsS --retry 60 --retry-delay 3 --retry-connrefused -o /dev/null \
+              http://127.0.0.1:8090/.well-known/openid-configuration
+
+            echo '==> app: up -d --no-build'
+            docker compose $ENVF -f deploy/docker/docker-compose.app.yml up -d --no-build
+
+            echo '==> verify'
+            curl -fsS --retry 100 --retry-delay 3 --retry-connrefused -o /dev/null \
+              http://127.0.0.1:8080/api/public/ping
+            tries=0
+            while [ "$tries" -lt 60 ]; do
+              status="$(docker inspect -f '{{.State.Health.Status}}' nitrowater-bff 2>/dev/null || echo missing)"
+              [ "$status" = "healthy" ] && break
+              tries=$((tries + 1))
+              sleep 3
+            done
+            if [ "$status" != "healthy" ]; then
+              echo "ERROR: nitrowater-bff is $status after 180s" >&2
+              docker logs --tail 50 nitrowater-bff || true
+              exit 1
+            fi
+
+            # Untagged only: `-a` would also drop mysql/qdrant/piston and the next `up` would
+            # re-pull piston, which has no tag pinned in compose.
+            echo '==> prune untagged images older than 7 days'
+            docker image prune -f --filter 'until=168h'
+
+            echo "==> done: $TAG"

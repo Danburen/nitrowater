@@ -181,7 +181,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-All three pipelines are manual: `build.yml` runs the checks and then builds the four application images with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built tag out over SSH (and is what you use to roll back) — it tars `deploy/` from the commit being deployed and scps it to the host, so no git checkout is needed there, then runs `deploy/bin/deploy.sh` (the same command a manual release uses); `release.yml` chains build → deploy in one run.
+All three pipelines are manual: `build.yml` probes whether the four images for the current sha already exist (and skips checks + bake if so), otherwise runs the checks and builds them with `docker buildx bake`, pushing `<tag>` and `<sha>` to GHCR; `deploy.yml` rolls an already-built sha out over SSH (and is what you use to roll back) — it ships `deploy/` from the same commit, pulls the four images, dumps MySQL, then `up -d` for account and app and verifies the probes; `release.yml` chains build → deploy, deploying the sha build produced.
 
 ## 📦 Deployment
 
@@ -194,8 +194,9 @@ bash deploy/bin/check-env.sh                       # must report 0 FAIL
 ```
 
 First deployment is a manual runbook (DNS, TLS, secrets, first admin): [`deploy/docs/bootstrap.md`](deploy/docs/bootstrap.md).
-Day-2 releases, rollbacks and operations go through one entry point, the same command CI uses:
-`bash deploy/bin/deploy.sh --tag <tag>` — see [`deploy/docs/operations.md`](deploy/docs/operations.md).
+Day-2 releases go through the `release` / `deploy` workflows (pull an already-built image, back up MySQL,
+`up -d`, verify); rollback re-runs `deploy` with `ref` set to the commit that produced the images —
+see [`deploy/docs/operations.md`](deploy/docs/operations.md).
 
 Every variable is annotated in `.env.example` (the only template); backup, tunnels, certificates
 and AI quota live in the same operations doc.

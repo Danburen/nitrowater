@@ -13,7 +13,7 @@
 #   BACKUP_DIR=/mnt/backup bash deploy/bin/backup_mysql.sh
 #   crontab -e  ->  0 3 * * * /opt/nitrowater/deploy/bin/backup_mysql.sh >/dev/null 2>&1
 #
-# deploy.sh calls this before replacing containers; a non-zero exit aborts the deploy.
+# deploy.yml calls this before replacing containers; a non-zero exit aborts the deploy.
 # Exit codes: 0 = dump written and verified; 1 = no fresh backup was produced.
 # ============================================================
 set -euo pipefail

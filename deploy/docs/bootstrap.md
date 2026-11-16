@@ -160,11 +160,11 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app
 `pull` 的目标由 `.env` 的 `REGISTRY` / `GITHUB_REPOSITORY` / `ACCOUNT_IMAGE_TAG`·`APP_IMAGE_TAG` 拼出，
 `manifest unknown` 基本就是这三处和实际推上去的不一致。
 
-> **用内置 edge（§8）或自建反代时，真正的顺序是 `account → edge → bff`。**
+> **用内置 edge（§8）时，真正的顺序是 `account → edge → bff`。**
 > bff 启动就要拉 `JWT_ISSUER/.well-known/openid-configuration`，而那是公网域名，必须有 edge + 已签发的
 > 证书才能通。首次部署可以先只起 infra 和 account，按 §8 把 edge 起好、证书签发完，再回来起 app。
-> `deploy/bin/deploy.sh` 已内置这道门禁（拦在 app 之前，`--skip-issuer-gate` 可跳过），
-> bff 容器自身也会先等待 issuer 再启动，所以顺序错了不会再变成崩溃重启循环。
+> bff 容器自身会先等这段 issuer（最多 5 分钟）再启动，但**工作流不预检公网 issuer**：证书没签好时
+> bff 会反复重启，发布以探活失败告终。所以顺序还是要对，别指望自动兜底。
 
 验收：`nitrowater-bff` healthy；`curl http://127.0.0.1:8080/api/public/ping` 返回 pong。
 
@@ -212,7 +212,7 @@ docker exec nitrowater-piston node -e "require('http').get('http://127.0.0.1:200
 
 文档站（每个插件一个 VitePress 站点）在**独立仓库** `nitrowater-plugin-docs` 里构建；那边 CI 每次
 push 到 `main` 就推镜像（`:latest` + `:<短 sha>`）。服务器这边**只拉不传**：`.env` 里给两行，
-`deploy/bin/deploy.sh` 就把它当 app 单元的一个服务一起 `pull` + `up -d`。
+部署时它作为 app 单元的一个服务一起 `pull` + `up -d`。
 
 ```bash
 # deploy/docker/.env
@@ -248,30 +248,36 @@ DOCS_BASE_PREFIX=/plugin npm run build      # 产物 dist/plugin/<id>/
 （`deploy/docker/docker-compose.docs-local.yml`），URL 与线上一致；仓库不在同级就用
 `DOCS_SITE_DIR` 指过去。它找不到 `dist/plugin/` 时会打 WARN，提醒你先按上面那条命令构建。
 
-## 8. 公网入口
+## 8. 公网入口（edge profile + ACME）
 
-**二选一**：`edge` profile（nginx-proxy + 自动证书，`.env` 填 `WEB_DOMAIN` / `AUTH_DOMAIN` / `SSL_EMAIL`），
-或自建反代到 `127.0.0.1:8080`（站点）与 `127.0.0.1:8090`（SSO）。自建反代必须做对四件事：
-
-```nginx
-proxy_set_header X-Forwarded-Proto $scheme;   # 缺了回调会拼成 http:// → invalid redirect_uri
-proxy_set_header X-Forwarded-Host  $http_host;
-client_max_body_size 100m;                    # 插件 jar 64MB；默认 1m → 413
-proxy_buffering off;                          # SSE：AI 回答逐字下发
-proxy_read_timeout 300s; proxy_send_timeout 300s;
-location ~ ^/(actuator|internal)(/|$) { return 404; }   # 管理面双保险
-```
-
-用 edge 时上传上限和 SSE 两条同样要加在 `nginx_vhost` 的 `default_location` 上
-（上传上限已由 `deploy/docker/nginx-proxy-client-body.conf` 挂进 proxy 的 `conf.d`，SSE 仍需按 vhost 配）。
+`edge` profile 起 nginx-proxy + acme-companion：按容器的 `VIRTUAL_HOST` 自动生成 vhost，并用 HTTP-01
+自动签发 / 续期证书。`.env` 只需 `WEB_DOMAIN` / `AUTH_DOMAIN` / `SSL_EMAIL`，且 **80 端口必须从公网可达**。
 
 ```bash
 docker compose --env-file deploy/docker/.env \
   -f deploy/docker/docker-compose.infra.yml --profile edge up -d
-docker logs -f nitrowater-acme            # 等证书签发完成（HTTP-01，需 80 端口从公网可达）
+docker logs -f nitrowater-acme            # 等 "Cert success"（首次签完约 1 分钟）
 ```
 
-**首次部署时这一步要排在 §6 的 `app` 之前**：`VIRTUAL_HOST` / `ACME_HOST` 是容器创建时读取的标签，
+vhost 上还需要两件事：
+
+- **上传上限**：已由 `deploy/docker/nginx-proxy-client-body.conf` 挂进 proxy 的 `conf.d`（100m），不用管。
+- **SSE**：AI 回答要逐字下发，必须关掉缓冲与短超时 —— 写 `/etc/nginx/vhost.d/<WEB_DOMAIN>`（卷 `nginx_vhost`）：
+
+```nginx
+proxy_buffering off;
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;
+```
+
+```bash
+docker exec nitrowater-nginx-proxy nginx -s reload
+```
+
+> 证书没签下来时，nginx-proxy 不会生成该域名的 HTTPS server 块，443 会落到自签的 `default.crt`（浏览器报不安全）。
+> 别去改 vhost —— 先看 `docker logs nitrowater-acme` 卡在哪一步（验证 / 下载）。
+
+**首次部署时这一步要排在 §6 的 `app` 之前**：`VIRTUAL_HOST` / `LETSENCRYPT_HOST` 是容器创建时读取的环境变量，
 edge 起得晚或域名当时为空，vhost 和证书都不会生成；而 bff 启动就要拉这个域名上的 discovery。
 标签改动后必须重建容器才会生效：
 
@@ -280,7 +286,7 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.acc
 docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml up -d --no-build --force-recreate bff
 ```
 
-验收：`curl -I http://<WEB_DOMAIN>` → 301/308；`/actuator/health` → 404 或 401（不能 200）。
+验收：`curl -I http://<WEB_DOMAIN>` → 301/308；`/actuator/health` → 404 或 401（不能 200，bff 自己就会拒）。
 
 ## 9. 验收 + 首个管理员 + 基线备份
 
@@ -335,16 +341,16 @@ WHERE u.username = '<用户名>';"
 | 配置（§3） | `NITROWATER_KEK` 换掉或丢失 | 加密列**永久不可解**（备份也救不回来）；生成后立刻离线另存，且与数据库备份**分开**保管 |
 | 建库（§5） | 应用启动报 `Unknown database` | Flyway 只建表不建库：先跑 §5 的三库 + 账号 SQL |
 | 拉镜像（§6） | `manifest unknown` | 该 tag 没推 / 拼错 / 仓库路径不对；private 包先在宿主机 `docker login ghcr.io` |
-| 发布（§6） | 第一次 `deploy.sh` 打印 `MySQL dump before replacing containers` | 正常：空库也会备份，`deploy/backups/` 多一个几 KB 的 `.sql.gz` |
-| 入口（§8） | 登录后跳 `localhost:5173`，或 `invalid redirect_uri` | 7 个地址写浏览器看到的公网地址；反代必须发 `X-Forwarded-Proto` 与 `X-Forwarded-Host` |
-| 入口（§8） | 上传 413，或 AI 回答整段刷出 | 反代 `client_max_body_size 100m`、`proxy_buffering off`、`proxy_read_timeout 300s` |
-| 入口（§8） | `/actuator/health` 返回 200 | 管理面必须不可达：反代 `location ~ ^/(actuator\|internal)(/\|$){ return 404; }` |
+| 发布（§6） | 第一次部署打印 `backup: MySQL dump before replacing containers` | 正常：空库也会备份，`deploy/backups/` 多一个几 KB 的 `.sql.gz` |
+| 入口（§8） | 登录后跳 `localhost:5173`，或 `invalid redirect_uri` | 7 个地址写浏览器看到的公网地址（`WEB_DOMAIN` / `AUTH_DOMAIN` 必须与它们一致） |
+| 入口（§8） | 上传 413，或 AI 回答整段刷出 | vhost 没吃到 100m 上限 / 没关缓冲：见 §8 的两条 vhost 配置 |
+| 入口（§8） | `/actuator/health` 返回 200 | 不应该：bff 对 `/actuator/**`、`/internal/**` 是 denyAll，先查是不是连到了别的服务 |
 | 运行期（§7） | 点「运行」才 500 | Piston 语言包没装：跑 §7 的 `install-piston-runtimes.sh`（**没有 `ppman`/`cli/`**，`docker exec … cli/index.js` 一定报 ENOENT） |
 | 运行期（§7） | 装完 `/api/v2/runtimes` 里没有 | 少了 `.ppman-installed` 标记文件（piston 只注册带标记的目录）：重跑脚本会自动补；仍不行看 `docker logs nitrowater-piston` |
 | 运行期（§7） | 装包时 `curl: (52) Empty reply` | 那是 `POST /api/v2/packages`（会去拉 GitHub 索引，拉不到就打挂 API）：`docker restart nitrowater-piston`，改用 §7 的脚本 |
 | 运行期（§7） | 脚本报 `FAILED … (download)` | 代理不可用：换前缀重跑（`PISTON_MIRROR=https://ghproxy.net/ bash deploy/bin/install-piston-runtimes.sh`），已装的会 `skip` |
 | 运行期（§7） | `/plugin/*` 404 或 `/plugin/` 是 nginx 默认页 | docs 镜像没换成功：`.env` 的 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG` 不对，或 `docker compose … pull` 拉到的还是旧 tag；`docker inspect nitrowater-docs --format '{{.Config.Image}}'` 看实际镜像 |
-| 运行期（§7） | `deploy.sh` 在 `app: pull` 就失败（`manifest unknown` / `denied`） | 文档站镜像在**独立仓库**：`DOCS_IMAGE_REPO` 要写 `<owner>/nitrowater-plugin-docs`（不是 `nitrowater/docs`）；private 包先 `docker login ghcr.io` |
+| 运行期（§7） | 部署在 `pull` 阶段就失败（`manifest unknown` / `denied`） | 文档站镜像在**独立仓库**：`DOCS_IMAGE_REPO` 要写 `<owner>/nitrowater-plugin-docs`（不是 `nitrowater/docs`）；private 包先 `docker login ghcr.io` |
 | 运行期（§7） | 本地改了文档但容器没变 | dev 用的是**挂载**不是镜像：在文档仓库 `DOCS_BASE_PREFIX=/plugin npm run build` 后刷新；换了 `docs-nginx.conf` 要 `docker rm -f nitrowater-docs` 重建 |
 | 运行期（§7） | `/plugin/<id>/` 打开后资源全 404 | 文档仓库是用默认前缀构建的（`/<id>/`）：VitePress 的 `base` 是构建期固定的，必须 `DOCS_BASE_PREFIX=/plugin npm run build`，镜像同理（CI 要带 `--build-arg`，或 Dockerfile 默认就是它） |
 | 运行期（§4） | `check-env` 输出一堆 `[WARN]` | WARN 不阻断（写了但没被 compose 引用）；只清 `[FAIL]` |

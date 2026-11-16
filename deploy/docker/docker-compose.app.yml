@@ -59,7 +59,7 @@ services:
     # Content is BAKED INTO THE IMAGE: the plugin docs live in their own repo
     # (nitrowater-plugin-docs), whose CI builds and pushes one image holding every plugin site.
     # Nothing is uploaded to the host any more, so the content is versioned, rollback =
-    # change DOCS_IMAGE_TAG, and `deploy.sh` pulls it from the registry like any other service.
+    # change DOCS_IMAGE_TAG, and the deploy workflow pulls it from the registry like any other service.
     #
     # The image must be built with DOCS_BASE_PREFIX=/plugin: a VitePress site's `base` is fixed at
     # build time and the public URL is /plugin/<id>/, so an image built with the default prefix
@@ -78,7 +78,7 @@ services:
       # able to change URLs or caching, and doc-site previews must behave like production.
       - ./docs-nginx.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      # deploy.sh waits on this; the endpoint is served by docs-nginx.conf (independent of content).
+      # The deploy workflow waits on this; the endpoint is served by docs-nginx.conf (independent of content).
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
       interval: 30s
       timeout: 3s

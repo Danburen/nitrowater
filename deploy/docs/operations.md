@@ -1,28 +1,38 @@
 # 日常运维与版本迭代
 
-> 前提：机器已完成 [`bootstrap.md`](bootstrap.md)。之后**不要再手敲 compose**。
-> 唯一发布入口是 `deploy/bin/deploy.sh`，手动与 CI 走同一条代码路径。
+> 前提：机器已完成 [`bootstrap.md`](bootstrap.md)。
+> 业务服务只走 CI（`release.yml` / `deploy.yml`）；infra 与应急操作按下面的 compose 命令来。
 
 ## 1. 发版
 
 ```bash
-bash deploy/bin/deploy.sh --tag <tag>            # 门禁 → 备份 → pull → up -d --no-build → 探活
-bash deploy/bin/deploy.sh --only account         # 只动身份服务（不碰 infra）
-bash deploy/bin/deploy.sh --profile edge         # 启用自带 80/443
-bash deploy/bin/deploy.sh --no-prune             # 不清理 24h 前旧镜像
-bash deploy/bin/deploy.sh --skip-backup          # 跳过发版前的 MySQL 备份
+gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线（tag 只是人类别名，部署按 sha）
+gh workflow run deploy.yml                  # 只上线：当前 commit 已构建的镜像，不重建
+gh workflow run deploy.yml -f ref=<sha>     # 回滚：镜像与 deploy/ 一起回到那个 commit
 ```
 
-顺序固定 `infra → account → app`；失败即停（`set -e`），退出码 0 = 探活通过。
-`tag` 是镜像选择器：`v1.2.3`、`latest` 或某个提交的 sha。每次 build 同时打 `<tag>` + `<sha>`。
+`deploy.yml` 一次做完：同步 `deploy/` → `check-env` 门禁 → **拉齐 4 个镜像** → MySQL 备份 →
+`account` → `app`（`up -d --no-build`）→ 探活。要点：
 
-**发版前自动备份**：替换容器之前先跑 `backup_mysql.sh`，把三个库 dump 到 `deploy/backups/`；
-失败就中止，不会出现"新代码已启动、旧数据没备份"。Flyway 在应用启动时执行，所以这份 dump 是
-唯一的事前恢复点。`--only infra` 不备份（那正是启动 mysql 的动作）；确认本次无 schema 变更时才用
-`--skip-backup`。
+- **先拉后换**：任何一个镜像拉不下来就停，容器保持原样（不会出现"新 account + 旧 server"）。
+- **tag 默认取 `ref` 那个 commit 的 sha**，"部署这个提交"即"部署这个提交产出的镜像"；
+  只有按可变标签（`latest`、`v1.2.3`）上线时才显式传 `tag`。
+- **发版前自动备份**：替换容器之前跑 `backup_mysql.sh`，把三个库 dump 到 `deploy/backups/`。
+  Flyway 在应用启动时执行，所以这份 dump 是唯一的事前恢复点。
+- **失败即红**：探活不通过（`/api/public/ping`、`nitrowater-bff` healthy）时工作流失败，不会"看起来绿"。
+- **infra 不参与**：mysql / redis / edge 变更自己 `up -d`，见下面的应急命令。
 
-`deploy.sh` 只管镜像，**不同步文件**。CI 会先把 `deploy/` 同步上来；手动上线时如果改过
-compose / 脚本，先用 README「命令」里那三行 tar + scp 传一次。
+**应急 / 手工操作**（等价于 CI 的某一段）：
+
+```bash
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.account.yml up -d --no-build
+docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app.yml     up -d --no-build
+bash deploy/bin/backup_mysql.sh                        # 手工发布前自己跑一次
+curl -fsS http://127.0.0.1:8080/api/public/ping        # 探活
+```
+
+换 tag 时把 `ACCOUNT_IMAGE_TAG` / `APP_IMAGE_TAG` 写进**进程环境**（优先于 `--env-file`）；
+`.env` 与 `.env.prod.secrets` 两个都要带（`--env-file` 可重复），否则密钥变量会回落成 compose 的默认值。
 
 > **从 S3/SeaweedFS 版本升级**：`app.yml` 已删掉 `seaweedfs` 服务，旧容器不会自动消失。
 > 首次用新 compose 发版后手工清一次：
@@ -35,20 +45,19 @@ compose / 脚本，先用 README「命令」里那三行 tar + scp 传一次。
 
 | 工作流 | 干什么 | 碰服务器 |
 |---|---|---|
-| `build.yml` | 跑检查（后端测试 + 两个前端 lint/build + compose/脚本守卫）→ `bake` 推 4 个应用镜像（`<tag>` + `<sha>`） | 否 |
-| `deploy.yml` | preflight 确认 4 个镜像存在 → 从被部署的 commit 取 `deploy/` 打包 scp 上去 → 跑同一个 `deploy.sh` | 是 |
-| `release.yml` | build → deploy，构建失败不动线上 | 是 |
+| `build.yml` | `probe` 先查这个 sha 的 4 个镜像是否已存在；不存在才跑检查（后端测试 + 两个前端 lint/build + compose/脚本守卫）并 `bake` 推送（`<tag>` + `<sha>`） | 否 |
+| `deploy.yml` | preflight 确认 4 个镜像存在 → 同步 `deploy/` → 预拉 → MySQL 备份 → `account` / `app` 上线 → 探活 | 是 |
+| `release.yml` | build → deploy（部署用 build 的 `sha`），构建失败不动线上 | 是 |
 
-```bash
-gh workflow run release.yml -f tag=v1.2.3   # 日常发布
-gh workflow run deploy.yml  -f tag=<sha>    # 只上线 / 回滚，不重建
-```
+**同一个 commit 再跑一次 build 不会重建**：`probe` 发现 4 个 `<sha>` 镜像都在就直接跳过检查与 `bake`，
+工作流几十秒结束。这是唯一的"没变化就不构建"判据 —— 重建同一份源码得不到同 digest
+（`COPY` 层保留文件 mtime），所以"这个 sha 已经推过"比"源码一样"更可靠。
 
-`deploy.yml` 的 `ref` 决定 `deploy/` 来自哪个 commit：留空 = 本次运行的 commit；回滚时填成
-产出该镜像的 sha（或版本 tag），保证 compose / 脚本和镜像同源。
+`deploy.yml` 的 `ref` 决定 `deploy/` 来自哪个 commit：留空 = 本次运行的 commit；`tag` 留空则自动取
+该 commit 的 sha。回滚只填 `ref`，文件与镜像自然同源。
 
-一次性准备：仓库 Secrets `SSH_HOST` / `SSH_USER` / `SSH_KEY`（private 包再加 `GHCR_USER` / `GHCR_PAT`）；
-Variables 可选 `DEPLOY_ROOT`、`COMPOSE_PROFILE`。CI 用专用账号，不要用 root：
+一次性准备：仓库 Secrets `SSH_HOST` / `SSH_USER` / `SSH_KEY`（private 包再加 `GHCR_USER` / `GHCR_PAT`；
+可选 `SSH_FINGERPRINT`）；Variable 可选 `DEPLOY_ROOT`。CI 用专用账号，不要用 root：
 
 ```bash
 sudo useradd -m -s /bin/bash deployer && sudo usermod -aG docker deployer
@@ -57,27 +66,37 @@ ssh-keygen -t ed25519 -f ~/.ssh/nitrowater_deploy && ssh-copy-id -i ~/.ssh/nitro
 
 `deployer` 要能写 `DEPLOY_ROOT`（解包 deploy/）并带进 docker 组（`docker` 组 ≈ root，账号只给 CI 用）。
 
+**凭据不出现在日志里**：工作流不 `set -x`、不 echo 任何变量；`check-env` 只打印键名不打印值；
+`deploy/` 用 `git archive` 打包（只含 tracked 文件，`.env` / `keys/*.key` 不可能进包）；
+`GHCR_PAT` 只用一次 `docker login`，随后在远端会话里 `unset`。GitHub 会自动遮蔽 secret 字面量，
+但**别把 secret 拼进 URL 或做编码**（那样不会被遮蔽）。
+
+不想让 PAT 经过 CI 的话：在宿主机手动 `docker login ghcr.io`（`read:packages` 即可），
+然后不配 `GHCR_USER` / `GHCR_PAT`，工作流会跳过登录直接用宿主机凭据。
+可选 `SSH_FINGERPRINT`（`ssh-keyscan <host> | ssh-keygen -lf -`）用于固定主机指纹，不配则首次连接信任（TOFU）。
+
 ### 回滚（手动，够用就好）
 
 ```bash
-# 1) 文件回到那个 commit：CI 的 deploy.yml 填 ref=<sha>；手动就自己 tar + scp 传一次
-# 2) 镜像回到那个 tag
-bash deploy/bin/deploy.sh --tag <上一个 sha>
-bash deploy/bin/deploy.sh --tag <sha> --only account      # 只回滚身份服务
+# 1) 镜像与 deploy/ 一起回到那个 commit（tag 留空 = 自动取该 commit 的 sha）
+gh workflow run deploy.yml -f ref=<sha>
+# 2) 只回滚身份服务：手工执行
+ACCOUNT_IMAGE_TAG=<sha> docker compose --env-file deploy/docker/.env \
+  -f deploy/docker/docker-compose.account.yml up -d --no-build
 # 3) 数据退回去（仅当本次迁移不兼容）：停应用 → 用发版前的 dump 恢复（见 §3）
 ```
 
 | 场景 | 动作 |
 |---|---|
-| 应用异常，数据没问题 | `deploy.sh --tag <上一 sha>` |
-| account 异常 | `deploy.sh --tag <sha> --only account` |
-| 迁移把数据改坏 | 停 app/account → 恢复发版前的 `deploy/backups/*.sql.gz` → 回上一个 tag |
+| 应用异常，数据没问题 | `deploy.yml` 填 `ref=<上一 sha>` |
+| account 异常 | 手工 `ACCOUNT_IMAGE_TAG=<sha> … up -d --no-build account` |
+| 迁移把数据改坏 | 停 app/account → 恢复发版前的 `deploy/backups/*.sql.gz` → 回上一个 sha |
 | 关公网入口 | `docker compose -f deploy/docker/docker-compose.infra.yml --profile edge stop nginx-proxy acme-companion` |
 | 拦截误伤 | 管理端模式切回 `LOG`，或改词表后 `moderation/reload` |
 | 索引坏了 | `POST /api/admin/ai/reindex`（换维度先改 `AI_COLLECTION`） |
 | 证书问题 | 保留 `nginx_certs` 卷；修 DNS/80 后重启 `acme-companion` |
 
-**回滚别用 `release`**：它会重新构建并覆盖同名镜像。`deploy` 是唯一该用于回滚的入口。
+**回滚别用 `release`**：它会重新构建并覆盖同名镜像（`latest` / `v1.2.3` 会被重指向）。只用 `deploy`。
 
 ### 部署文件与发布产物
 
@@ -85,11 +104,11 @@ bash deploy/bin/deploy.sh --tag <sha> --only account      # 只回滚身份服�
   回滚镜像时把 `deploy/` 同步回同一个 commit。
 - 只改 compose / 脚本 / 文档**不用 `build`**：直接走 `deploy` 即可（CI 同步的就是这些文件）。
 - 同步是**合并**：只能覆盖仓库里有的文件；`.env`、`keys/`、`content/`、`backups/` 是宿主机状态，
-  不在 tarball 里。仓库里删掉的旧文件不会自动消失（手工删）。
+  不在 tarball 里。`deploy/content/docs` 例外（整体替换，删掉/改名的文档才会消失）；其余被删的旧文件手工删。
 - 不要在服务器上手改 `deploy/` 下的发布产物，下次同步会覆盖。
 
-> `compose pull` 会拉整份文件，`app.yml` 里第三方镜像（piston / qdrant）未固定 tag；
-> 某个源抽风会中止整个发布。建议预拉或固定版本。
+> 发布只 `docker pull` 我们自己的 4 个镜像，不跑 `compose pull`：后者会把整份文件里的第三方镜像
+> （piston / qdrant）一起拉，`piston` 甚至没固定 tag，源站抽风就会整次发布失败甚至悄悄升版本。
 
 ## 2. 内容更新（多数不需要重建镜像）
 
@@ -136,7 +155,7 @@ gzip -dc deploy/backups/nitrowater_all_<时间>.sql.gz | \
   文件权限 600、目录 700，默认保留 30 天（`RETAIN_DAYS`）。
 - `deploy/backups/` 不进 git、也不参与同步；换盘或对象存储请用 `BACKUP_DIR` 指过去。
 - 备份与 `NITROWATER_KEK` **分开保管**：没有 KEK，dump 里的加密列解不开。
-- 每次发版 `deploy.sh` 已经自动备份一次；另外建议每天定时跑，不要只靠发版触发：
+- 每次发版 `deploy.yml` 已经自动备份一次；另外建议每天定时跑，不要只靠发版触发：
   `0 3 * * * /opt/nitrowater/deploy/bin/backup_mysql.sh >/dev/null 2>&1`。
 - 至少做一次恢复演练（临时 mysql 校验表数与关键行数）。
 
@@ -183,8 +202,8 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 | `Access denied for user` | 没建号 / 口令不符 | 见 bootstrap §5 |
 | 证书不签发 | 80 不通 / DNS 未生效 | 安全组 + `dig`；看 acme 日志 |
 | 管理端 403 | 未绑角色或未重新登录 | 授权 SQL + 重登 |
-| 上传 413，容器日志无请求 | 反代 `client_max_body_size` 1m | 改 100m |
-| AI 回答断流 / 整段刷出 | 反代 timeout / buffering | `proxy_buffering off; proxy_read_timeout 300s;` |
+| 上传 413，容器日志无请求 | vhost 没吃到 100m | 确认 `nginx-proxy-client-body.conf` 在 proxy 的 `conf.d` 里 |
+| AI 回答断流 / 整段刷出 | vhost 没关缓冲 | `/etc/nginx/vhost.d/<WEB_DOMAIN>` 加 `proxy_buffering off; proxy_read_timeout 300s;` 后 reload |
 | `/plugin/*` 404 或 nginx 默认页 | 文档站镜像没换成功 | 看 `docker inspect nitrowater-docs --format '{{.Config.Image}}'`，对照 `.env` 的 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG`（见 bootstrap §7） |
 | 点"运行"报错 / 语言不可用 | Piston 镜像不含语言包 | 跑 §8 第一条安装命令（见 §8） |
 | `manifest unknown` | `GITHUB_REPOSITORY` 仍是 your-org | 改 `.env` 或由 CI 注入 |
@@ -278,7 +297,7 @@ Map.entry("rust", new Target("rust", "*", "main")),
 export type ServerLanguageId = 'java' | 'c' | 'cpp' | 'rust'
 ```
 
-改完重新构建并发布镜像 —— `deploy/bin/deploy.sh` 只拉镜像、不做构建，所以必须先在 CI 出 image。
+改完重新构建并发布镜像 —— 发布流程只拉镜像、不做构建，所以必须先在 CI 出 image。
 
 ## 9. 文档站发版与回滚（镜像）
 
@@ -294,8 +313,8 @@ export type ServerLanguageId = 'java' | 'c' | 'cpp' | 'rust'
 ### 发版
 
 ```bash
-# A. 跟主项目一起（docs 属于 app 单元，deploy.sh 会一并 pull + up -d）
-bash deploy/bin/deploy.sh
+# A. 跟主项目一起（docs 属于 app 单元，部署时一并 pull + up -d）
+gh workflow run release.yml
 
 # B. 只更新文档站（业务服务不动；tag 写在进程环境里，优先级高于 .env）
 DOCS_IMAGE_TAG=1a2b3c4 docker compose --env-file deploy/docker/.env \
@@ -303,7 +322,7 @@ DOCS_IMAGE_TAG=1a2b3c4 docker compose --env-file deploy/docker/.env \
 curl -fsS http://127.0.0.1:8085/healthz      # ok
 ```
 
-验证没问题后把 tag 写回 `.env`（`DOCS_IMAGE_TAG=1a2b3c4`）。不写回去的话，下次 `deploy.sh` 会按 `.env`
+验证没问题后把 tag 写回 `.env`（`DOCS_IMAGE_TAG=1a2b3c4`）。不写回去的话，下次部署会按 `.env`
 里的旧值把文档站退回上一个版本 —— 这是唯一一个"改了看起来生效、下次发布又变回去"的坑。
 
 ### 回滚
@@ -319,7 +338,7 @@ DOCS_IMAGE_TAG=<上一个短 sha> docker compose --env-file deploy/docker/.env \
 
 | 要点 | 说明 |
 |---|---|
-| `--tag` 不管文档站 | `deploy.sh --tag v1.2.3` 只设 account / app 的 tag；文档站由 `DOCS_IMAGE_TAG` 独立控制 |
+| `tag` 不管文档站 | 部署只设 account / app 的镜像 tag；文档站由 `DOCS_IMAGE_TAG` 独立控制 |
 | `latest` 会飘 | 那个仓库每次 main push 都覆盖 `:latest`；想可复现/可回滚就写短 sha（history 里挑） |
 | 私有包 | 服务器先 `docker login ghcr.io`（`read:packages`）；或把 package 设 public（可匿名 pull） |
 | 按 digest 固定（可选） | 把 compose 那行写成 `image: …@sha256:…`；代价是 `DOCS_IMAGE_TAG` 对它不生效，升级要改文件 |

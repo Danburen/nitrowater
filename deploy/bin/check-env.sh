@@ -215,7 +215,8 @@ EOF
             if [ -n "$value" ]; then
                 # 占位值交给上面的 placeholders 检查，这里只抓真实 dev 值。
                 if ! is_placeholder "$value" && is_dev_default "$value"; then
-                    DEV_DEFAULTED="$DEV_DEFAULTED $var=$value"
+                    # Keys only: this line is printed in CI logs, so never echo the value.
+                    DEV_DEFAULTED="$DEV_DEFAULTED $var"
                 else
                     FROM_ENV=$((FROM_ENV + 1))
                 fi
