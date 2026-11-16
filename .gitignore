@@ -128,9 +128,9 @@ demo/__pycache__/
 # local build - never commit it. See deploy/plugin-docs/ + bin/dev/sync-docs.ps1.
 /nitrowater-server/src/main/resources/static/docs/
 
-# Decoupled deploy content: violation word lists and external doc corpora are mounted at runtime
-# (docker-compose.app.yml), maintained outside this public repo. Only the contract (README) and
-# the folder placeholders stay tracked. See deploy/content/README.md.
+# Decoupled deploy content: the documentation corpora are versioned data (not build inputs), so
+# they ship with deploy/ instead of living inside the server jar. Only the docs corpus is tracked:
+# word lists stay host state and are mounted at runtime. See deploy/content/README.md.
 /deploy/content/*
 !/deploy/content/README.md
 !/deploy/content/.gitkeep
@@ -138,3 +138,4 @@ demo/__pycache__/
 !/deploy/content/moderation/.gitkeep
 !/deploy/content/docs/
 !/deploy/content/docs/.gitkeep
+!/deploy/content/docs/**

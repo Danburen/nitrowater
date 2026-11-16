@@ -1,9 +1,6 @@
 package cn.nitrowater.server.config.ai;
 
-import cn.nitrowater.server.service.ai.model.rag.DocCollection;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-
-import java.util.List;
 
 /**
  * Strongly-typed configuration for the documentation assistant ({@code app.ai.*}).
@@ -12,6 +9,12 @@ import java.util.List;
  * Qdrant; a chat question retrieves the closest chunks and asks an OpenAI-compatible chat model to
  * answer strictly from them. Both model endpoints are configured through {@code spring.ai.openai.*}
  * (chat and embedding may point at different vendors).</p>
+ *
+ * <p>The corpora themselves are not configuration: they are discovered at runtime from
+ * {@code docs-root}, where every sub-directory is one corpus (see
+ * {@link cn.nitrowater.server.service.ai.rag.DocCorpusRegistry}). Dropping a directory of markdown
+ * into the mount is therefore enough to publish a corpus, and the corpora stay decoupled from the
+ * application image.</p>
  *
  * @param enabled master switch; when false every AI endpoint answers 503 and no ingestion runs
  * @param chunkSize target chunk size in tokens (the splitter only splits larger sections)
@@ -23,8 +26,8 @@ import java.util.List;
  * @param maxHistoryTurns number of previous turns forwarded to the model
  * @param ingestOnStartup whether to index automatically when the collection is still empty
  * @param perUserPerMinute sliding-window chat request cap per user, per minute
- * @param collections documentation corpora to index; each entry carries its own corpus name and
- *        markdown location ({@code classpath:} or filesystem)
+ * @param docsRoot directory holding the documentation corpora, one sub-directory per corpus
+ *        ({@code AI_DOCS_ROOT}); blank means "auto-detect the conventional mount"
  */
 @ConfigurationProperties(prefix = "app.ai")
 public record AiProperties(
@@ -38,9 +41,9 @@ public record AiProperties(
         int maxHistoryTurns,
         boolean ingestOnStartup,
         int perUserPerMinute,
-        List<DocCollection> collections
+        String docsRoot
 ) {
     public AiProperties {
-        collections = collections == null ? List.of() : List.copyOf(collections);
+        docsRoot = docsRoot == null ? "" : docsRoot.trim();
     }
 }

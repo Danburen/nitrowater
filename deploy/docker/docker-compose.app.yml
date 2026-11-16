@@ -188,11 +188,12 @@ services:
       AI_MODERATION_STRIKE_LIMIT: ${AI_MODERATION_STRIKE_LIMIT:-5}
       AI_MODERATION_STRIKE_WINDOW_MINUTES: ${AI_MODERATION_STRIKE_WINDOW_MINUTES:-10}
       AI_MODERATION_COOLDOWN_MINUTES: ${AI_MODERATION_COOLDOWN_MINUTES:-15}
-      APP_AI_COLLECTIONS_1_LOCATION: ${AI_DOCS_LOCATION:-classpath:ai/docs/nitrowater}
+      # 语料根；同一个值也是下面的挂载点，改它两边一起动（宿主机侧固定 ${CONTENT_ROOT}/docs）。
+      AI_DOCS_ROOT: ${AI_DOCS_ROOT:-/etc/nitrowater/docs}
     volumes:
-      # 内容目录常驻只读挂载；是否启用由 AI_MODERATION_DICT / AI_DOCS_LOCATION 控制。
+      # 内容目录常驻只读挂载；词表由 AI_MODERATION_DICT 启用，语料目录由 AI_DOCS_ROOT 自动发现。
       - ${CONTENT_ROOT:-../content}/moderation:/etc/nitrowater/moderation:ro
-      - ${CONTENT_ROOT:-../content}/docs:/etc/nitrowater/docs:ro
+      - ${CONTENT_ROOT:-../content}/docs:${AI_DOCS_ROOT:-/etc/nitrowater/docs}:ro
     depends_on:
       - qdrant
     mem_limit: 768m

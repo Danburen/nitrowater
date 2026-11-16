@@ -49,12 +49,12 @@ NitroBot 是平台内置的 AI 助手，页面在 `/chat`。它只有一种调�
 
 ## 3. 文档语料与索引
 
-- 语料位置：`nitrowater-server/src/main/resources/ai/docs/{nitrowater,velochatx}`，支持 `classpath:` 与文件系统路径。
-- 每个 collection 有独立的 `corpus`、`public-base-url` 与 `description`，检索与引用都按 corpus 区分。
+- 语料位置：仓库内 `deploy/content/docs/<corpus>/**/*.md`，运行时以只读目录挂进容器（挂载点由 `AI_DOCS_ROOT` 决定，compose 默认 `/etc/nitrowater/docs`）。语料**不在 jar 里**，改文档不需要重建镜像。
+- 语料根下的每个子目录就是一个 corpus，目录名即 `corpus`；可选 `_corpus.yml` 提供 `description` / `public-base-url`。新增语料只加目录，不改配置。
 - `description` 会拼进 agent 系统提示的「知识库文档」段（写清该语料覆盖什么），让通用 agent 知道本服务提供哪些文档可查；未配置时只显示 corpus 名。
-- 索引流程：markdown → 去掉 UTF-8 BOM 与 YAML front matter → 按标题/Token 切块 → embedding → 写入 Qdrant。
-- 重建是破坏式替换：先删该 corpus 的旧点再写入；chunk id 稳定，便于引用对齐。
-- `app.ai.ingest-on-startup: true` 时启动会检查并补索引；也可由管理员手动触发重建。
+- 索引流程：markdown → 去掉 UTF-8 BOM 与 YAML front matter → 按标题/Token 切块 → embedding → 写入 Qdrant；每块带 `content_sha`。
+- 重建是破坏式替换：先删该 corpus 的旧点再写入；chunk id 稳定，便于引用对齐。删掉的语料目录也会在重建时清掉对应向量。
+- `app.ai.ingest-on-startup: true` 时启动会比对磁盘与 `ai_doc_index`（新增/修改/删除语料），有漂移就后台重建；也可由管理员手动触发重建。
 - 没有 embedding key 时索引失败但不会阻止服务启动。
 
 语料策略：
@@ -238,7 +238,7 @@ searchDocs(query)
 
 ## 8. 管理台
 
-`/admin/ai`（需管理员）展示：索引状态、corpus 列表、可用 skills、可用 tools，并提供重建索引按钮（调用 `/api/admin/ai/reindex`）。
+`/admin/ai`（需管理员）展示：索引状态、语料与文档清单（`GET /api/admin/ai/index` 与 `/index/documents`，按 `已索引 / 内容已变 / 未索引 / 文件已删` 标注每个 md，点语料行可筛选）、可用 skills、可用 tools，并提供重建索引按钮（调用 `/api/admin/ai/reindex`）。
 
 ## 9. 内容安全（违禁词风控）
 

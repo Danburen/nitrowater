@@ -41,7 +41,7 @@
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 所有 AI 接口 503 | `app.ai.enabled=false` 或缺 chat key | 配置 key 后重启 |
-| 回答总是「文档中没有找到」 | 索引为空 / corpus 不匹配 | `POST /api/admin/ai/reindex`；检查 `app.ai.collections` 的 `corpus` |
+| 回答总是「文档中没有找到」 | 索引为空 / 语料目录没挂上 | `GET /api/admin/ai/index` 看 corpus 与文档数；`POST /api/admin/ai/reindex` 重建；检查 `AI_DOCS_ROOT` 挂载 |
 | 启动日志有 embedding 失败但服务正常 | 这是设计：索引失败不阻塞启动 | 补 key 或修 base-url 后重建索引 |
 | 引用没有链接 | 该 corpus 的 `public-base-url` 为空（NitroWater 文档就是这样） | 属预期：纯 markdown 语料只给标题/章节/路径 |
 | VeloChatX 引用链接 404 | docs 容器未起 / `public-base-url` 与站点路径不一致 | 引用前缀是 `/plugin/velochatx/`；先确认 `nitrowater-docs` 在服务（生产看镜像 tag，dev 在文档仓库 `DOCS_BASE_PREFIX=/plugin npm run build`） |

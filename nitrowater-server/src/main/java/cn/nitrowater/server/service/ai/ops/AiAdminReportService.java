@@ -9,11 +9,16 @@ import cn.nitrowater.server.service.ai.model.usage.AiGlobalUsage;
 import cn.nitrowater.server.service.ai.model.moderation.AiModerationHitView;
 import cn.nitrowater.server.service.ai.model.moderation.AiModerationReport;
 import cn.nitrowater.server.service.ai.model.rag.AiReindexResult;
+import cn.nitrowater.server.service.ai.model.rag.CorpusIndexView;
+import cn.nitrowater.server.service.ai.model.rag.DocIndexStatus;
+import cn.nitrowater.server.service.ai.model.rag.DocsIndexReport;
+import cn.nitrowater.server.service.ai.model.rag.IndexedDocView;
 import cn.nitrowater.server.service.ai.model.usage.AiUsageDay;
 import cn.nitrowater.server.service.ai.model.usage.AiUsageSummary;
 import cn.nitrowater.server.service.ai.model.usage.AiUserUsage;
 import cn.nitrowater.server.service.ai.model.usage.AiUserUsageRow;
 import cn.nitrowater.server.service.ai.model.rag.IndexStatus;
+import cn.nitrowater.server.service.ai.rag.DocsIndexInventoryService;
 import cn.nitrowater.server.service.ai.rag.DocsIndexService;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -37,13 +42,16 @@ public class AiAdminReportService {
     private final AiUsageService usage;
     private final AiModerationService moderation;
     private final DocsIndexService indexService;
+    private final DocsIndexInventoryService indexInventory;
     private final BizUserService users;
 
     public AiAdminReportService(AiUsageService usage, AiModerationService moderation,
-            DocsIndexService indexService, BizUserService users) {
+            DocsIndexService indexService, DocsIndexInventoryService indexInventory,
+            BizUserService users) {
         this.usage = usage;
         this.moderation = moderation;
         this.indexService = indexService;
+        this.indexInventory = indexInventory;
         this.users = users;
     }
 
@@ -137,6 +145,34 @@ public class AiAdminReportService {
             String keyword, Instant from, Instant to, int page, int size) {
         moderation.reload();
         return moderation(direction, action, keyword, from, to, page, size);
+    }
+
+    /**
+     * Documentation index overview: whose corpora and documents are embedded, and how many of them
+     * drifted from the mount.
+     *
+     * @return the per-corpus roll-up plus the overall index state
+     */
+    public DocsIndexReport indexReport() {
+        IndexStatus status = indexService.status();
+        List<CorpusIndexView> corpora = indexInventory.corpora();
+        int documents = corpora.stream().mapToInt(corpus -> corpus.documents()).sum();
+        int chunks = corpora.stream().mapToInt(corpus -> corpus.chunks()).sum();
+        return new DocsIndexReport(indexService.collectionName(), status.indexed(),
+                indexService.indexing(), documents, chunks, status.indexedAt(), corpora);
+    }
+
+    /**
+     * Paged document inventory of the documentation index.
+     *
+     * @param corpus optional corpus filter (blank = every corpus)
+     * @param status optional {@code INDEXED / STALE / MISSING / ORPHAN} filter
+     * @param page zero-based page index
+     * @param size page size (clamped to 1..200)
+     * @return one page of the merged document inventory
+     */
+    public Page<IndexedDocView> indexDocuments(String corpus, String status, int page, int size) {
+        return indexInventory.documents(corpus, DocIndexStatus.from(status), page, size);
     }
 
     /**

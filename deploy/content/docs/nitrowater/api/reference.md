@@ -84,6 +84,8 @@ account 提供标准 OIDC 端点：`/oauth2/authorize`、`/oauth2/token`、`/oau
 | POST | `/api/admin/ai/skills/import` | 管理员 | 导入 `SKILL.md`（同名覆盖） |
 | GET | `/api/admin/ai/skills/{name}/export` | 管理员 | 导出为 `SKILL.md`（内置也可导出） |
 | GET | `/api/admin/ai/tools` | 管理员 | 工具清单（管理台） |
+| GET | `/api/admin/ai/index` | 管理员 | 文档索引报告：每个 corpus 的文档数 / chunk 数 / 索引时间 |
+| GET | `/api/admin/ai/index/documents` | 管理员 | 文档级清单（`corpus` / `status=INDEXED,STALE,MISSING,ORPHAN` / 分页） |
 | POST | `/api/admin/ai/reindex` | 管理员 | 重建文档索引 |
 
 ### 7.1 会话接口（服务端落库）

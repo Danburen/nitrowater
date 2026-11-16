@@ -1,0 +1,6 @@
+# Corpus metadata for the RAG index. Read at startup by DocCorpusRegistry; optional but the
+# description is what the agent sees when deciding whether to search this corpus.
+description: VeloChatX 插件文档（安装、命令与权限、占位符、配置、排障）
+# Served at base /plugin/velochatx/ from the plugin-docs image (dev: the docs repo's dist,
+# built with DOCS_BASE_PREFIX=/plugin, mounted by the dev docs container).
+public-base-url: /plugin/velochatx/

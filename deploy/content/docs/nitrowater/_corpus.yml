@@ -1,0 +1,5 @@
+# Corpus metadata for the RAG index. Read at startup by DocCorpusRegistry; optional but the
+# description is what the agent sees when deciding whether to search this corpus.
+description: NitroWater 平台自身文档（架构、SSO/BFF、资源服务、API、部署与运维）
+# Markdown-only corpus: no published site, so citations carry no URL.
+public-base-url: ''

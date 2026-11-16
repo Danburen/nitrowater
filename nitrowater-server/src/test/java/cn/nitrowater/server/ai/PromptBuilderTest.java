@@ -98,9 +98,9 @@ class PromptBuilderTest {
     @Test
     void agentPromptListsTheSearchableCorpora() {
         String prompt = builder.agentSystem(List.of(), null, List.of(
-                new DocCollection("nitrowater", "classpath:ai/docs/nitrowater", "",
+                new DocCollection("nitrowater", "deploy/content/docs/nitrowater", "",
                         "NitroWater 平台文档"),
-                new DocCollection("velochatx", "classpath:ai/docs/velochatx",
+                new DocCollection("velochatx", "deploy/content/docs/velochatx",
                         "/plugin/velochatx/docs/", "VeloChatX 插件文档")));
 
         assertThat(prompt)

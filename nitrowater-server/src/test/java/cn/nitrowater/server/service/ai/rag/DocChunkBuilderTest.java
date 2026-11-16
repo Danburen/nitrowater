@@ -15,18 +15,23 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Verifies markdown discovery, front-matter handling, metadata and deterministic chunk ids. */
+/**
+ * Verifies corpus discovery, markdown discovery, front-matter handling, metadata and deterministic
+ * chunk ids. The temp directory is the docs root; {@code velochatx/} inside it is one corpus.
+ */
 class DocChunkBuilderTest {
 
     @TempDir
-    Path docs;
+    Path root;
 
     private DocChunkBuilder builder() {
-        return new DocChunkBuilder(properties(docs));
+        AiProperties properties = properties(root);
+        return new DocChunkBuilder(properties, new DocCorpusRegistry(properties));
     }
 
     @Test
     void buildsChunksWithStableMetadata() throws IOException {
+        writeCorpus("/plugin/velochatx/docs/");
         write("index.md", """
                 ---
                 layout: home
@@ -66,12 +71,18 @@ class DocChunkBuilderTest {
 
         assertThat(result.files()).isEqualTo(3);
         assertThat(result.chunks()).isNotEmpty();
+        assertThat(result.docs()).allSatisfy(doc -> {
+            assertThat(doc.corpus()).isEqualTo("velochatx");
+            assertThat(doc.sha256()).hasSize(64);
+            assertThat(doc.chunks()).isPositive();
+        });
 
         List<Document> chunks = result.chunks();
         assertThat(chunks).allSatisfy(chunk ->
                 assertThat(chunk.getMetadata())
                         .containsEntry(DocChunkBuilder.META_CORPUS, "velochatx")
                         .containsKey(DocChunkBuilder.META_DOC_PATH)
+                        .containsKey(DocChunkBuilder.META_CONTENT_SHA)
                         .containsKey(DocChunkBuilder.META_URL));
         assertThat(chunks).allSatisfy(chunk ->
                 assertThat(chunk.getText()).doesNotContain("layout: home"));
@@ -91,7 +102,63 @@ class DocChunkBuilderTest {
     }
 
     @Test
+    void discoversEverySubdirectoryAsACorpus() throws IOException {
+        writeCorpus("");
+        write("index.md", "# VeloChatX\n\nPlugin documentation.\n");
+
+        Path plugins = root.resolve("nitrowater");
+        Files.createDirectories(plugins.resolve("architecture"));
+        Files.writeString(plugins.resolve("architecture/overview.md"),
+                "# Overview\n\nPlatform architecture.\n", StandardCharsets.UTF_8);
+
+        DocCorpusRegistry registry = new DocCorpusRegistry(properties(root));
+
+        assertThat(registry.collections()).extracting(DocCollection::corpus)
+                .containsExactly("nitrowater", "velochatx");
+        assertThat(registry.collections())
+                .filteredOn(collection -> collection.corpus().equals("velochatx"))
+                .singleElement()
+                .satisfies(collection -> assertThat(collection.description()).isEqualTo("test corpus"));
+        assertThat(registry.collections())
+                .filteredOn(collection -> collection.corpus().equals("nitrowater"))
+                .singleElement()
+                .satisfies(collection -> {
+                    assertThat(collection.description()).isEmpty();
+                    assertThat(collection.publicBaseUrl()).isEmpty();
+                });
+    }
+
+    @Test
+    void skipsDirectoriesWithoutMarkdown() throws IOException {
+        writeCorpus("");
+        write("index.md", "# VeloChatX\n\nPlugin documentation.\n");
+        Files.createDirectories(root.resolve("empty-corpus"));
+
+        assertThat(new DocCorpusRegistry(properties(root)).collections())
+                .extracting(DocCollection::corpus)
+                .containsExactly("velochatx");
+    }
+
+    @Test
+    void scanReportsTheSameHashAsTheChunks() throws IOException {
+        writeCorpus("");
+        write("index.md", "# VeloChatX\n\nPlugin documentation.\n");
+
+        DocChunkBuilder builder = builder();
+        DocChunkBuilder.Result result = builder.build();
+        List<DocChunkBuilder.DocStat> scanned = builder.scan();
+
+        assertThat(scanned).hasSize(1);
+        assertThat(scanned.getFirst().sha256()).hasSize(64)
+                .isEqualTo(result.docs().getFirst().sha256());
+        assertThat(scanned.getFirst().chunks()).isZero();
+        assertThat(result.chunks()).allSatisfy(chunk -> assertThat(chunk.getMetadata())
+                .containsEntry(DocChunkBuilder.META_CONTENT_SHA, scanned.getFirst().sha256()));
+    }
+
+    @Test
     void chunkIdsAreDeterministicAcrossBuilds() throws IOException {
+        writeCorpus("");
         write("guide/intro/get-start.md", """
                 # 快速开始
 
@@ -106,7 +173,10 @@ class DocChunkBuilderTest {
 
     @Test
     void missingDirectoryYieldsEmptyResult() throws IOException {
-        DocChunkBuilder.Result result = new DocChunkBuilder(properties(docs.resolve("missing"))).build();
+        AiProperties properties = properties(root.resolve("missing"));
+
+        DocChunkBuilder.Result result = new DocChunkBuilder(properties,
+                new DocCorpusRegistry(properties)).build();
 
         assertThat(result.files()).isZero();
         assertThat(result.chunks()).isEmpty();
@@ -114,48 +184,51 @@ class DocChunkBuilderTest {
 
     @Test
     void acceptsFileUriPrefixedLocation() throws IOException {
+        writeCorpus("");
         write("index.md", """
                 # Prefixed corpus
 
                 Deployed corpora are usually written as file:/srv/docs/<corpus>.
                 """);
 
-        AiProperties properties = new AiProperties(true,
-                500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                List.of(new DocCollection("nitrowater", "file:" + docs, "")));
+        DocChunkBuilder builder = new DocChunkBuilder(properties(root),
+                new DocCorpusRegistry(properties(root)));
 
-        DocChunkBuilder.Result result = new DocChunkBuilder(properties).build();
+        DocChunkBuilder.Result result = builder.build(List.of(
+                new DocCollection("nitrowater", "file:" + corpus(), "")));
 
         assertThat(result.files()).isEqualTo(1);
         assertThat(result.chunks()).isNotEmpty();
     }
 
     @Test
-    void buildsChunksForFilesystemAndClasspathCollections() throws IOException {
+    void buildsChunksForEveryDiscoveredCorpus() throws IOException {
+        writeCorpus("");
         write("index.md", """
                 # Filesystem corpus
 
                 This document belongs to the temporary collection.
                 """);
 
-        AiProperties properties = new AiProperties(true,
-                500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                List.of(
-                        new DocCollection("velochatx", docs.toString(), "/docs/velochatx/"),
-                        new DocCollection("nitrowater", "classpath:ai/docs/nitrowater", "/docs/nitrowater/")));
+        Path other = root.resolve("nitrowater");
+        Files.createDirectories(other);
+        Files.writeString(other.resolve("index.md"), """
+                # Platform corpus
 
-        DocChunkBuilder.Result result = new DocChunkBuilder(properties).build();
+                Markdown-only corpus without a published site.
+                """, StandardCharsets.UTF_8);
 
-        assertThat(result.files()).isGreaterThan(1);
+        DocChunkBuilder.Result result = builder().build();
+
+        assertThat(result.files()).isEqualTo(2);
         assertThat(result.chunks()).anySatisfy(chunk -> assertThat(chunk.getMetadata())
-                .containsEntry(DocChunkBuilder.META_CORPUS, "velochatx")
-                .containsEntry(DocChunkBuilder.META_URL, "/docs/velochatx/"));
+                .containsEntry(DocChunkBuilder.META_CORPUS, "velochatx"));
         assertThat(result.chunks()).anySatisfy(chunk -> assertThat(chunk.getMetadata())
                 .containsEntry(DocChunkBuilder.META_CORPUS, "nitrowater"));
         assertThat(result.chunks())
                 .filteredOn(chunk -> "nitrowater".equals(chunk.getMetadata().get(DocChunkBuilder.META_CORPUS)))
                 .allSatisfy(chunk -> assertThat(chunk.getMetadata().get(DocChunkBuilder.META_URL))
-                        .asString().startsWith("/docs/nitrowater/"));
+                        .isEqualTo(""));
     }
 
     @Test
@@ -192,15 +265,27 @@ class DocChunkBuilderTest {
                 .orElseThrow(() -> new AssertionError("no chunk for " + path));
     }
 
+    private Path corpus() {
+        return root.resolve("velochatx");
+    }
+
+    private void writeCorpus(String publicBaseUrl) throws IOException {
+        Path dir = corpus();
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve(DocCorpusRegistry.CORPUS_META_FILE), """
+                description: test corpus
+                public-base-url: %s
+                """.formatted(publicBaseUrl), StandardCharsets.UTF_8);
+    }
+
     private void write(String relative, String content) throws IOException {
-        Path file = docs.resolve(relative);
+        Path file = corpus().resolve(relative);
         Files.createDirectories(file.getParent());
         Files.writeString(file, content, StandardCharsets.UTF_8);
     }
 
-    private static AiProperties properties(Path docsDir) {
+    private static AiProperties properties(Path docsRoot) {
         return new AiProperties(true,
-                500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                List.of(new DocCollection("velochatx", docsDir.toString(), "/plugin/velochatx/docs/")));
+                500, 100, 40, 6, 0.35, 2000, 4, false, 20, docsRoot.toString());
     }
 }

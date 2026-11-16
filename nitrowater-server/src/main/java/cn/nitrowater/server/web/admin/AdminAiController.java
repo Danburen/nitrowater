@@ -14,6 +14,8 @@ import cn.nitrowater.core.infrastructure.security.CurrentUser;
 import cn.nitrowater.server.web.dto.AiAdminSettingsReq;
 import cn.nitrowater.server.web.dto.AiSkillReq;
 import cn.nitrowater.server.web.dto.AiUsageResetReq;
+import cn.nitrowater.server.web.vo.AiIndexDocResp;
+import cn.nitrowater.server.web.vo.AiIndexReportResp;
 import cn.nitrowater.server.web.vo.AiModerationResp;
 import cn.nitrowater.server.web.vo.AiReindexResp;
 import cn.nitrowater.server.web.vo.AiSettingsResp;
@@ -284,6 +286,39 @@ public class AdminAiController {
             @RequestParam(name = "size", defaultValue = "50") int size) {
         return AiModerationResp.from(
                 reports.reloadModeration(direction, action, keyword, from, to, page, size));
+    }
+
+    /**
+     * Admin: which documentation corpora and documents are embedded in the vector index.
+     *
+     * <p>Merges the content mount with the {@code ai_doc_index} table, so a content-only deploy can
+     * be verified without digging through Qdrant: a document appears as {@code STALE} when the
+     * markdown changed after the last run, {@code MISSING} when it was never indexed and
+     * {@code ORPHAN} when its file was removed.</p>
+     *
+     * @return the per-corpus index report
+     */
+    @GetMapping("/api/admin/ai/index")
+    public AiIndexReportResp indexReport() {
+        return AiIndexReportResp.from(reports.indexReport());
+    }
+
+    /**
+     * Admin: paged per-document inventory of the documentation index.
+     *
+     * @param corpus optional corpus filter (blank = every corpus)
+     * @param status optional {@code INDEXED / STALE / MISSING / ORPHAN} filter
+     * @param page zero-based page index
+     * @param size page size (clamped to 1..200)
+     * @return one page of documents with their index status
+     */
+    @GetMapping("/api/admin/ai/index/documents")
+    public Page<AiIndexDocResp> indexDocuments(
+            @RequestParam(name = "corpus", required = false) String corpus,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "50") int size) {
+        return reports.indexDocuments(corpus, status, page, size).map(AiIndexDocResp::from);
     }
 
     /**

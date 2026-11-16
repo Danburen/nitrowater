@@ -542,28 +542,39 @@ if [ -n "$ALLOW" ]; then
     done
 fi
 
-DOCS_LOCATION="${AI_DOCS_LOCATION:-}"
-if [ -z "$DOCS_LOCATION" ]; then
-    info 'AI_DOCS_LOCATION' '未设置：文档语料取镜像内 classpath'
-else
-    case "$DOCS_LOCATION" in
-        classpath:*) info 'AI_DOCS_LOCATION' "classpath 语料：$DOCS_LOCATION" ;;
-        *)
-            host="$(resolve_host_path "$DOCS_LOCATION")"
-            if [ -z "$host" ]; then
-                warn 'AI_DOCS_LOCATION' "无法映射到宿主机路径：$DOCS_LOCATION"
-            elif [ ! -d "$host" ]; then
-                fail 'AI_DOCS_LOCATION' "目录不存在：$host"
-            else
-                md_count="$(find "$host" -type f -name '*.md' | wc -l | tr -d ' ')"
-                if [ "$md_count" -eq 0 ]; then
-                    fail 'AI_DOCS_LOCATION' "目录内没有 .md：$host（该 corpus 重建后会从索引消失）"
-                else
-                    pass 'AI_DOCS_LOCATION' "$md_count 个 md（$host）"
-                fi
-            fi
-            ;;
+# 语料根：每个子目录 = 一个语料。宿主机侧固定 ${CONTENT_ROOT}/docs（compose 只挂这一份），
+# 容器内路径由 AI_DOCS_ROOT 决定；bootRun 没有容器，它就是宿主机路径本身。
+if [ "$LOCAL" -eq 1 ]; then
+    case "${AI_DOCS_ROOT:-}" in
+        ''|/etc/nitrowater/docs) DOCS_HOST="$REPO/deploy/content/docs"; DOCS_CONTAINER='' ;;
+        *) DOCS_HOST="$(resolve_host_path "$AI_DOCS_ROOT")"; DOCS_CONTAINER="$AI_DOCS_ROOT" ;;
     esac
+else
+    DOCS_HOST="$CONTENT_ROOT/docs"
+    DOCS_CONTAINER="${AI_DOCS_ROOT:-/etc/nitrowater/docs}"
+fi
+if [ ! -d "$DOCS_HOST" ]; then
+    fail 'AI_DOCS_ROOT' "目录不存在：$DOCS_HOST（该目录下每个子目录是一个语料）"
+else
+    corpora=''; empty=''
+    for dir in "$DOCS_HOST"/*; do
+        [ -d "$dir" ] || continue
+        name="$(basename "$dir")"
+        case "$name" in .*|node_modules) continue ;; esac
+        if [ -n "$(find "$dir" -type f -name '*.md' -print -quit)" ]; then
+            corpora="$corpora $name"
+        else
+            empty="$empty $name"
+        fi
+    done
+    if [ -z "$corpora" ]; then
+        fail 'AI_DOCS_ROOT' "目录下没有任何含 .md 的语料：$DOCS_HOST"
+    else
+        target="$DOCS_HOST"
+        [ -z "$DOCS_CONTAINER" ] || target="$DOCS_HOST → $DOCS_CONTAINER"
+        pass 'AI_DOCS_ROOT' "语料：${corpora# }（$target）"
+    fi
+    [ -z "$empty" ] || warn 'AI_DOCS_ROOT' "没有 .md，已跳过：${empty# }"
 fi
 
 SKILLS_DIR="${AI_SKILLS_DIR:-}"

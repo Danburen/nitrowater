@@ -139,7 +139,7 @@ class DocToolsTest {
 
     private static AiProperties properties() {
         return new AiProperties(true, 500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                List.of());
+                "");
     }
 
     private static WebSearchProperties webProperties(boolean autoFallback) {

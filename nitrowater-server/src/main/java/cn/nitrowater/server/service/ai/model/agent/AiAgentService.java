@@ -9,6 +9,7 @@ import cn.nitrowater.server.service.ai.ops.AiUsageService;
 import cn.nitrowater.server.service.ai.model.usage.AiUsageTracker;
 import cn.nitrowater.server.service.ai.memory.AiMemoryService;
 import cn.nitrowater.server.service.ai.memory.AiProfileService;
+import cn.nitrowater.server.service.ai.rag.DocCorpusRegistry;
 import cn.nitrowater.server.service.ai.model.admin.AiSettings;
 import cn.nitrowater.server.service.ai.model.memory.MemoryView;
 import cn.nitrowater.server.service.ai.model.skill.Skill;
@@ -89,6 +90,7 @@ public class AiAgentService {
     private final AgentSkillService skillService;
     private final AiProperties properties;
     private final PromptBuilder promptBuilder;
+    private final DocCorpusRegistry corpusRegistry;
     private final AiAdminSettingsService settings;
     private final AiUsageService usageService;
     private final AiProfileService profileService;
@@ -112,7 +114,8 @@ public class AiAgentService {
 
     public AiAgentService(ChatModel chatModel, ToolCallingManager toolCallingManager,
                           AgentToolRegistry toolRegistry, AgentSkillService skillService,
-                          AiProperties properties, PromptBuilder promptBuilder, AiAdminSettingsService settings,
+                          AiProperties properties, PromptBuilder promptBuilder, DocCorpusRegistry corpusRegistry,
+                          AiAdminSettingsService settings,
                           AiUsageService usageService, AiProfileService profileService, AiMemoryService memoryService,
                           @Value("${app.ai.agent.max-rounds:18}") int maxRounds,
                           @Value("${app.ai.agent.turn-timeout-ms:150000}") long turnTimeoutMs,
@@ -126,6 +129,7 @@ public class AiAgentService {
         this.skillService = skillService;
         this.properties = properties;
         this.promptBuilder = promptBuilder;
+        this.corpusRegistry = corpusRegistry;
         this.settings = settings;
         this.usageService = usageService;
         this.profileService = profileService;
@@ -457,7 +461,7 @@ public class AiAgentService {
         // prefix; everything that depends on this question goes into the user message.
         String context = userContext(uid, question);
         String system = promptBuilder.agentSystem(
-                skillService.catalog(runtime), selected, properties.collections(), toolNames);
+                skillService.catalog(runtime), selected, corpusRegistry.collections(), toolNames);
         String user = promptBuilder.agentUser(question, history, ZonedDateTime.now(turnZone), context);
         List<Message> messages = List.of(new SystemMessage(system), new UserMessage(user));
         Prompt prompt = new Prompt(messages, chatOptions(callbacks, trace));

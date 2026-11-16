@@ -8,6 +8,9 @@ import { getJson, readErrorMessage } from '../http'
 import type { Page } from '../types'
 import type {
   AiAdminSettings,
+  AiIndexDoc,
+  AiIndexDocQuery,
+  AiIndexReport,
   AiModerationQuery,
   AiModerationReport,
   AiReindexResult,
@@ -199,4 +202,27 @@ export async function reindexDocs(): Promise<AiReindexResult> {
   const response = await apiFetch('/api/admin/ai/reindex', { method: 'POST' })
   if (!response.ok) throw new Error(await readErrorMessage(response))
   return readJson<AiReindexResult>(response)
+}
+
+/**
+ * Admin: which corpora and documents are embedded in the documentation index.
+ *
+ * <p>Returned per corpus (documents, chunks, last index time, and how many files are indexed /
+ * stale / missing / orphaned), which is the fastest way to verify a content-only deploy.</p>
+ */
+export async function fetchAdminAiIndexReport(): Promise<AiIndexReport> {
+  return getJson<AiIndexReport>('/api/admin/ai/index')
+}
+
+/** Admin: one page of the documentation index inventory (the mount joined with `ai_doc_index`). */
+export async function fetchAdminAiIndexDocuments(
+  query: AiIndexDocQuery = {},
+): Promise<Page<AiIndexDoc>> {
+  const params = new URLSearchParams()
+  const corpus = query.corpus?.trim()
+  if (corpus) params.set('corpus', corpus)
+  if (query.status) params.set('status', query.status)
+  params.set('page', String(query.page ?? 0))
+  params.set('size', String(query.size ?? 50))
+  return getJson<Page<AiIndexDoc>>(`/api/admin/ai/index/documents?${params.toString()}`)
 }

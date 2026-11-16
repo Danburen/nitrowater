@@ -76,7 +76,9 @@ npm run build
 ## 5. 文档（纯 markdown 语料）
 
 NitroWater 文档**不是独立站点**，也没有构建步骤：直接编辑
-`nitrowater-server/src/main/resources/ai/docs/nitrowater/**/*.md`，重启（或重建 jar）后由索引器切块写入 Qdrant。
+`deploy/content/docs/nitrowater/**/*.md`（该目录 tracked，随 `deploy/` 发布；容器内挂在
+`AI_DOCS_ROOT`，compose 默认 `/etc/nitrowater/docs`），
+重启后由索引器切块写入 Qdrant（启动时比对 `content_sha`，有改动会在后台重建）。
 
 ```powershell
 # 重建文档索引（管理员；服务已在运行）

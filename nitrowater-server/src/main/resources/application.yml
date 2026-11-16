@@ -199,20 +199,11 @@ app:
       retention-days: ${AI_USAGE_RETENTION_DAYS:31}
       global-retention-days: ${AI_USAGE_GLOBAL_RETENTION_DAYS:366}
       cleanup-cron: "${AI_USAGE_CLEANUP_CRON:0 45 4 * * *}"
-    # Documentation corpora. Each entry is a logical corpus; location may be a filesystem path or
-    # a classpath: prefix. `public-base-url` empty means markdown-only (citations carry no URL).
-    collections:
-      - corpus: velochatx
-        description: VeloChatX 插件文档（安装、命令与权限、占位符、配置、排障）
-        location: classpath:ai/docs/velochatx
-        # Served at base /plugin/velochatx/ from the plugin-docs image (dev: the docs repo's dist,
-        # built with DOCS_BASE_PREFIX=/plugin, mounted by the dev docs container).
-        public-base-url: /plugin/velochatx/
-      - corpus: nitrowater
-        description: NitroWater 平台自身文档（架构、SSO/BFF、资源服务、API、部署与运维）
-        location: classpath:ai/docs/nitrowater
-        # Markdown-only corpus: no published site, so citations carry no URL.
-        public-base-url: ''
+    # Documentation corpora are discovered at runtime: every sub-directory of docs-root is one
+    # corpus (optional _corpus.yml supplies description / public-base-url). docker mounts the
+    # AI_DOCS_ROOT path (compose default /etc/nitrowater/docs); bootRun auto-detects
+    # deploy/content/docs. Blank means "auto-detect", not "disable".
+    docs-root: ${AI_DOCS_ROOT:}
     # ---- Agent: skills + tools ----
     # When true, a client disconnect cancels the model stream immediately. The default (false)
     # lets the turn finish server-side so the full answer is persisted even if the browser leaves;

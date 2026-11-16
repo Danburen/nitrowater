@@ -104,11 +104,11 @@ Qdrant 的 schema 初始化关闭（`initialize-schema: false`），索引服务
 
 ## 5. 文档与静态资源
 
-- 文档语料：`nitrowater-server/src/main/resources/ai/docs/{nitrowater,velochatx}`，由索引器读 markdown 写入 Qdrant。
+- 文档语料：仓库内 `deploy/content/docs/<corpus>/**/*.md`，随 CI 发布到宿主机后只读挂进容器（`AI_DOCS_ROOT`），由索引器读 markdown 写入 Qdrant。目录即语料：新增子目录无需改代码/配置。
 - **NitroWater 文档只有 markdown**：不构建站点、不部署静态页，引用只带标题/章节/相对路径（`url` 为空）。
 - VeloChatX 是唯一发布静态站的语料：外部仓库 `nitrowater-plugin-docs` 独立演进，构建成**镜像**后由 docs 容器托管、BFF 以 `/plugin/**` 同源代理，引用 URL 前缀是 `/plugin/velochatx/`。
-- 站点不进 jar：`static/docs` 已废弃并忽略；文档更新要么换镜像 tag（生产），要么在文档仓库重新 build（dev 容器挂载那份 `dist`），都不需要重新构建 server。
-- 改语料后重启（或重建 jar）触发索引，或调用管理员重建接口。
+- 站点与语料都不进 jar：`static/docs` 已废弃并忽略；文本更新要么随 `deploy/` 发布（生产），要么在文档仓库重新 build（dev 容器挂载那份 `dist`），都不需要重新构建 server。
+- 索引随内容自动对齐（启动比对 `ai_doc_index` 的 `content_sha`），也可调用管理员重建接口；`GET /api/admin/ai/index` 可查每个文档的 `INDEXED/STALE/MISSING/ORPHAN` 状态。
 
 ## 6. 关键源码
 

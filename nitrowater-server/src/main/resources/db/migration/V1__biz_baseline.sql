@@ -260,3 +260,23 @@ CREATE TABLE ai_skill (
   PRIMARY KEY (id),
   UNIQUE KEY uk_ai_skill_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='admin-managed agent skills';
+
+-- ============================================================
+-- Documentation index inventory (folded from V1_1). The vectors live in Qdrant; this table
+-- remembers which markdown was embedded and from which content, so the admin report can diff the
+-- docs mount against the index (INDEXED / STALE / MISSING / ORPHAN) and the startup bootstrap can
+-- tell whether a content-only deploy changed anything. Losing it is harmless: the next re-index
+-- rebuilds it from the mount.
+-- ============================================================
+CREATE TABLE ai_doc_index (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  corpus      VARCHAR(64)     NOT NULL                         COMMENT 'logical corpus name: directory under the docs root',
+  doc_path    VARCHAR(512)    NOT NULL                         COMMENT 'corpus-relative markdown path, e.g. architecture/overview.md',
+  doc_title   VARCHAR(255)    NOT NULL DEFAULT ''              COMMENT 'first H1, falling back to the file name',
+  lang        VARCHAR(8)      NOT NULL DEFAULT 'zh'            COMMENT 'zh or en',
+  content_sha CHAR(64)        NOT NULL                         COMMENT 'SHA-256 of the markdown indexed last time',
+  chunks      INT UNSIGNED    NOT NULL DEFAULT 0               COMMENT 'chunks embedded for this document',
+  indexed_at  TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'last successful index time',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ai_doc_index_corpus_doc (corpus, doc_path)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='markdown documents embedded in the RAG vector index';

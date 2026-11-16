@@ -7,18 +7,17 @@ import org.springframework.ai.reader.markdown.MarkdownDocumentReader;
 import org.springframework.ai.reader.markdown.config.MarkdownDocumentReaderConfig;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,12 +38,13 @@ import cn.nitrowater.lib.utils.StringUtil;
  *   <li>gives bare code fences a {@code text} info string (the Spring AI reader stores the fence
  *       info as metadata and rejects a null value);</li>
  *   <li>splits by markdown headings via {@link MarkdownDocumentReader}, then by token count;</li>
- *   <li>attaches stable metadata (corpus, path, title, section, language, public URL) and a
- *       deterministic id so a re-index updates the same points instead of duplicating them.</li>
+ *   <li>attaches stable metadata (corpus, path, title, section, language, public URL, content hash)
+ *       and a deterministic id so a re-index updates the same points instead of duplicating them.</li>
  * </ol>
  *
- * <p>Sources may live on the filesystem or under {@code classpath:}. The classpath path is read
- * with {@link Resource#getInputStream()} so it also works from a packaged Spring Boot jar.</p>
+ * <p>Corpora are filesystem directories discovered by {@link DocCorpusRegistry}, never classpath
+ * resources: the markdown lives outside the application image so documentation can be republished
+ * without rebuilding the jar.</p>
  */
 @Component
 public class DocChunkBuilder {
@@ -63,55 +63,56 @@ public class DocChunkBuilder {
     public static final String META_URL = "url";
     /** Zero-based chunk position inside the source file. */
     public static final String META_CHUNK = "chunk";
+    /** SHA-256 of the markdown file this chunk was produced from, used to detect drift. */
+    public static final String META_CONTENT_SHA = "content_sha";
 
-    private static final String CLASSPATH_PREFIX = "classpath:";
-    /** Tolerated alias for a filesystem path; the moderation loader accepts it too. */
+    /** Tolerated alias for a filesystem path; stripped before {@link Path#of}. */
     private static final String FILE_PREFIX = "file:";
     private static final Pattern H1 = Pattern.compile("(?m)^#\\s+(.+?)\\s*$");
     private static final String FRONT_MATTER_DELIMITER = "---";
 
     private final AiProperties properties;
-    private final ResourcePatternResolver resourceResolver = new PathMatchingResourcePatternResolver();
+    private final DocCorpusRegistry registry;
 
-    public DocChunkBuilder(AiProperties properties) {
+    public DocChunkBuilder(AiProperties properties, DocCorpusRegistry registry) {
         this.properties = properties;
+        this.registry = registry;
     }
 
-    /** Reads every configured collection. */
+    /** Reads every discovered corpus. */
     public Result build() throws IOException {
-        return build(properties.collections());
+        return build(registry.collections());
     }
-
 
     /**
-     * Reads all collections and concatenates their chunks.
+     * Reads all corpora and concatenates their chunks.
      *
-     * @param collections collections to index
-     * @return the chunks plus the aggregate number of source files
+     * @param collections corpora to index
+     * @return the chunks plus one entry per markdown file
      * @throws IOException when a source cannot be read
      */
     public Result build(List<DocCollection> collections) throws IOException {
         List<Document> chunks = new ArrayList<>();
-        int files = 0;
+        List<DocStat> docs = new ArrayList<>();
         for (DocCollection collection : collections) {
             Result result = build(collection);
             chunks.addAll(result.chunks());
-            files += result.files();
+            docs.addAll(result.docs());
         }
-        return new Result(List.copyOf(chunks), files);
+        return new Result(List.copyOf(chunks), List.copyOf(docs));
     }
 
     /**
-     * Reads one collection from its filesystem or classpath location.
+     * Reads one collection from its filesystem location.
      *
-     * @param collection corpus plus its source location
-     * @return the chunks plus the number of source files that produced them
+     * @param collection corpus plus its source directory
+     * @return the chunks plus one entry per markdown file
      * @throws IOException when the tree cannot be read
      */
     public Result build(DocCollection collection) throws IOException {
         List<DocFile> files = load(collection.location());
         if (files.isEmpty()) {
-            return new Result(List.of(), 0);
+            return new Result(List.of(), List.of());
         }
 
         TokenTextSplitter splitter = TokenTextSplitter.builder()
@@ -122,6 +123,7 @@ public class DocChunkBuilder {
                 .build();
 
         List<Document> chunks = new ArrayList<>();
+        List<DocStat> docs = new ArrayList<>();
         for (DocFile file : files) {
             String relative = file.relativePath();
             String markdown = normalizeFences(stripFrontMatter(file.content()));
@@ -129,7 +131,8 @@ public class DocChunkBuilder {
                 continue;
             }
             String title = extractTitle(markdown, file.fileName());
-            String language = relative.startsWith("en/") ? "en" : "zh";
+            String language = languageOf(relative);
+            String contentSha = sha256(file.content());
             String url = toPublicUrl(relative, collection.publicBaseUrl());
 
             Map<String, Object> metadata = new LinkedHashMap<>();
@@ -138,6 +141,7 @@ public class DocChunkBuilder {
             metadata.put(META_DOC_TITLE, title);
             metadata.put(META_LANG, language);
             metadata.put(META_URL, url);
+            metadata.put(META_CONTENT_SHA, contentSha);
 
             MarkdownDocumentReaderConfig config = MarkdownDocumentReaderConfig.builder()
                     .withIncludeCodeBlock(true)
@@ -177,10 +181,45 @@ public class DocChunkBuilder {
                         .build());
                 index++;
             }
+            docs.add(new DocStat(collection.corpus(), relative, title, language, contentSha, index));
         }
-        return new Result(List.copyOf(chunks), files.size());
+        return new Result(List.copyOf(chunks), List.copyOf(docs));
     }
 
+    /**
+     * Lists the markdown files of every discovered corpus without chunking them.
+     *
+     * <p>Used by the index inventory to compare the disk with the stored index; reading and hashing
+     * the files is cheap, embedding them is not.</p>
+     *
+     * @return one entry per markdown file, {@code chunks} always {@code 0}
+     * @throws IOException when a source cannot be read
+     */
+    public List<DocStat> scan() throws IOException {
+        return scan(registry.collections());
+    }
+
+    /**
+     * @param collections corpora to inspect
+     * @return one entry per markdown file, {@code chunks} always {@code 0}
+     * @throws IOException when a source cannot be read
+     */
+    public List<DocStat> scan(List<DocCollection> collections) throws IOException {
+        List<DocStat> docs = new ArrayList<>();
+        for (DocCollection collection : collections) {
+            for (DocFile file : load(collection.location())) {
+                String relative = file.relativePath();
+                String markdown = normalizeFences(stripFrontMatter(file.content()));
+                if (markdown.isBlank()) {
+                    continue;
+                }
+                docs.add(new DocStat(collection.corpus(), relative,
+                        extractTitle(markdown, file.fileName()), languageOf(relative),
+                        sha256(file.content()), 0));
+            }
+        }
+        return List.copyOf(docs);
+    }
 
     /**
      * @param corpus logical corpus name
@@ -227,6 +266,19 @@ public class DocChunkBuilder {
             path = path.substring(0, path.length() - 3);
         }
         return base + path + ".html";
+    }
+
+    /**
+     * @param content markdown source as read from disk
+     * @return lowercase hex SHA-256, the drift fingerprint stored with every chunk
+     */
+    public static String sha256(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(content.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is required but unavailable", ex);
+        }
     }
 
     /**
@@ -307,10 +359,11 @@ public class DocChunkBuilder {
                 : fileName;
     }
 
+    private static String languageOf(String relativePath) {
+        return relativePath.startsWith("en/") ? "en" : "zh";
+    }
+
     private List<DocFile> load(String location) throws IOException {
-        if (location.startsWith(CLASSPATH_PREFIX)) {
-            return loadClasspath(location.substring(CLASSPATH_PREFIX.length()));
-        }
         // A `file:` prefix is accepted but must be stripped: Path.of("file:/srv/docs") is a RELATIVE
         // path whose first segment is literally "file:", so the corpus would silently load zero
         // files and then look "not indexed" on every startup.
@@ -337,63 +390,9 @@ public class DocChunkBuilder {
         return List.copyOf(files);
     }
 
-    private List<DocFile> loadClasspath(String rawBase) throws IOException {
-        String base = rawBase.replace('\\', '/');
-        if (base.startsWith("/")) {
-            base = base.substring(1);
-        }
-        if (!base.endsWith("/")) {
-            base = base + "/";
-        }
-        String pattern = ResourcePatternResolver.CLASSPATH_ALL_URL_PREFIX + base + "**/*.md";
-        Resource[] resources = resourceResolver.getResources(pattern);
-        Map<String, DocFile> files = new LinkedHashMap<>();
-        for (Resource resource : resources) {
-            String relative = relativePath(resource, base);
-            if (StringUtil.isBlank(relative) || hasHiddenSegment(relative)) {
-                continue;
-            }
-            try (InputStream input = resource.getInputStream()) {
-                String fileName = resource.getFilename();
-                if (StringUtil.isBlank(fileName)) {
-                    int slash = relative.lastIndexOf('/');
-                    fileName = slash >= 0 ? relative.substring(slash + 1) : relative;
-                }
-                files.putIfAbsent(relative, new DocFile(relative, fileName,
-                        new String(input.readAllBytes(), StandardCharsets.UTF_8)));
-            }
-        }
-        List<DocFile> sorted = new ArrayList<>(files.values());
-        sorted.sort(Comparator.comparing(DocFile::relativePath));
-        return List.copyOf(sorted);
-    }
-
-    private static String relativePath(Resource resource, String base) {
-        try {
-            String url = resource.getURL().toString().replace('\\', '/');
-            String marker = "/" + base;
-            int index = url.indexOf(marker);
-            if (index >= 0) {
-                return url.substring(index + marker.length());
-            }
-        } catch (IOException ignored) {
-            // Fall through to the file name; the caller still gets a usable document.
-        }
-        return resource.getFilename();
-    }
-
     private static boolean hasHiddenSegment(Path relative) {
         for (Path segment : relative) {
             if (isHidden(Objects.toString(segment, ""))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean hasHiddenSegment(String relative) {
-        for (String segment : relative.split("/")) {
-            if (isHidden(segment)) {
                 return true;
             }
         }
@@ -412,9 +411,30 @@ public class DocChunkBuilder {
     }
 
     /**
-     * @param chunks indexable chunks in deterministic order
-     * @param files number of markdown files that were read
+     * One markdown file that produced (or would produce) index entries.
+     *
+     * @param corpus logical corpus name
+     * @param docPath corpus-relative path
+     * @param title first H1, or the file name
+     * @param lang {@code zh} or {@code en}
+     * @param sha256 hash of the file the chunks came from
+     * @param chunks number of embedded chunks; {@code 0} for a plain disk scan
      */
-    public record Result(List<Document> chunks, int files) {
+    public record DocStat(String corpus, String docPath, String title, String lang, String sha256,
+            int chunks) {
+    }
+
+    /**
+     * @param chunks indexable chunks in deterministic order
+     * @param docs one entry per markdown file that produced them
+     */
+    public record Result(List<Document> chunks, List<DocStat> docs) {
+
+        /**
+         * @return number of markdown files that were read
+         */
+        public int files() {
+            return docs.size();
+        }
     }
 }

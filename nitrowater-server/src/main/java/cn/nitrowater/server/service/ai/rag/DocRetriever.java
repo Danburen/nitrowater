@@ -28,14 +28,16 @@ public class DocRetriever {
 
     private final VectorStore vectorStore;
     private final AiProperties properties;
+    private final DocCorpusRegistry registry;
 
-    public DocRetriever(VectorStore vectorStore, AiProperties properties) {
+    public DocRetriever(VectorStore vectorStore, AiProperties properties, DocCorpusRegistry registry) {
         this.vectorStore = vectorStore;
         this.properties = properties;
+        this.registry = registry;
     }
 
     /**
-     * Searches every configured documentation collection.
+     * Searches every discovered documentation collection.
      *
      * @param query user/tool query
      * @param topK requested result count (clamped to 1..20)
@@ -44,7 +46,7 @@ public class DocRetriever {
      */
     public List<Document> search(String query, int topK, double similarityThreshold) {
         Set<String> corpora = new LinkedHashSet<>();
-        for (DocCollection collection : properties.collections()) {
+        for (DocCollection collection : registry.collections()) {
             corpora.add(collection.corpus());
         }
         return search(query, topK, similarityThreshold, List.copyOf(corpora));

@@ -211,7 +211,13 @@ jobs:
 
             # deploy/ arrives as a tarball from the same commit as the images. It is
             # extracted in place (merge): tracked files are overwritten, while .env,
-            # keys/, content/ and backups/ are host state and are not in the bundle.
+            # keys/, content/moderation/ and backups/ are host state and are not in the bundle.
+
+            # The documentation corpora are tracked now (deploy/content/docs), so a deleted or
+            # renamed markdown file has to disappear here as well: tar merges into the existing
+            # tree, which would keep the old files and keep them indexed. moderation/ stays host
+            # state and is not part of the bundle.
+            rm -rf deploy/content/docs
             echo '==> sync deploy/ from the workflow commit'
             tar -xzf /tmp/nitrowater-deploy.tgz
             rm -f /tmp/nitrowater-deploy.tgz

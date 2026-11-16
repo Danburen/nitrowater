@@ -1,15 +1,24 @@
 # deploy/content — 运行时内容（词表 / 文档语料）
 
-本目录是**挂载用的内容产物**，不含代码，默认被 `.gitignore` 排除（仅保留 `README.md` 与各子目录的 `.gitkeep`）。
-内容由运营/内容仓单独维护，容器只读挂载，因此改内容不需要重新构建镜像。
+本目录是**挂载用的内容产物**，不含代码，但两类数据的归属不同：
+
+- `docs/`：**随仓库版本化的文档语料**（git 跟踪，随 CI 打包发布）。它决定 AI 回答的内容，必须和 commit 对齐。
+- `moderation/`：**宿主机状态**（生产词表，gitignore，不进部署包），改完热加载即可。
+
+两类都只读挂进容器，所以改内容都不需要重新构建镜像。
 
 ```
 deploy/content/
-├── moderation/
-│   ├── words.txt      # 生产违禁词（追加到镜像内基线词表之后）
-│   └── allow.txt      # 误报逃生口（覆盖住命中的片段才生效，见下）
-└── docs/
-    └── nitrowater/    # 外置语料（仅当 AI_DOCS_LOCATION 指向它时生效）
+├── moderation/          # 宿主机状态（不提交）
+│   ├── words.txt        # 生产违禁词（追加到镜像内基线词表之后）
+│   └── allow.txt        # 误报逃生口（覆盖住命中的片段才生效，见下）
+└── docs/                # 随仓库发布（tracked）
+    ├── nitrowater/      # 平台自身语料
+    │   ├── _corpus.yml
+    │   └── **/*.md
+    └── velochatx/       # VeloChatX 插件语料
+        ├── _corpus.yml
+        └── **/*.md
 ```
 
 ## 挂载方式
@@ -19,10 +28,13 @@ deploy/content/
 | 宿主机 | 容器内 | 消费方 |
 |---|---|---|
 | `${CONTENT_ROOT}/moderation` | `/etc/nitrowater/moderation` | 内容安全词表 |
-| `${CONTENT_ROOT}/docs` | `/etc/nitrowater/docs` | RAG 语料（`AI_DOCS_LOCATION`） |
+| `${CONTENT_ROOT}/docs` | `${AI_DOCS_ROOT:-/etc/nitrowater/docs}` | RAG 语料（`app.ai.docs-root`） |
 
-`CONTENT_ROOT` 未设置时回落到 `../content`（相对 `deploy/docker/`，即本目录）。
-目录为空不影响启动 —— 是否启用由 `.env` 里的 `AI_MODERATION_DICT` / `AI_DOCS_LOCATION` 决定。
+生产（`DEPLOY_ROOT=/opt/nitrowater`，tarball 解到 `deploy/`）里 `CONTENT_ROOT=/opt/nitrowater/deploy/content`，
+所以语料就是 `/opt/nitrowater/deploy/content/docs`；本地相对路径 `../content` 与之等价（相对 `deploy/docker/`）。
+宿主机侧固定是 `${CONTENT_ROOT}/docs`，容器内路径由 `AI_DOCS_ROOT` 决定（默认 `/etc/nitrowater/docs`，
+compose 同时用它做挂载点）。bootRun 没有容器，`AI_DOCS_ROOT` 就是宿主机路径；未配置时服务依次尝试
+`deploy/content/docs` → `../deploy/content/docs` → `/etc/nitrowater/docs`。
 
 启动 / 更新：
 
@@ -86,27 +98,57 @@ allow 只抑制**它自己覆盖的那一段**，且长度必须 ≥ 命中的�
 `AI_MODERATION_STRIKE_LIMIT` / `STRIKE_WINDOW_MINUTES` / `COOLDOWN_MINUTES` 控制"连续命中几次后冷却多久"，
 默认 5 次 / 10 分钟 → 冷却 15 分钟，只有 `ENFORCE` 下才真的拦。
 
-⚠️ 本目录被 gitignore 且**不在部署包里**（所以不会被覆盖），但也不在 `backup_resource.sh` 的备份范围里。
+⚠️ 词表目录被 gitignore 且**不在部署包里**（所以不会被覆盖），但也不在 `backup_resource.sh` 的备份范围里。
 词表属于配置，改完务必在私有仓或 `deploy/backups/` 留一份，否则换机能找回镜像基线却找不回生产增量。
 
-## 文档语料：默认不接管
+## 文档语料：目录即语料，自动发现
 
-`AI_DOCS_LOCATION` 留空 ⇒ 仍用镜像内 `classpath:ai/docs/nitrowater`。指向本目录时（纯路径即可，
-`file:` 前缀也接受）：
+语料根下的**每个子目录 = 一个 corpus**，目录名即 corpus 名。新增语料只需加目录（放进 `.md` 即可），
+不需要改 Java、也不需要改 `application.yml`：
+
+- 只索引 `.md`，跳过 `.` 开头的路径与 `node_modules`；
+- 可选 `_corpus.yml` 提供元数据：
+
+  ```yaml
+  description: VeloChatX 插件文档（安装、命令与权限、占位符、配置、排障）
+  public-base-url: /plugin/velochatx/
+  ```
+
+  `description` 会进 system prompt，模型据此决定要不要 `searchDocs`（缺省就只能生成通用描述，检索命中率会掉）；
+  `public-base-url` 决定引用链接，留空 = 只显示文档标题、不带 URL（如 `nitrowater/`）。
+- 引用链接由 `public-base-url` + 相对路径拼出，**语料与站点必须同版本**发布，否则 `[n]` 会指到另一版页面。
+- 启动时自动对齐：语料有新增/修改/删除，后台会重建索引；也可手动 `POST /api/admin/ai/reindex`（全量重建，建议低峰）。
+
+### 发布
+
+- 语料 tracked 在本仓库，`deploy.yml` 随 commit 打包 `deploy/`，所以"镜像 tag ↔ 语料"天然同源；只改文档时
+  可以只跑 `deploy.yml -f ref=<sha>`，不必跑全量 `release.yml`。
+- 线上语料不需要回滚，也不需要备份：下一次发布覆盖为最新即可。
+- 语料目录为空或缺失时服务照常启动，只是检索会静默退化，`deploy/bin/check-env.sh` 会在上线前拦这一条。
+
+### 核对"哪些文档建了索引"
 
 ```
-AI_DOCS_LOCATION=/etc/nitrowater/docs/nitrowater     # 容器内
-AI_DOCS_LOCATION=deploy/content/docs/nitrowater      # 本地 bootRun（工作目录 = 仓库根）
+GET /api/admin/ai/index                                   # 每个 corpus 的文档数 / chunk 数 / 索引时间
+GET /api/admin/ai/index/documents?status=STALE&page=0&size=50
 ```
 
-⚠️ 指向的目录**必须至少有 1 个 `.md`**。该 corpus 读到 0 个文件时索引不会保留它，重建后这段文档会从
-检索结果里消失（`check-env` 会拦这一条）。修改后生效：`POST /api/admin/ai/reindex`（全量重建，建议低峰）。
+`ai_doc_index` 表记录"上次索引时的文件名 + 内容 sha"，与磁盘比对得出四种状态：
 
-引用链接由 `app.ai.collections[].public-base-url` + 相对路径拼出，**语料与站点必须同版本**发布，否则
-`[n]` 会指到另一版页面。
+| 状态 | 含义 | 处理 |
+|---|---|---|
+| `INDEXED` | 磁盘与索引一致 | 无需操作 |
+| `STALE` | 文件改过，索引还是旧的 | 重建索引 |
+| `MISSING` | 磁盘上有，索引里没有 | 重建索引 |
+| `ORPHAN` | 索引里有，文件已删 | 重建索引（会删掉这些向量） |
+
+### 与 nitrowater-plugin-docs 的边界
+
+`velochatx/` 下的 markdown 是**副本**，权威源是 `nitrowater-plugin-docs` 仓库（它同时产出站点镜像）。
+改那边的文档时，同步到这里再发布；`nitrowater/` 语料只属于本仓库。
 
 ## 提交约定
 
-- 本目录内容**不提交**。需要留痕的只有 `README.md` / `.gitkeep`。
-- 词表变更走变更单或私有仓 PR（谁、何时、加了什么、依据），生产事故时要能举证。
+- `docs/**` **提交**：新增/修改语料走正常 PR，与代码一起 review。
+- `moderation/**` **不提交**：词表变更走变更单或私有仓 PR（谁、何时、加了什么、依据），生产事故时要能举证。
 - 多环境各自独立目录，不要共享（staging 试词会污染生产统计与误伤）。

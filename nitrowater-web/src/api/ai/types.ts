@@ -311,3 +311,61 @@ export interface AiReindexResult {
   indexedAt: string
   durationMs: number
 }
+
+/**
+ * Relationship between one markdown file on disk and the stored vector index.
+ *
+ * <p>{@code INDEXED} — disk and index agree; {@code STALE} — the file changed after the last run;
+ * {@code MISSING} — on disk but never indexed; {@code ORPHAN} — indexed but the file is gone. Only
+ * the first state needs no action, which is what the red «有漂移» banner keys off.</p>
+ */
+export type AiDocIndexStatus = 'INDEXED' | 'STALE' | 'MISSING' | 'ORPHAN'
+
+/** Per-corpus roll-up of the documentation index. */
+export interface AiCorpusIndex {
+  corpus: string
+  /** Summary handed to the agent, from `_corpus.yml`; empty when the corpus has none. */
+  description: string
+  /** Directory the corpus was discovered in; empty for a corpus that only exists in the index. */
+  sourcePath: string
+  documents: number
+  chunks: number
+  indexedAt: string | null
+  indexed: number
+  stale: number
+  missing: number
+  orphan: number
+}
+
+/** Documentation index overview: which corpora are embedded and whether they drifted. */
+export interface AiIndexReport {
+  collection: string
+  indexed: boolean
+  indexing: boolean
+  documents: number
+  chunks: number
+  indexedAt: string | null
+  corpora: AiCorpusIndex[]
+}
+
+/** One markdown file in the index inventory (the mount joined with `ai_doc_index`). */
+export interface AiIndexDoc {
+  corpus: string
+  docPath: string
+  /** First H1, or the file name. */
+  title: string
+  lang: string
+  status: AiDocIndexStatus
+  chunks: number
+  contentSha: string | null
+  indexedAt: string | null
+}
+
+/** Filters for the index document inventory. */
+export interface AiIndexDocQuery {
+  /** Logical corpus name; omitted = every corpus. */
+  corpus?: string
+  status?: AiDocIndexStatus
+  page?: number
+  size?: number
+}

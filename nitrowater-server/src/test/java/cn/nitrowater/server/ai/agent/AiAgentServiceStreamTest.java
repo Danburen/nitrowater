@@ -13,6 +13,7 @@ import cn.nitrowater.server.service.ai.model.usage.AiUsageTracker;
 import cn.nitrowater.server.service.ai.agent.PromptBuilder;
 import cn.nitrowater.server.service.ai.memory.AiMemoryService;
 import cn.nitrowater.server.service.ai.memory.AiProfileService;
+import cn.nitrowater.server.service.ai.rag.DocCorpusRegistry;
 import cn.nitrowater.server.service.ai.skill.AgentSkillService;
 import cn.nitrowater.server.service.ai.tool.AgentToolRegistry;
 import cn.nitrowater.server.service.ai.model.agent.AgentTool;
@@ -423,7 +424,8 @@ class AiAgentServiceStreamTest {
         AiMemoryService memories = mock(AiMemoryService.class);
         when(memories.recall(anyLong(), any(), anyInt())).thenReturn(List.of());
         return new AiAgentService(chatModel, toolCallingManager, tools,
-                skills, properties(), new PromptBuilder(), settings, usage, profiles,
+                skills, properties(), new PromptBuilder(), mock(DocCorpusRegistry.class), settings,
+                usage, profiles,
                 memories, 10, turnTimeoutMs, retryAttempts, retryBackoffMs, quotaFloorTokens,
                 "Asia/Shanghai");
     }
@@ -524,7 +526,7 @@ class AiAgentServiceStreamTest {
 
     private static AiProperties properties() {
         return new AiProperties(true, 500, 100, 40, 6, 0.35, 2000, 4, false, 20,
-                List.of());
+                "");
     }
 
     /** Emits one canned script per model round, so a tool round can be followed by an answer. */

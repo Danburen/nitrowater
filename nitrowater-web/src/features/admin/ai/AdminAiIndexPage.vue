@@ -2,9 +2,10 @@
 /**
  * Documentation index status page.
  *
- * <p>Owns everything that is specific to this page: the health request, the error banner and the
- * rebuild action. Nothing here knows about skills or tools, which is what lets the two catalogue
- * routes load independently (the old shared component fetched all three resources for both).</p>
+ * <p>Owns everything that is specific to this page: the health request, the inventory panel, the
+ * error banner and the rebuild action. Nothing here knows about skills or tools, which is what lets
+ * the two catalogue routes load independently (the old shared component fetched all three resources
+ * for both).</p>
  */
 import { onMounted, ref } from 'vue'
 import { confirm } from '../../../shared/ui/confirm'
@@ -13,9 +14,12 @@ import { fetchAiStatus, reindexDocs, type AiStatus } from '../../../api/ai'
 import AdminDangerRow from '../AdminDangerRow.vue'
 import AdminDangerZone from '../AdminDangerZone.vue'
 import AdminPage from '../components/AdminPage.vue'
+import AiAdminIndexInventory from '../components/AiAdminIndexInventory.vue'
 import AiAdminIndexOverview from '../components/AiAdminIndexOverview.vue'
 
 const status = ref<AiStatus | null>(null)
+/** The inventory panel owns its own (paged, filtered) request; the page refreshes it after a rebuild. */
+const inventory = ref<InstanceType<typeof AiAdminIndexInventory> | null>(null)
 const loading = ref(false)
 const reindexing = ref(false)
 const error = ref('')
@@ -48,7 +52,7 @@ async function reindex(): Promise<void> {
   try {
     const result = await reindexDocs()
     toast.success(`索引已重建：${result.files} 个文件 / ${result.chunks} 块，耗时 ${result.durationMs} ms`)
-    await load()
+    await Promise.all([load(), inventory.value?.reload()])
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
     toast.error('重建索引失败')
@@ -61,7 +65,7 @@ async function reindex(): Promise<void> {
 <template>
   <AdminPage
     title="索引状态"
-    description="向量索引的健康状态、模型与集合信息；重建索引会整库重算。"
+    description="向量索引的健康状态与文档清单：哪些语料、哪些文档建了索引，以及哪些和磁盘不一致。"
   >
     <el-alert
       v-if="error"
@@ -75,6 +79,8 @@ async function reindex(): Promise<void> {
       :status="status"
       :loading="loading"
     />
+
+    <AiAdminIndexInventory ref="inventory" />
 
     <AdminDangerZone>
       <AdminDangerRow label="重建向量索引">
