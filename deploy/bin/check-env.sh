@@ -83,6 +83,13 @@ else
 fi
 
 CONTENT_ROOT="${CONTENT_ROOT:-$ROOT/content}"
+# compose resolves a relative bind-mount source against the compose file's directory
+# (deploy/docker), while check-env may be launched from anywhere: anchor it the same way.
+case "$CONTENT_ROOT" in
+    /*) ;;
+    *) CONTENT_ROOT="$ROOT/docker/$CONTENT_ROOT" ;;
+esac
+[ -d "$CONTENT_ROOT" ] && CONTENT_ROOT="$(cd "$CONTENT_ROOT" && pwd -P)"
 
 # 把容器内挂载路径映射回宿主机目录，确保校验的是真正会被挂载的那份文件。
 resolve_host_path() {
