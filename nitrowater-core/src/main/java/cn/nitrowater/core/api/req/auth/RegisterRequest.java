@@ -1,5 +1,6 @@
 package cn.nitrowater.core.api.req.auth;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -49,4 +50,14 @@ public class RegisterRequest {
      */
     @NotNull
     private VerifyCodeDto verify;
+
+    /**
+     * Whether the user accepted the Terms of Service and Privacy Policy.
+     *
+     * <p>The checkbox is rendered on the registration form, but the rule is enforced here: an API
+     * client that skips the UI must still be refused, and consent has to be something the server
+     * observed rather than a line the page merely displayed.</p>
+     */
+    @AssertTrue(message = "{valid.terms.required}")
+    private boolean agreed;
 }

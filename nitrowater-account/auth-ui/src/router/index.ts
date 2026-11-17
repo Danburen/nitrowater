@@ -28,6 +28,14 @@ const router = createRouter({
       component: RegisterView,
       meta: { title: '注册 · NitroWater 统一身份中心' },
     },
+    // Legal texts linked from the login / registration forms. Same origin as the hosted auth
+    // pages, so the consent links never leave the SSO host.
+    {
+      path: '/legal/:doc',
+      name: 'legal',
+      component: () => import('@/views/LegalView.vue'),
+      meta: { title: '法律声明 · NitroWater 统一身份中心' },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/login' },
   ],
 })

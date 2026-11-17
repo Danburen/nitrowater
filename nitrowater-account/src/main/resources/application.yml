@@ -169,6 +169,12 @@ app:
   # redirect. It must point at the portal, never at /admin/.
   sso:
     default-redirect: "${SSO_DEFAULT_REDIRECT:http://localhost:5173}"
+  # Public legal texts (privacy policy / terms) read from disk on every request.
+  # The BFF mounts the SAME directory, so the portal and the SSO pages cannot drift apart.
+  # Docker sets LEGAL_DIR=/etc/nitrowater/legal; bootRun auto-detects deploy/content/legal.
+  # Blank means auto-detect, not "disable" — a missing file is a 404 by design.
+  legal:
+    dir: ${LEGAL_DIR:}
   # Hosted login 是顶层表单 POST：成功后 302 到待处理的 /oauth2/authorize，再 302 到客户端的
   # redirect_uri（跨域回跳是 OIDC 设计本身）。Chrome 会按 form-action 校验整条重定向链，所以回调
   # 域必须显式列出，否则导航被中止（此时会话已建立 → 表现为"停在登录页、刷新却已登录"）。

@@ -127,12 +127,13 @@ public class AuthorizationServerConfig {
             PasswordEncoderFactories.createDelegatingPasswordEncoder();
 
     /**
-     * Paths reachable without a session and exempt from CSRF — hosted auth pages plus the public
-     * auth API. One array so the two lists cannot drift apart.
+     * Paths reachable without a session and exempt from CSRF — hosted auth pages, the public
+     * legal texts linked from those pages, and the public auth API. One array so the two lists
+     * cannot drift apart.
      */
     private static final String[] UNPROTECTED_PATHS = {
-            "/login", "/register", "/api/auth/**", "/auth/**", "/error",
-            "/favicon.ico", "/favicon.svg", "/admin/favicon.svg"};
+            "/login", "/register", "/legal/**", "/api/auth/**", "/api/public/legal/**", "/auth/**",
+            "/error", "/favicon.ico", "/favicon.svg", "/admin/favicon.svg"};
 
     /** AS 端点链（/oauth2/**、/.well-known/**、/userinfo 等）。未登录的 HTML 请求跳 /login。 */
     @Bean

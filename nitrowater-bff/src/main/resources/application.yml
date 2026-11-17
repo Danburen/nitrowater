@@ -131,6 +131,11 @@ app:
   web:
     # Vite 产物 assets/* 文件名带内容 hash → 可长缓存（默认 1 年）；index.html 不缓存。
     assets-cache-seconds: ${WEB_ASSETS_CACHE_SECONDS:31536000}
+  # Public legal texts (privacy policy / terms) read from disk on every request.
+  # Docker sets LEGAL_DIR (/etc/nitrowater/legal); bootRun auto-detects deploy/content/legal.
+  # Blank = auto-detect, not "disable". Files are gitignored host state — see deploy/content/README.md.
+  legal:
+    dir: ${LEGAL_DIR:}
   oidc:
     # 仅供 ApiProxyController 选取 registrationId；OIDC 客户端本身由
     # spring.security.oauth2.client.* 配置（见上）。

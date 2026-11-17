@@ -230,6 +230,18 @@ onMounted(() => {
           >
             返回门户
           </router-link>
+          <router-link
+            to="/legal/privacy"
+            class="transition hover:text-ink"
+          >
+            隐私政策
+          </router-link>
+          <router-link
+            to="/legal/terms"
+            class="transition hover:text-ink"
+          >
+            用户协议
+          </router-link>
           <a
             :href="REPO.github"
             target="_blank"

@@ -1,17 +1,21 @@
 # deploy/content — 运行时内容（词表 / 文档语料）
 
-本目录是**挂载用的内容产物**，不含代码，但两类数据的归属不同：
+本目录是**挂载用的内容产物**，不含代码，但三类数据的归属不同：
 
 - `docs/`：**随仓库版本化的文档语料**（git 跟踪，随 CI 打包发布）。它决定 AI 回答的内容，必须和 commit 对齐。
 - `moderation/`：**宿主机状态**（生产词表，gitignore，不进部署包），改完热加载即可。
+- `legal/`：**宿主机状态**（用户协议 / 隐私政策纯文本，gitignore，不进部署包），改完按请求立即生效。
 
-两类都只读挂进容器，所以改内容都不需要重新构建镜像。
+三类都只读挂进容器，所以改内容都不需要重新构建镜像。
 
 ```
 deploy/content/
 ├── moderation/          # 宿主机状态（不提交）
 │   ├── words.txt        # 生产违禁词（追加到镜像内基线词表之后）
 │   └── allow.txt        # 误报逃生口（覆盖住命中的片段才生效，见下）
+├── legal/               # 宿主机状态（不提交）
+│   ├── privacy.txt      # 隐私政策（纯文本）
+│   └── terms.txt        # 用户协议（纯文本）
 └── docs/                # 随仓库发布（tracked）
     ├── nitrowater/      # 平台自身语料
     │   ├── _corpus.yml
@@ -23,12 +27,13 @@ deploy/content/
 
 ## 挂载方式
 
-`docker-compose.app.yml` **常驻**把两个子目录只读挂进 `server`：
+`docker-compose.app.yml` **常驻**把三个子目录只读挂进容器：
 
 | 宿主机 | 容器内 | 消费方 |
 |---|---|---|
-| `${CONTENT_ROOT}/moderation` | `/etc/nitrowater/moderation` | 内容安全词表 |
-| `${CONTENT_ROOT}/docs` | `${AI_DOCS_ROOT:-/etc/nitrowater/docs}` | RAG 语料（`app.ai.docs-root`） |
+| `${CONTENT_ROOT}/moderation` | `/etc/nitrowater/moderation` | 内容安全词表（`server`） |
+| `${CONTENT_ROOT}/docs` | `${AI_DOCS_ROOT:-/etc/nitrowater/docs}` | RAG 语料（`server`，`app.ai.docs-root`） |
+| `${CONTENT_ROOT}/legal` | `/etc/nitrowater/legal` | 法务文本（`bff` 与 `account`，`app.legal.dir`） |
 
 生产（`DEPLOY_ROOT=/opt/nitrowater`，tarball 解到 `deploy/`）里 `CONTENT_ROOT=/opt/nitrowater/deploy/content`，
 所以语料就是 `/opt/nitrowater/deploy/content/docs`；本地相对路径 `../content` 与之等价（相对 `deploy/docker/`）。
@@ -101,6 +106,45 @@ allow 只抑制**它自己覆盖的那一段**，且长度必须 ≥ 命中的�
 ⚠️ 词表目录被 gitignore 且**不在部署包里**（所以不会被覆盖），但也不在 `backup_resource.sh` 的备份范围里。
 词表属于配置，改完务必在私有仓或 `deploy/backups/` 留一份，否则换机能找回镜像基线却找不回生产增量。
 
+## 法务文本：宿主机维护，按请求读取
+
+`legal/privacy.txt` 与 `legal/terms.txt` 是**纯文本**（不是 Markdown），由 **BFF 与 account（SSO）**
+在每次请求时从**同一个**挂载目录读取，所以改完保存即生效：不用重启容器、不用重新构建、也不会被
+浏览器 / 代理缓存（响应带 `no-store`）。
+
+两份文件覆盖的是「整个服务」（SSO、门户、NitroBot、插件中心、在线工具），**不要**按应用各存一份；
+一处修改，两个源站同时生效。
+
+| 项 | 值 |
+|---|---|
+| 对外地址 | 两个源站同路径：`GET /api/public/legal/privacy`、`GET /api/public/legal/terms`（`text/plain; charset=utf-8`） |
+| 门户源站 | `<WEB_DOMAIN>`（BFF），页面路由 `/legal/privacy`、`/legal/terms`（页脚入口） |
+| SSO 源站 | `<AUTH_DOMAIN>`（account），页面路由 `/legal/privacy`、`/legal/terms`；登录页底部为被动告知，注册页为必选勾选（服务端 `@AssertTrue` 兜底） |
+| 容器内目录 | `/etc/nitrowater/legal`（`docker-compose.app.yml` 与 `docker-compose.account.yml` 都挂，`LEGAL_DIR`） |
+| 本地 bootRun | 自动探测 `deploy/content/legal` → `../deploy/content/legal` → `/etc/nitrowater/legal` |
+| 文件命名 | 只认 `privacy.txt` / `terms.txt`，其余名字一律 404（白名单，不做路径拼接） |
+| 版本管理 | **不提交**（`.gitignore` 已覆盖），每台机器自己放；换机时从私有备份恢复 |
+
+> 登录页为什么不是勾选框：账号在注册时已经同意过这两份文件，每次登录再勾一遍只会训练用户盲点，
+> 也不构成新的同意。注册页的勾选是**必填**，前端拦截之外服务端还会校验 `agreed=true`。
+
+首次部署：
+
+```bash
+sudo mkdir -p /opt/nitrowater/deploy/content/legal
+sudo chown -R "$USER": /opt/nitrowater/deploy/content/legal
+$EDITOR /opt/nitrowater/deploy/content/legal/privacy.txt   # 替换 {{运营主体全称}} 等占位符
+$EDITOR /opt/nitrowater/deploy/content/legal/terms.txt
+curl -fsS https://<WEB_DOMAIN>/api/public/legal/privacy | head
+curl -fsS https://<AUTH_DOMAIN>/api/public/legal/privacy | head
+```
+
+占位符：`{{运营主体全称}}`、`{{注册地址}}`、`{{联系邮箱}}`、`{{生效日期}}`、`{{适用域名}}`、`{{存储地区}}`。
+漏填会原样出现在页面上，发布前用 `grep '{{'` 自查一遍。
+
+> 目录不存在时接口返回 404，而不是回退到镜像里的旧版本——这是有意的：宁可暴露"还没上传"，
+> 也不要让用户看到上一版、甚至别家运营主体的协议。
+
 ## 文档语料：目录即语料，自动发现
 
 语料根下的**每个子目录 = 一个 corpus**，目录名即 corpus 名。新增语料只需加目录（放进 `.md` 即可），
@@ -151,4 +195,5 @@ GET /api/admin/ai/index/documents?status=STALE&page=0&size=50
 
 - `docs/**` **提交**：新增/修改语料走正常 PR，与代码一起 review。
 - `moderation/**` **不提交**：词表变更走变更单或私有仓 PR（谁、何时、加了什么、依据），生产事故时要能举证。
+- `legal/**` **不提交**：法务文本按运营主体 / 域名 / 生效日期分别维护，换主体或换域名时必须重写，不能跟着代码走。
 - 多环境各自独立目录，不要共享（staging 试词会污染生产统计与误伤）。

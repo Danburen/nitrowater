@@ -87,6 +87,8 @@ function Register-User([string]$Username, [string]$Phone) {
         phone    = $Phone
         username = $Username
         password = $Password
+        # Consent is enforced server-side (@AssertTrue); the form checkbox sets the same field.
+        agreed   = $true
         verify   = @{
             channel    = 'SMS'
             target     = $Phone

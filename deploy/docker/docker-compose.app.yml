@@ -261,6 +261,10 @@ services:
       # 与 management.server.port 同源：改这个值，健康探测地址自动跟着变。
       MANAGEMENT_PORT: ${MANAGEMENT_PORT:-9080}
       PLUGIN_DOCS_UPSTREAM: http://docs:80
+      # 用户协议 / 隐私政策纯文本：宿主目录挂载，按请求读取最新内容（不重新构建）。
+      LEGAL_DIR: /etc/nitrowater/legal
+    volumes:
+      - ${CONTENT_ROOT:-../content}/legal:/etc/nitrowater/legal:ro
     depends_on:
       - server
       - resource

@@ -134,6 +134,10 @@ demo/__pycache__/
 /deploy/content/*
 !/deploy/content/README.md
 !/deploy/content/.gitkeep
+# Legal texts (privacy policy / terms) are host-maintained public content: they are edited on the
+# deployment host and read at request time, so they must never be committed. The blanket ignore
+# above already covers this; the explicit rule documents the intent.
+/deploy/content/legal/
 !/deploy/content/moderation/
 !/deploy/content/moderation/.gitkeep
 !/deploy/content/docs/

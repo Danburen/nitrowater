@@ -47,6 +47,8 @@ class RegisterRequestValidationTest {
         verify.setCode("123456");
         verify.setScene(VerifyScene.REGISTER);
         req.setVerify(verify);
+        // Consent is mandatory: the form checkbox mirrors this server-side rule.
+        req.setAgreed(true);
         return req;
     }
 
@@ -107,6 +109,20 @@ class RegisterRequestValidationTest {
         Set<ConstraintViolation<RegisterRequest>> violations = validator().validate(validRequest());
         assertTrue(violations.isEmpty(),
                 "fully valid request must pass validation, got: " + violations);
+    }
+
+    @Test
+    void missingConsentIsRejected() {
+        RegisterRequest req = validRequest();
+        req.setAgreed(false);
+
+        Set<String> properties = validator().validate(req).stream()
+                .map(v -> v.getPropertyPath().toString())
+                .collect(Collectors.toSet());
+
+        assertTrue(properties.contains("agreed"),
+                "registration without accepting the terms/privacy policy must be refused, got: "
+                        + properties);
     }
 
     @Test

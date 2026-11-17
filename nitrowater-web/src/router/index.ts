@@ -28,6 +28,9 @@ const router = createRouter({
       ],
     },
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
+    // Public legal texts (privacy policy / terms), rendered on the portal origin. The SSO pages
+    // render the same files at /legal/* on the account origin.
+    { path: '/legal/:doc', name: 'legal', component: () => import('../views/LegalView.vue') },
     { path: '/account', name: 'account', component: () => import('../features/account/AccountView.vue') },
     // Admin console: nested layout with its own sidebar (global header hidden). Access is
     // gated by role inside AdminLayout; the resource server enforces ROLE_ADMIN anyway.

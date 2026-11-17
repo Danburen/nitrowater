@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { ElButton, ElIcon, ElInput } from 'element-plus'
+import { ElButton, ElCheckbox, ElIcon, ElInput } from 'element-plus'
 import { ArrowDown, Iphone, Lock, Message, User } from '@element-plus/icons-vue'
 
 import AuthLayout from '@/components/AuthLayout.vue'
@@ -17,6 +17,8 @@ const password = ref('')
 const showOptional = ref(false)
 const errorMessage = ref('')
 const notice = ref('')
+/** Consent is mandatory and mirrored server-side (RegisterRequest#agreed). */
+const agreed = ref(false)
 
 const showCaptcha = ref(false)
 const captchaCode = ref('')
@@ -131,6 +133,10 @@ async function register() {
     errorMessage.value = '密码需为 8-20 位，且包含大小写字母和数字'
     return
   }
+  if (!agreed.value) {
+    errorMessage.value = '请先阅读并同意《用户协议》和《隐私政策》'
+    return
+  }
 
   submitting.value = true
   try {
@@ -138,6 +144,8 @@ async function register() {
       username: name,
       phone: target,
       password: pwd || null,
+      // Server-side @AssertTrue: the checkbox is not decoration, the request must carry it.
+      agreed: agreed.value,
       // Registration proves the phone only; an email is bound from the user center afterwards.
       verify: {
         channel: 'sms',
@@ -293,6 +301,41 @@ onUnmounted(() => {
       <p class="text-[11px] leading-relaxed text-faint">
         注册只验证手机号。邮箱可在登录后的「用户中心 → 邮箱与手机」绑定，验证通过后即可用于邮箱验证码登录。
       </p>
+
+      <div class="flex items-start gap-2 text-[12px] leading-5 text-dim">
+        <ElCheckbox
+          v-model="agreed"
+          class="mt-[1px] shrink-0"
+          aria-label="我已阅读并同意用户协议和隐私政策"
+        />
+        <div class="min-w-0">
+          <!-- Flex (not inline text) so the hairline gaps are intentional and no stray spaces
+               end up before Chinese punctuation. -->
+          <div class="flex flex-wrap items-center gap-x-1">
+            <span>我已阅读并同意</span>
+            <RouterLink
+              to="/legal/terms"
+              target="_blank"
+              rel="noopener"
+              class="auth-link"
+            >
+              《用户协议》
+            </RouterLink>
+            <span>和</span>
+            <RouterLink
+              to="/legal/privacy"
+              target="_blank"
+              rel="noopener"
+              class="auth-link"
+            >
+              《隐私政策》
+            </RouterLink>
+          </div>
+          <p class="mt-0.5 text-[11px] leading-5 text-faint">
+            并同意本站按该政策处理我的个人信息。
+          </p>
+        </div>
+      </div>
 
       <ElButton
         class="mt-2 w-full"
