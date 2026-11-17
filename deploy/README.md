@@ -132,6 +132,27 @@ bash deploy/bin/install-piston-runtimes.sh --upgrade       # 有新版才装
 
 运维 UI 不对公网开放：`bash deploy/bin/ops-tunnel.sh --host <host>` 走 SSH 隧道，不要改 `OPS_BIND`。
 
+## 手工建账号（只有用户名 + 密码）
+
+门户注册要短信 / 邮箱验证码；运维偶尔需要一个只有用户名和密码的账号（发布机器人、内网演示、应急管理员）。
+`create-account.sh` 负责这件事：终端里输入两次密码（或从 stdin 管道喂），脚本自己算 BCrypt 再写库，明文不落盘。
+
+```bash
+bash deploy/bin/create-account.sh -u opsbot              # 交互输入密码，角色 USER
+bash deploy/bin/create-account.sh -u opsbot -r ADMIN     # 建（或补）管理员角色
+bash deploy/bin/create-account.sh -u opsbot --force      # 只重置密码：不动角色、不复活封禁账号
+printf '%s' "$PASS" | bash deploy/bin/create-account.sh -u opsbot   # 无人值守
+```
+
+- 用户名 4–20 位 `[A-Za-z0-9_]`，不能是手机号形状（登录会先按手机号 hash 解析）；密码 8–20 位且含大小写
+  字母和数字。和注册页同一套规则——手工账号不该是注册接口会拒绝的账号。
+- 账号既没手机号也没邮箱（`user_data` 两个 hash 列留 NULL），只能用户名 + 密码登录。
+- `uid` 取 `9xxxxxxxxx` 段（服务自动生成的是 `1xxxxxxxxx`），由用户名 CRC32 派生，重跑落在同一行。
+- 复用 MySQL 容器执行（宿主机不用装客户端）；BCrypt 依次尝试 `htpasswd`、`python3 + bcrypt`、
+  `docker run httpd:2-alpine`（首次会拉一次镜像）。
+- 同目录的 `create-account.sql` 是配套的纯 DML，**不能单独执行**：它读脚本写入的 `@username` /
+  `@password_hash` / `@uid` 等会话变量（MySQL 没有 BCrypt 函数，摘要只能在库外算）。
+
 ## 脚本
 
 | 用途 | 脚本 |
@@ -142,6 +163,7 @@ bash deploy/bin/install-piston-runtimes.sh --upgrade       # 有新版才装
 | 备份 MySQL（`deploy.yml` 发版前自动执行） | `backup_mysql.sh` |
 | 备份资源字节 | `backup_resource.sh` |
 | 给 Piston 装 / 升级语言包 | `install-piston-runtimes.sh` |
+| 手工建「用户名 + 密码」账号 / 重置其密码 | `create-account.sh` |
 | 运维 UI 隧道 | `ops-tunnel.sh` |
 
 全部是 `.sh`：Windows 用 Git Bash 或 WSL。

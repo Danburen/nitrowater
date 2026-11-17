@@ -133,14 +133,16 @@ allow 只抑制**它自己覆盖的那一段**，且长度必须 ≥ 命中的�
 ```bash
 sudo mkdir -p /opt/nitrowater/deploy/content/legal
 sudo chown -R "$USER": /opt/nitrowater/deploy/content/legal
-$EDITOR /opt/nitrowater/deploy/content/legal/privacy.txt   # 替换 {{运营主体全称}} 等占位符
+$EDITOR /opt/nitrowater/deploy/content/legal/privacy.txt
 $EDITOR /opt/nitrowater/deploy/content/legal/terms.txt
 curl -fsS https://<WEB_DOMAIN>/api/public/legal/privacy | head
 curl -fsS https://<AUTH_DOMAIN>/api/public/legal/privacy | head
 ```
 
-占位符：`{{运营主体全称}}`、`{{注册地址}}`、`{{联系邮箱}}`、`{{生效日期}}`、`{{适用域名}}`、`{{存储地区}}`。
-漏填会原样出现在页面上，发布前用 `grep '{{'` 自查一遍。
+**改文本时同步改日期**：两份文件头部各有「更新日期 / 生效日期」两行，运营主体统一写
+`NitroWater`，联系方式写「用户中心 · 站内公告公布的联系渠道」（不写具体邮箱与注册地址）。
+改完记得把日期改成当次修改日（`YYYY-MM-DD`）——文本每请求现读，日期却是死值，不改就会对不上。
+发布前 `grep -n '{{' legal/*.txt` 自查，没有输出才算干净。
 
 > 目录不存在时接口返回 404，而不是回退到镜像里的旧版本——这是有意的：宁可暴露"还没上传"，
 > 也不要让用户看到上一版、甚至别家运营主体的协议。
