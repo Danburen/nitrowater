@@ -14,7 +14,7 @@ class JsonAuthenticationEntryPointTest {
     @Test
     void writesAMachineReadableBodyAndDeletesTheSessionCookie() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setAttribute(SessionEpochFilter.REASON_ATTRIBUTE, "session_epoch_mismatch");
+        request.setAttribute(SessionGuardFilter.REASON_ATTRIBUTE, "session_epoch_mismatch");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         new JsonAuthenticationEntryPoint().commence(request, response,

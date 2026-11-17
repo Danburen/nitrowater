@@ -47,13 +47,13 @@ services:
     volumes:
       - nitrowater-redis:/data
     # 口令由 compose 从 .env 插值到命令行（不是 sh -c 里再展开一次）；必填。
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 512mb --maxmemory-policy volatile-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
       test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    mem_limit: 256m
+    mem_limit: 512m
     restart: unless-stopped
     networks:
       - nitrowater-net

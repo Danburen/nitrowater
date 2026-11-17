@@ -7,6 +7,7 @@
  */
 
 import { unwrap } from '../api/envelope'
+import { deviceFp } from './device'
 
 export interface BffAccount {
   uid: string
@@ -79,7 +80,9 @@ export function login(returnTo?: string): void {
     ? returnTo
     : window.location.pathname + window.location.search
   sessionStorage.setItem(POST_LOGIN_KEY, target)
-  window.location.assign('/oauth2/authorization/nitrowater')
+  // The fingerprint rides along as a query parameter: a top-level navigation cannot send a header,
+  // and the BFF binds the new session to whatever fingerprint it received here.
+  window.location.assign(`/oauth2/authorization/nitrowater?dfp=${encodeURIComponent(deviceFp())}`)
 }
 
 /** Reads and clears the pending post-login path (if any) recorded by {@link login}. */
@@ -104,7 +107,10 @@ export async function logout(): Promise<void> {
   // One cheap probe makes the BFF write a fresh token before we submit.
   if (!readCookie('XSRF-TOKEN')) {
     try {
-      await fetch('/bff/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      await fetch('/bff/me', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'X-Device-Fp': deviceFp() },
+      })
     } catch {
       // Offline/auth service down: submit anyway, the worst case is the 403 we just avoided trying.
     }
@@ -175,7 +181,7 @@ export async function fetchSession(): Promise<SessionProbe> {
   try {
     const res = await fetch('/bff/me', {
       credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', 'X-Device-Fp': deviceFp() },
     })
     if (res.ok) {
       const body = unwrap<BffSession & { expired?: boolean }>(await res.json())
@@ -199,7 +205,7 @@ export async function fetchSession(): Promise<SessionProbe> {
 export function addAccount(): void {
   // The BFF lands on `/` after the new login; resume the page the user was on.
   sessionStorage.setItem(POST_LOGIN_KEY, window.location.pathname + window.location.search)
-  window.location.assign('/bff/accounts/add')
+  window.location.assign(`/bff/accounts/add?dfp=${encodeURIComponent(deviceFp())}`)
 }
 
 /**
@@ -279,6 +285,9 @@ export function notifyAuthExpired(): void {
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase()
   const headers = new Headers(init.headers)
+  // Every data call carries the device id: the BFF rejects a session whose fingerprint changed
+  // (401 `device_changed`). Same-origin, so a custom header costs no preflight.
+  headers.set('X-Device-Fp', deviceFp())
   if (method !== 'GET' && method !== 'HEAD') {
     for (const [key, value] of Object.entries(csrfHeaders())) {
       headers.set(key, value)

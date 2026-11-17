@@ -53,6 +53,8 @@ services:
       # 故不代理也不挂载，`/api/public/legal*` 404，前端静默不显示入口。
       # 走 HTTPS 时必须 true。
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      # 与门户一致：超过这个时间必须重新输密码（PromptLoginFilter 在 /oauth2/authorize 强制）。
+      APP_SESSION_ABSOLUTE: ${APP_SESSION_ABSOLUTE:-30d}
       # 浏览器跨域白名单（带会话 Cookie，务必显式列出真实域名，不要用通配符）。
       CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:5173,http://localhost:5175,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:5175,http://127.0.0.1:8080,https://nitrowater.cn,https://*.nitrowater.cn}
       # 头像暂不开放修改（没有写入口，picture claim 不会被下发），默认留空 = 不下发。

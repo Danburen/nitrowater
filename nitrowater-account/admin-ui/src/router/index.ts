@@ -46,6 +46,12 @@ const router = createRouter({
           meta: { title: '应用管理' },
         },
         {
+          path: 'sessions',
+          name: 'sessions',
+          component: () => import('@/views/SessionsView.vue'),
+          meta: { title: '会话安全' },
+        },
+        {
           // Unknown console route: render the in-app 404 inside the shell (the session is
           // already resolved by the guard) instead of silently redirecting to a real page.
           path: ':pathMatch(.*)*',

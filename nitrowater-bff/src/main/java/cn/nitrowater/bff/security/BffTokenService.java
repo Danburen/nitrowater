@@ -150,7 +150,7 @@ public class BffTokenService {
     private ReauthRequiredException reauth(HttpServletRequest request, String sessionId,
             String principalName, String reason) {
         this.shared.remove(sessionId);
-        SessionEpochFilter.invalidate(request);
+        SessionGuardFilter.invalidate(request);
         log.info("Session of '{}' can no longer produce an access token ({})", principalName, reason);
         return new ReauthRequiredException(reason);
     }

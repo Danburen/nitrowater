@@ -12,10 +12,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Locks the {@code ?switch=1} contract: the flag must reach the AS as {@code prompt=login} in the
- * actual redirect URI, not merely in the stored additional parameters.
+ * Locks the resolver contract: {@code ?switch=1} must reach the AS as {@code prompt=login} in the
+ * actual redirect URI, and {@code ?dfp=} must be parked in the session for the success handler.
  */
 class SwitchAccountAuthorizationRequestResolverTest {
+
+    private static final String FINGERPRINT = "0123456789abcdef";
 
     @Test
     void addsPromptLoginToAuthorizationUri() {
@@ -46,6 +48,31 @@ class SwitchAccountAuthorizationRequestResolverTest {
                 new SwitchAccountAuthorizationRequestResolver(delegate).resolve(new MockHttpServletRequest());
 
         assertThat(resolved).isSameAs(original);
+    }
+
+    @Test
+    void keepsTheFingerprintInTheSessionForTheSuccessHandler() {
+        OAuth2AuthorizationRequestResolver delegate = mock(OAuth2AuthorizationRequestResolver.class);
+        when(delegate.resolve(any(HttpServletRequest.class))).thenReturn(authorizationRequest());
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.setParameter(SwitchAccountAuthorizationRequestResolver.DEVICE_PARAMETER, FINGERPRINT);
+
+        new SwitchAccountAuthorizationRequestResolver(delegate).resolve(servletRequest);
+
+        assertThat(servletRequest.getSession().getAttribute(SessionGuardFilter.PENDING_DEVICE_ATTRIBUTE))
+                .isEqualTo(FINGERPRINT);
+    }
+
+    @Test
+    void ignoresValuesThatDoNotLookLikeAFingerprint() {
+        OAuth2AuthorizationRequestResolver delegate = mock(OAuth2AuthorizationRequestResolver.class);
+        when(delegate.resolve(any(HttpServletRequest.class))).thenReturn(authorizationRequest());
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.setParameter(SwitchAccountAuthorizationRequestResolver.DEVICE_PARAMETER, "not a fingerprint");
+
+        new SwitchAccountAuthorizationRequestResolver(delegate).resolve(servletRequest);
+
+        assertThat(servletRequest.getSession().getAttribute(SessionGuardFilter.PENDING_DEVICE_ATTRIBUTE)).isNull();
     }
 
     private static OAuth2AuthorizationRequest authorizationRequest() {

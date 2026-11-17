@@ -1,14 +1,18 @@
 package cn.nitrowater.account.config;
 
+import cn.nitrowater.account.security.AccountSessionGuardFilter;
+import cn.nitrowater.account.security.PromptLoginFilter;
+import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import cn.nitrowater.account.security.PromptLoginFilter;
+import jakarta.servlet.http.HttpSession;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.time.Instant;
 
 /**
  * Post-login redirect for the SSO hosted form.
@@ -29,24 +33,33 @@ import java.io.IOException;
 public class SsoLoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
     private final LoginRedirectResolver redirectResolver;
+    private final SessionEpochStore epochs;
 
     /**
      * Creates the handler.
      *
      * @param redirectResolver shared resolver (saved request → safe explicit redirect → portal)
+     * @param epochs           shared revocation epoch stamped on the new session
      */
-    public SsoLoginSuccessHandler(LoginRedirectResolver redirectResolver) {
+    public SsoLoginSuccessHandler(LoginRedirectResolver redirectResolver, SessionEpochStore epochs) {
         this.redirectResolver = redirectResolver;
+        this.epochs = epochs;
     }
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
             Authentication authentication) throws IOException, ServletException {
         clearAuthenticationAttributes(request);
+        HttpSession session = request.getSession();
+        // OIDC `auth_time`: PromptLoginFilter / AccountSessionGuardFilter use it to enforce
+        // app.session.absolute, because SAS does not implement max_age/auth_time itself.
+        session.setAttribute(PromptLoginFilter.AUTH_AT_ATTRIBUTE, Instant.now());
+        // A later "revoke all sessions" rotates this value and both services reject the session.
+        session.setAttribute(AccountSessionGuardFilter.EPOCH_ATTRIBUTE, this.epochs.current());
         String target = redirectResolver.resolve(request, response);
         // If the saved request is an authorization URL carrying prompt=login/select_account, let
         // PromptLoginFilter know this is the one resumed pass that must not bounce back to /login.
-        PromptLoginFilter.markIfNeeded(request.getSession(false), target);
+        PromptLoginFilter.markIfNeeded(session, target);
         getRedirectStrategy().sendRedirect(request, response, target);
     }
 }

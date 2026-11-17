@@ -1,6 +1,8 @@
 package cn.nitrowater.bff.web;
 
 import cn.nitrowater.bff.security.AccountSessionService;
+import cn.nitrowater.bff.security.SessionGuardFilter;
+import cn.nitrowater.bff.security.SwitchAccountAuthorizationRequestResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -63,7 +65,13 @@ public class AccountController {
 
     @GetMapping("/add")
     public void add(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        response.sendRedirect(request.getContextPath() + "/oauth2/authorization/" + registrationId + "?switch=1");
+        String target = request.getContextPath() + "/oauth2/authorization/" + registrationId + "?switch=1";
+        // Carry the SPA's device fingerprint through the redirect (a navigation cannot send a header).
+        String fingerprint = request.getParameter(SwitchAccountAuthorizationRequestResolver.DEVICE_PARAMETER);
+        if (SessionGuardFilter.isFingerprint(fingerprint)) {
+            target += "&" + SwitchAccountAuthorizationRequestResolver.DEVICE_PARAMETER + "=" + fingerprint;
+        }
+        response.sendRedirect(target);
     }
 
     /**

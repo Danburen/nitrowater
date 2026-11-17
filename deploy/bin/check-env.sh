@@ -380,21 +380,6 @@ else
     pass 'REDIS_PASSWORD' '已设置'
 fi
 
-# SessionEpochFilter drops sessions whose epoch differs from the current one; a constant
-# "dev" means redeploys never invalidate old sessions (assessment H5).
-SESSION_EPOCH="${APP_SESSION_EPOCH:-}"
-if [ "$LOCAL" -eq 1 ]; then
-    info 'APP_SESSION_EPOCH' "本地 dev 使用默认 epoch=${SESSION_EPOCH:-dev}"
-elif [ -z "$SESSION_EPOCH" ]; then
-    fail 'APP_SESSION_EPOCH' '未设置：恒为 dev，发布不会失效旧会话'
-elif [ "$SESSION_EPOCH" = 'dev' ]; then
-    fail 'APP_SESSION_EPOCH' '仍是 dev 默认值，每次发布应写入新值'
-elif is_placeholder "$SESSION_EPOCH"; then
-    fail 'APP_SESSION_EPOCH' '仍是模板占位值'
-else
-    pass 'APP_SESSION_EPOCH' "$SESSION_EPOCH"
-fi
-
 BACKEND="${RESOURCE_BACKEND:-local}"
 if [ "$BACKEND" = 'local' ]; then
     # 字节落宿主机目录：既要在 .env 里声明，也要真实存在且可写（compose 用它做 bind mount）。
@@ -631,7 +616,7 @@ if [ "$LOCAL" -eq 0 ]; then
             fail 'SSL_EMAIL' "不是有效邮箱：$SSL_EMAIL"
         fi
         if [ "${SESSION_COOKIE_SECURE:-}" != 'true' ]; then
-            warn 'SESSION_COOKIE_SECURE' 'HTTPS 部署应为 true（否则会话 cookie 仍可走 http）'
+            fail 'SESSION_COOKIE_SECURE' 'HTTPS 部署必须为 true（否则会话 cookie 仍可走 http）'
         else
             pass 'SESSION_COOKIE_SECURE' 'true'
         fi

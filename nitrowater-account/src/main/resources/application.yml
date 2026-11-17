@@ -17,6 +17,8 @@ server:
         same-site: lax
         # Set SESSION_COOKIE_SECURE=true whenever the account host is served over TLS.
         secure: ${SESSION_COOKIE_SECURE:false}
+        # Persistent, like the portal cookie: closing the browser must not end the SSO session.
+        max-age: 30d
 
 spring:
   application:
@@ -42,6 +44,16 @@ spring:
       password: "${REDIS_PASSWORD:}"
       repositories:
         enabled: false
+
+  # -------- SSO 会话：Redis 存储，容器/机器重启不掉线 ----------
+  session:
+    # 空闲窗口：门户的会话是 7 天，这里对齐，够支撑"回到浏览器静默重新授权"。
+    timeout: 7d
+    data:
+      redis:
+        namespace: nitrowater:account:session
+        # indexed：SessionRegistry 需要按 principal 反查会话（改密/改角色时踢掉 SSO 会话）。
+        repository-type: indexed
 
   # -------- JPA --------
   # 建表改由 Flyway 管理（见下）；Hibernate 不自动改结构
@@ -127,6 +139,10 @@ generator:
 # 通配符让任意本地端口的页面都能读走 /api/auth/account 之类的个人数据。
 # Cookie 属性（SameSite 等）统一在 server.servlet.session.cookie 下配置，见文件头部。
 app:
+  # 绝对上限：从"上一次输密码"起算。超过后 /oauth2/authorize 强制回登录页（PromptLoginFilter），
+  # 因此门户那边即使旧会话还能静默续，也拿不到新令牌。
+  session:
+    absolute: ${APP_SESSION_ABSOLUTE:30d}
   # Verification-code delivery. Local development defaults to mock: codes are logged, not sent.
   # Set COMMUNICATION_MODE=real plus the provider credentials below for production.
   # Email has NO degrade path: `real` without RESEND_API_KEY fails at startup (ResendConfig).

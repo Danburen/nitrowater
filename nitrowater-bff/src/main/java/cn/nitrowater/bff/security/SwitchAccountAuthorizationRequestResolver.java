@@ -10,18 +10,24 @@ import java.util.Map;
 import cn.nitrowater.lib.utils.StringUtil;
 
 /**
- * Adds {@code prompt=login} when the SPA asks to add another account.
+ * Turns the SPA's login hints into OIDC parameters and session state.
  *
- * <p>The BFF starts the flow at {@code /oauth2/authorization/nitrowater?switch=1}. The standard
- * resolver ignores that flag; this decorator turns it into the OIDC {@code prompt=login}
- * parameter, which the Authorization Server uses (via its own prompt filter) to force a fresh
- * credential prompt instead of silently reusing the current SSO session. That is what makes
- * "add another account" possible while the first account is still logged in.</p>
+ * <p>{@code ?switch=1} becomes {@code prompt=login}: the BFF starts the flow at
+ * {@code /oauth2/authorization/nitrowater?switch=1}, and without this the Authorization Server
+ * would silently reuse the current SSO session, making a second account impossible to add.</p>
+ *
+ * <p>{@code ?dfp=<fingerprint>} is stashed in the session for
+ * {@link AccountLoginSuccessHandler}. The SPA cannot attach a header to the top-level authorization
+ * navigation, so the device fingerprint travels as a query parameter once per login and is hashed
+ * into the session there (see {@link SessionGuardFilter}).</p>
  */
 public class SwitchAccountAuthorizationRequestResolver implements OAuth2AuthorizationRequestResolver {
 
     /** Query parameter the SPA uses to signal "add another account". */
     public static final String SWITCH_PARAMETER = "switch";
+
+    /** Query parameter carrying the SPA's device fingerprint into the login flow. */
+    public static final String DEVICE_PARAMETER = "dfp";
 
     private static final String PROMPT_PARAMETER = "prompt";
 
@@ -43,7 +49,15 @@ public class SwitchAccountAuthorizationRequestResolver implements OAuth2Authoriz
 
     private static OAuth2AuthorizationRequest customize(OAuth2AuthorizationRequest request,
             HttpServletRequest servletRequest) {
-        if (request == null || !"1".equals(servletRequest.getParameter(SWITCH_PARAMETER))) {
+        if (request == null) {
+            return null;
+        }
+        String fingerprint = servletRequest.getParameter(DEVICE_PARAMETER);
+        if (SessionGuardFilter.isFingerprint(fingerprint)) {
+            servletRequest.getSession(true)
+                    .setAttribute(SessionGuardFilter.PENDING_DEVICE_ATTRIBUTE, fingerprint);
+        }
+        if (!"1".equals(servletRequest.getParameter(SWITCH_PARAMETER))) {
             return request;
         }
         Map<String, Object> additional = new LinkedHashMap<>(request.getAdditionalParameters());

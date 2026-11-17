@@ -128,7 +128,8 @@ Browser -> BFF /oauth2/authorization
 - **浏览器零 token**：AT/RT 只在 BFF 服务端，降低 XSS 窃取风险。
 - **自动续期**：BFF 用 refresh token 续期，业务服务只校验 JWT。
 - **统一身份**：account 是唯一 issuer；server/resource 通过 JWKS 验签。
-- **会话失效**：`APP_SESSION_EPOCH` 变更可让旧会话立即失效，适合发布/应急。
+- **会话失效**：account 管理端「会话安全 → 注销全部登录会话」轮换 Redis 中的全局会话代次
+  （`nitrowater:auth:session-epoch`），并清空 SSO 会话与 OAuth2 授权；BFF/account 下一次请求即判旧会话失效，无需发版。
 
 ### 4.2 AI 文档问答（检索）
 

@@ -12,11 +12,13 @@ server:
   forward-headers-strategy: framework
   servlet:
     session:
-      timeout: 30m
       cookie:
         name: BFFSESSION
         http-only: true
         same-site: lax
+        # Persistent so closing the browser does not sign the user out. It outlives the session on
+        # purpose: the server is authoritative, and a cookie without a session just means 401.
+        max-age: 30d
         # Dev runs over plain http. A TLS deployment must set SESSION_COOKIE_SECURE=true, otherwise
         # the browser will happily send the session cookie over http as well.
         secure: ${SESSION_COOKIE_SECURE:false}
@@ -69,6 +71,8 @@ spring:
   # Boot 4.0 起，属性前缀由 spring.session.redis.* 更名为 spring.session.data.redis.*
   # （迁移指南：Spring Session Data Redis properties renamed）。只写新前缀，避免弃用告警。
   session:
+    # Idle window (Spring Session): an active session slides, so this is the "walked away" limit.
+    timeout: 7d
     data:
       redis:
         namespace: nitrowater:bff:session
@@ -141,9 +145,9 @@ app:
     # spring.security.oauth2.client.* 配置（见上）。
     registration-id: nitrowater
   session:
-    # 每次发布换一个值（git sha / 时间戳）：旧会话在下一次请求时被判失效，/api/** 返回 401
-    # session_expired，浏览器据此重新登录。见 SessionEpochFilter / JsonAuthenticationEntryPoint。
-    epoch: ${APP_SESSION_EPOCH:dev}
+    # 全会话失效由 account 管理端轮换 Redis 里的会话代次（SessionEpochStore），不再有环境变量开关。
+    # 绝对上限：从"上一次输密码"起算，超过就必须重新登录（空闲续期不会延长它）。
+    absolute: ${APP_SESSION_ABSOLUTE:30d}
   # 登出后 AS 回跳的绝对地址；必须是 account 端 BFF_POST_LOGOUT_REDIRECT_URIS 中的一项。
   # 若从请求 Host 推导，127.0.0.1 / 换端口 / 内网 IP 都会匹配失败（AS 返回 400 空白页，且不销毁 SSO 会话）。
   post-logout-redirect-uri: ${POST_LOGOUT_REDIRECT_URI:http://localhost:5173}

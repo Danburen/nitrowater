@@ -5,6 +5,7 @@
  * {@link apiFetch}. The browser never holds an access token.</p>
  */
 import { apiFetch } from '../auth/bff'
+import { deviceFp } from '../auth/device'
 import { readJson } from './envelope'
 
 export interface AccountMe {
@@ -39,20 +40,6 @@ export interface ReAuthToken {
 
 export interface ChangeTarget {
   verifyKey: string
-}
-
-/** Stable per-browser fingerprint for account audit/quota context (not an auth factor). */
-function deviceFp(): string {
-  const key = 'nitrowater:deviceFp'
-  try {
-    const existing = window.localStorage.getItem(key)
-    if (existing) return existing
-    const value = crypto.randomUUID()
-    window.localStorage.setItem(key, value)
-    return value
-  } catch {
-    return crypto.randomUUID()
-  }
 }
 
 function deviceInfo(): { deviceFp: string; os: string; browser: string } {

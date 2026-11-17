@@ -102,7 +102,7 @@ POST /logout (顶层表单, 带 _csrf)
 - `id_token` 是 **OIDC 在 OAuth2 之上加的第三张票**：OAuth2 只回答"能访问什么"，OIDC 补上"你是谁"。故更准确说是「**OIDC 三票**」：id_token(我是谁) + AT(我能访问啥) + RT(怎么续)。
 - 真正的差别不在"几张票"，而在**票放哪**：经典 SPA 双 token（oidc-client-ts）由**浏览器持 AT/RT**（易被 XSS）；本项目三票**全在 BFF 服务端**，浏览器零 token。
 
-> ⚠️ 注意 account 里有**两套** token：① OIDC AS 正式签发（`/oauth2/**`，BFF 用这套）；② Phase1 遗留的"自研 AT/RT"（`/api/auth/**`，`AuthController` 标 `@SuppressWarnings("deprecation")`；`application.yml` 的 `token.access.expiration` / `refresh.rotate` / Cookie `REFRESH_TOKEN` 属它，服务已退役的旧 public client）。别拿第 2 套 TTL 去理解 BFF。
+> ⚠️ account 里只剩**一套** token：OIDC AS 正式签发（`/oauth2/**`），TTL 在 `AuthorizationServerConfig` 的 `TokenSettings` 里写死（AT 15 分钟 / RT 30 天、刷新即轮换）。Phase1 自研 AT/RT 那套（`/api/auth/**` 的 `AuthController` 仍标 `@SuppressWarnings("deprecation")`）已退役，它遗留的 `token.access.expiration` / `refresh.rotate` / `refresh.family` 死配置已删除——别按它们理解 BFF 的 TTL。
 
 ---
 

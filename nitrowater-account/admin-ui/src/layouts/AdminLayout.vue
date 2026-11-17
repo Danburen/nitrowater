@@ -41,6 +41,11 @@ const nav: NavItem[] = [
     label: '应用管理',
     icon: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
   },
+  {
+    to: '/sessions',
+    label: '会话安全',
+    icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4',
+  },
 ]
 
 function isActive(to: string): boolean {

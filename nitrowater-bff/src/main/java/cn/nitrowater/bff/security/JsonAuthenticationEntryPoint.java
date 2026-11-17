@@ -27,7 +27,7 @@ public class JsonAuthenticationEntryPoint implements AuthenticationEntryPoint {
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
             AuthenticationException authException) throws IOException {
-        Object reason = request.getAttribute(SessionEpochFilter.REASON_ATTRIBUTE);
+        Object reason = request.getAttribute(SessionGuardFilter.REASON_ATTRIBUTE);
         String code = reason instanceof String value ? value : "session_expired";
         response.setHeader("X-Auth-Reason", code);
         response.addHeader(HttpHeaders.SET_COOKIE, SessionCookies.expired().toString());

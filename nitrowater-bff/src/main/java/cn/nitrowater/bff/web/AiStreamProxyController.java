@@ -2,7 +2,7 @@ package cn.nitrowater.bff.web;
 
 import cn.nitrowater.bff.security.BffTokenService;
 import cn.nitrowater.bff.security.ReauthRequiredException;
-import cn.nitrowater.bff.security.SessionEpochFilter;
+import cn.nitrowater.bff.security.SessionGuardFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -117,7 +117,7 @@ public class AiStreamProxyController {
                     if (upstreamResponse.getStatusCode().value() == 401
                             && request.getUserPrincipal() != null) {
                         // The access token is no longer accepted upstream: drop the local session.
-                        SessionEpochFilter.invalidate(request);
+                        SessionGuardFilter.invalidate(request);
                         forwarded.set("X-Auth-Reason", "upstream_unauthorized");
                         forwarded.add(HttpHeaders.SET_COOKIE, SessionCookies.expired().toString());
                     }

@@ -9,8 +9,9 @@ import cn.nitrowater.bff.security.JsonAuthenticationEntryPoint;
 import cn.nitrowater.bff.security.MultiAccountAuthorizedClientRepository;
 import cn.nitrowater.bff.security.OidcRpInitiatedLogoutSuccessHandler;
 import cn.nitrowater.bff.security.OidcSessionLogoutHandler;
-import cn.nitrowater.bff.security.SessionEpochFilter;
+import cn.nitrowater.bff.security.SessionGuardFilter;
 import cn.nitrowater.bff.security.UpstreamTokenService;
+import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +31,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Duration;
 
 /**
  * BFF security chain.
@@ -62,7 +64,8 @@ public class SecurityConfig {
             OAuth2AuthorizationRequestResolver switchAccountAuthorizationRequestResolver,
             UpstreamTokenService upstreamTokenService,
             @Value("${app.oidc.registration-id:nitrowater}") String registrationId,
-            @Value("${app.session.epoch:dev}") String sessionEpoch,
+            SessionEpochStore sessionEpochStore,
+            @Value("${app.session.absolute:30d}") Duration sessionAbsolute,
             @Value("${app.post-logout-redirect-uri:}") String postLogoutRedirectUri) throws Exception {
         // Read the raw (unmasked) token from the cookie and accept it verbatim in the header,
         // which is what a same-origin SPA does; the request attribute name is fixed so the
@@ -141,8 +144,9 @@ public class SecurityConfig {
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(csrfRequestHandler))
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
-                // Drop sessions created by a previous deployment (see app.session.epoch).
-                .addFilterAfter(new SessionEpochFilter(sessionEpoch), SecurityContextHolderFilter.class);
+                // Keep the session honest: revocation epoch (Redis), absolute age, device fingerprint.
+                .addFilterAfter(new SessionGuardFilter(sessionEpochStore, sessionAbsolute),
+                        SecurityContextHolderFilter.class);
         return http.build();
     }
 

@@ -53,6 +53,10 @@
 - **Git 提交只由用户执行（强制）**：AI 只改工作区文件，**不得** `git commit` / `git push` / 打 tag / 改写历史 / 建分支；提交信息可以草拟给用户，由用户自己提交。
 - **BFF 安全面（强制）**：`/api/**` 是**唯一数据命名空间**（需登录；`/api/public/**` 有意匿名）。其余路径是公开 SPA（静态资源 + history 深链接）+ OIDC 管线，故 `anyRequest().permitAll()`。`/actuator/**`、`/internal/**` 为**保留敏感前缀，默认 `denyAll`**（兜底，防新增依赖静默暴露）。**新增数据端点必须挂在 `/api/**` 下**；敏感内部接口不得落在该前缀之外。
 - **BFF 令牌刷新（强制）**：取 access token 一律走 `BffTokenService`（按会话串行 + 2 分钟内共享刷新结果），**不要**直接调 `OAuth2AuthorizedClientManager`；拿不到令牌时**失效会话**，由控制器用 `ReauthResponse` 回 **401 `session_expired`**（`X-Auth-Reason` + 过期 cookie），**禁止**让它落到 500。`MultiAccountAuthorizedClientRepository` 必须「先改副本再 `setAttribute`」（会话 `flush-mode=immediate`，先写后改会丢写）。
+- **会话生命周期（强制）**：`SessionGuardFilter` 一票否决三种会话——会话代次不一致、绝对年龄超过 `APP_SESSION_ABSOLUTE`（默认 30 天，从最后一次输密码起算）、设备指纹变化。空闲窗口是 7 天（`spring.session.timeout`），Cookie 持久 30 天；会话存 Redis（BFF 与 account 各自命名空间），**重启不掉线**是设计目标。因此：
+  - 会话代次是 Redis 里的共享值（`SessionEpochStore`，key `nitrowater:auth:session-epoch`），**没有环境变量开关**；全员下线由 account 管理端「会话安全 → 注销全部登录会话」轮换，同时清空 SSO 会话与 `oauth2_authorization`，并要求操作者在最近 10 分钟内验证过密码。日常发版/重启不会动它。
+  - 设备绑定走前端指纹：登录入口必须带 `?dfp=`（`login()` / `addAccount()`），所有 `/api/**`、`/bff/**` 请求必须带 `X-Device-Fp`（统一在 `apiFetch` 加）；指纹同时镜像到 `nitrowater_device_fp` Cookie，`SessionGuardFilter` 先读 header 再读 Cookie——`window.open`/下载这类顶层导航带不了 header。新增 fetch 封装要照抄这几点，否则用户会被 401 `device_changed`。
+  - account 侧绝对上限：AS 链由 `PromptLoginFilter` 在 `/oauth2/authorize` 强制，管理端/账号 API 由 `AccountSessionGuardFilter` 在默认链强制；两者都校验 `auth_time` 和会话代次（SAS 7.1 不实现 `max_age`/`auth_time`）。SSO 会话在 Redis（`repository-type: indexed`，`SessionRegistry` 用 `SpringSessionBackedSessionRegistry`）。
 - **管理端角色校验（强制）**：`/api/admin/**`、`/api/resource/upload/**` 这类前缀必须在 `SecurityFilterChain` 里兜底
   （`hasAnyAuthority("ROLE_ADMIN","ROLE_SUPER_ADMIN")`），**同时**在控制器类上标注
   `@PreAuthorize("hasAuthority('ROLE_ADMIN')")`（`@EnableMethodSecurity` 已开启；`ROLE_SUPER_ADMIN` 的 token 里

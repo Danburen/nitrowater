@@ -30,13 +30,15 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.session.SessionRegistry;
-import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.session.Session;
+import org.springframework.session.security.SpringSessionBackedSessionRegistry;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -75,7 +77,9 @@ import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import cn.nitrowater.account.security.AccountSessionGuardFilter;
 import cn.nitrowater.account.security.PromptLoginFilter;
+import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
 import cn.nitrowater.account.security.SsoUserPrincipal;
 
 import jakarta.servlet.FilterChain;
@@ -144,7 +148,9 @@ public class AuthorizationServerConfig {
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
             @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
             RequestCache requestCache,
-            SessionRegistry sessionRegistry)
+            SessionRegistry sessionRegistry,
+            SessionEpochStore sessionEpochStore,
+            @Value("${app.session.absolute:30d}") Duration sessionAbsolute)
             throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
                 new OAuth2AuthorizationServerConfigurer();
@@ -159,11 +165,13 @@ public class AuthorizationServerConfig {
                 // mint fresh tokens, so the same expiry check guards the OIDC endpoints.
                 .addFilterBefore(expiredSessionFilter(sessionRegistry), ConcurrentSessionFilter.class)
                 // SAS 7.1 accepts but ignores prompt=login/select_account; enforce it ourselves so
-                // the BFF can add a second account without reusing the current SSO session.
+                // the BFF can add a second account without reusing the current SSO session. The same
+                // filter enforces the absolute cap (app.session.absolute) and the revocation epoch,
+                // which SAS' missing max_age/auth_time support would otherwise express.
                 // `OAuth2AuthorizationEndpointFilter` has no registered order, so anchor after the
                 // security-context loader instead: this runs early enough and still has the
                 // authenticated principal available.
-                .addFilterAfter(new PromptLoginFilter(requestCache, sessionRegistry),
+                .addFilterAfter(new PromptLoginFilter(requestCache, sessionAbsolute, sessionEpochStore),
                         SecurityContextHolderFilter.class)
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.defaultAuthenticationEntryPointFor(
@@ -181,7 +189,9 @@ public class AuthorizationServerConfig {
             SsoLoginSuccessHandler ssoLoginSuccessHandler,
             SsoLoginFailureHandler ssoLoginFailureHandler,
             CspPolicy cspPolicy,
-            @Qualifier("accountApiJwtDecoder") JwtDecoder accountApiJwtDecoder)
+            SessionEpochStore sessionEpochStore,
+            @Qualifier("accountApiJwtDecoder") JwtDecoder accountApiJwtDecoder,
+            @Value("${app.session.absolute:30d}") Duration sessionAbsolute)
             throws Exception {
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
         csrfRequestHandler.setCsrfRequestAttributeName("_csrf");
@@ -237,6 +247,10 @@ public class AuthorizationServerConfig {
                 // Setting maximumSessions already makes Spring build a ConcurrentSessionFilter, but
                 // that one answers with a plain-text body; ours runs first and returns 401 JSON.
                 .addFilterBefore(expiredSessionFilter(sessionRegistry), ConcurrentSessionFilter.class)
+                // The admin console and account APIs do not pass through /oauth2/authorize, so they
+                // need the absolute-age and revocation-epoch checks themselves.
+                .addFilterAfter(new AccountSessionGuardFilter(sessionEpochStore, sessionAbsolute),
+                        SecurityContextHolderFilter.class)
                 // Straight to the login page: going via "/" would seed a saved request.
                 .logout(l -> l.logoutSuccessUrl("/login"))
                 .exceptionHandling(ex -> ex
@@ -278,13 +292,13 @@ public class AuthorizationServerConfig {
     }
 
     /**
-     * Session registry populated by the default chain's {@code maximumSessions(-1)} (tracking only,
-     * no concurrency limit). {@link cn.nitrowater.account.security.SessionInvalidationListener}
+     * Session registry backed by Spring Session (Redis), so it survives a restart and sees sessions
+     * created on either node. {@link cn.nitrowater.account.security.SessionInvalidationListener}
      * uses it to expire every session of an account whose credentials or roles changed.
      */
     @Bean
-    public SessionRegistry sessionRegistry() {
-        return new SessionRegistryImpl();
+    public SessionRegistry sessionRegistry(FindByIndexNameSessionRepository<? extends Session> sessions) {
+        return new SpringSessionBackedSessionRegistry<>(sessions);
     }
 
     /**

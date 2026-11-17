@@ -38,6 +38,15 @@ export interface AdminSessionVO {
   roles: string[]
 }
 
+export interface RevokedSessionsVO {
+  /** New shared session epoch; every later login is stamped with it. */
+  epoch: string
+  /** OAuth2 authorization rows removed (refresh tokens). */
+  authorizations: number
+  /** Account SSO sessions removed from Redis. */
+  ssoSessions: number
+}
+
 export interface ClientVO {
   id: string
   clientId: string
@@ -90,6 +99,7 @@ export interface RoleForm {
 
 export const adminApi = {
   session: () => http.get<AdminSessionVO>('/api/admin/session'),
+  revokeAllSessions: () => http.post<RevokedSessionsVO>('/api/admin/session/revoke-all'),
 
   listRoles: (keyword: string, builtin: string, page: number, size: number) =>
     http.get<SpringPage<RoleVO>>(

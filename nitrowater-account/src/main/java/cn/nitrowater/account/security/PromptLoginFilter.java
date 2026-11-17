@@ -1,5 +1,7 @@
 package cn.nitrowater.account.security;
 
+import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
+import cn.nitrowater.lib.utils.StringUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -8,7 +10,6 @@ import jakarta.servlet.http.HttpSession;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -16,48 +17,80 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import cn.nitrowater.lib.utils.StringUtil;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
- * Enforces the OIDC {@code prompt=login} / {@code prompt=select_account} intent.
+ * Enforces the reasons a browser must prove credentials again at {@code /oauth2/authorize}.
  *
+ * <h2>{@code prompt=login} / {@code prompt=select_account}</h2>
  * <p>Spring Authorization Server 7.1 only enforces {@code prompt=none}; other prompt values are
  * accepted and then ignored. That is fatal for "add another account": the BFF asks for a fresh
  * credential prompt, but the AS silently reuses the current SSO session and immediately returns
  * an authorization code for the same user.</p>
  *
- * <p>This filter runs before {@code OAuth2AuthorizationEndpointFilter}. When an authenticated
- * browser hits {@code /oauth2/authorize?prompt=login}, it saves the pending authorization request,
- * clears the local SSO authentication and redirects to the hosted login page. After a successful
- * login the redirect resolver returns the saved authorization URL; {@link #markIfNeeded} records a
- * one-shot marker so the resumed request passes through instead of looping.</p>
+ * <h2>Absolute age and revocation epoch</h2>
+ * <p>OIDC expresses "sign in again after N days" as {@code max_age} + {@code auth_time}; SAS does
+ * not implement either. The session therefore records when credentials were last proved
+ * ({@link #AUTH_AT_ATTRIBUTE}) and this filter forces one fresh login once
+ * {@code app.session.absolute} has passed — otherwise an ever-refreshing portal session could be
+ * re-authorized silently forever. The same check rejects a session stamped with an older
+ * revocation epoch ({@link AccountSessionGuardFilter#EPOCH_ATTRIBUTE}), which is how an admin
+ * "revoke all sessions" reaches the SSO side even if the Redis cleanup missed a session.</p>
+ *
+ * <p>In both cases the pending authorization request is saved, the local SSO authentication is
+ * cleared and the browser is sent to the hosted login page. After a successful login the redirect
+ * resolver returns the saved authorization URL; {@link #markIfNeeded} records a one-shot marker so
+ * the resumed request passes through instead of looping.</p>
  */
 public class PromptLoginFilter extends OncePerRequestFilter {
 
     /** One-shot session marker: the next matching authorization request has already re-authenticated. */
     public static final String RESUMED_ATTRIBUTE = PromptLoginFilter.class.getName() + ".RESUMED";
 
+    /** Session attribute holding the instant credentials were last proved (the {@code auth_time}). */
+    public static final String AUTH_AT_ATTRIBUTE = PromptLoginFilter.class.getName() + ".AUTH_AT";
+
     private static final String AUTHORIZATION_PATH = "/oauth2/authorize";
     private static final String LOGIN_PATH = "/login";
 
     private final RequestCache requestCache;
-    private final SessionRegistry sessionRegistry;
+    private final Duration absolute;
+    private final SessionEpochStore epochs;
 
-    public PromptLoginFilter(RequestCache requestCache, SessionRegistry sessionRegistry) {
+    /**
+     * @param requestCache    saved-request cache that resumes the authorization after login
+     * @param absolute        {@code app.session.absolute}, the hard cap from the last password entry
+     * @param epochs          shared revocation epoch (Redis), checked before reusing the SSO session
+     */
+    public PromptLoginFilter(RequestCache requestCache, Duration absolute, SessionEpochStore epochs) {
         this.requestCache = requestCache;
-        this.sessionRegistry = sessionRegistry;
+        this.absolute = absolute;
+        this.epochs = epochs;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        if (!isAuthorizationRequest(request) || !forcesLogin(request.getParameter("prompt"))) {
+        if (!isAuthorizationRequest(request)) {
             filterChain.doFilter(request, response);
             return;
         }
 
         HttpSession session = request.getSession(false);
-        if (session != null && Boolean.TRUE.equals(session.getAttribute(RESUMED_ATTRIBUTE))) {
+        // A session without the timestamp (or stamped with an older revocation epoch) predates the
+        // current policy: one more password entry, then it is stamped by SsoLoginSuccessHandler.
+        boolean agedOut = session != null && !(session.getAttribute(AUTH_AT_ATTRIBUTE) instanceof Instant loginAt
+                && loginAt.plus(this.absolute).isAfter(Instant.now()));
+        boolean staleEpoch = session != null
+                && !this.epochs.current().equals(session.getAttribute(AccountSessionGuardFilter.EPOCH_ATTRIBUTE));
+        if (!agedOut && !staleEpoch && !forcesLogin(request.getParameter("prompt"))) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        if (!agedOut && !staleEpoch && session != null
+                && Boolean.TRUE.equals(session.getAttribute(RESUMED_ATTRIBUTE))) {
             session.removeAttribute(RESUMED_ATTRIBUTE);
             filterChain.doFilter(request, response);
             return;
@@ -74,11 +107,11 @@ public class PromptLoginFilter extends OncePerRequestFilter {
 
         requestCache.saveRequest(request, response);
         if (session != null) {
-            sessionRegistry.removeSessionInformation(session.getId());
             session.removeAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
         }
         SecurityContextHolder.clearContext();
-        response.sendRedirect(request.getContextPath() + LOGIN_PATH + "?switch=1");
+        response.sendRedirect(request.getContextPath() + LOGIN_PATH
+                + ((agedOut || staleEpoch) ? "?expired=1" : "?switch=1"));
     }
 
     /**

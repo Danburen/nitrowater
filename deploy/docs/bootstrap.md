@@ -69,7 +69,6 @@ openssl rand -base64 32   # DEVICE_SALT
 openssl rand -base64 24   # MYSQL_ROOT_PASSWORD / DB_PASSWORD / REDIS_PASSWORD（三个不同）
 openssl rand -hex 32      # BFF_CLIENT_SECRET
 openssl rand -hex 12      # RESOURCE_INTERNAL_TOKEN
-date +%s                  # APP_SESSION_EPOCH
 $EDITOR deploy/docker/.env
 ```
 
@@ -82,7 +81,6 @@ $EDITOR deploy/docker/.env
 | `DB_USERNAME` / `DB_PASSWORD` | 不能是 `root`；与 §5 建的账号一致 |
 | `REDIS_PASSWORD` | 必填（存 BFF 会话与令牌） |
 | `JWT_ISSUER` | 必须是 URL，等于 account 对外地址 |
-| `APP_SESSION_EPOCH` | 每次发布换新值 = 旧会话全部失效 |
 | `BFF_REDIRECT_URIS` 等 7 个地址 | 一律写**浏览器看到的公网地址**，不要 localhost / 容器名 |
 | `RESOURCE_DATA_DIR` | 资源字节落盘的宿主机目录（默认 `local` 后端）。`RESOURCE_BACKEND=local` 时必填，须先 `mkdir -p` 并纳入备份 |
 | `AI_*` | AI key 可用 `DEEPSEEK_API_KEY` 等回落 |

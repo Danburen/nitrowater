@@ -176,6 +176,26 @@ printf '%s' "$PASS" | bash deploy/bin/create-account.sh -u opsbot   # 无人值�
 2. 宿主机只保留状态：`.env`、`.env.prod.secrets`、`keys/`、`content/`、`backups/`、`RESOURCE_DATA_DIR` 与数据卷。
 3. 换机器 = 搬上面这些状态加数据卷。
 
+## 会话与重启
+
+登录态分两层，都在 Redis：门户（BFF）的 `nitrowater:bff:session`、SSO（account）的
+`nitrowater:account:session`；令牌本体由 account 写 MySQL（`oauth2_authorization`）。
+
+- **日常重启不掉线**：Redis 是 AOF + 命名卷（`nitrowater-redis:/data`），容器/整机重启后会话还在。
+  会丢的只有 `docker compose down -v`、`docker volume prune`、磁盘写满——这三种等于全员重登。
+- **全员下线**：account 管理端「会话安全 → 注销全部登录会话」。它轮换 Redis 里的
+  `nitrowater:auth:session-epoch`（BFF 与 account 默认链下一次请求即 401）、删除全部 SSO 会话、
+  清空 `oauth2_authorization`（刷新令牌）。操作者自己也会被登出；因为动作是全局破坏性的，
+  还要求操作者在最近 10 分钟内验证过密码，否则先重新登录。无需发版、无需动 `.env`。
+- **免登录窗口**：空闲 7 天（`spring.session.timeout`）、绝对 30 天（`APP_SESSION_ABSOLUTE`，从最后一次
+  输密码起算）。超过 30 天后 BFF 与 account 管理端都会强制回登录页，不需要清 Redis。
+- **设备指纹**：门户每个 `/api/**`、`/bff/**` 请求都带 `X-Device-Fp`；指纹同时镜像到
+  `nitrowater_device_fp` Cookie，供 `window.open`/资源下载这类带不了 header 的顶层导航使用。
+  与登录时（`?dfp=`）不一致即 401 `device_changed`。用户清浏览器站点数据 = 换设备，属预期。
+- **Redis 内存**：`volatile-lru` + 512MB。不要改回 `allkeys-lru`：那会把登录会话当普通缓存淘汰，
+  表现为用户被静默踢下线。
+- Redis 的 `appendonlydir` 不在 `backup_mysql.sh` 范围内；换机时带上卷，或者接受一次全员重登。
+
 ## 安全红线
 
 - `CORS_ALLOWED_ORIGIN_PATTERNS` 禁止 `*`。

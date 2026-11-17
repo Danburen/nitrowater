@@ -254,8 +254,8 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       BFF_CLIENT_SECRET: ${BFF_CLIENT_SECRET:-nitrowater-bff-secret}
-      # 每次发布换新值：epoch 不同的旧会话会被丢弃。
-      APP_SESSION_EPOCH: ${APP_SESSION_EPOCH:-dev}
+      # 免登录绝对上限（从最后一次输密码起算）；改大只是放宽容忍度，改小会让所有人提前重登。
+      APP_SESSION_ABSOLUTE: ${APP_SESSION_ABSOLUTE:-30d}
       POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI:-http://localhost:5173}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       # 与 management.server.port 同源：改这个值，健康探测地址自动跟着变。
