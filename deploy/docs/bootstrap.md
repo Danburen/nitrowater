@@ -13,6 +13,14 @@
 | 资源 | ≥ 4 GB 内存，磁盘 ≥ 20 GB（`RESOURCE_DATA_DIR` 单独规划） |
 | 镜像 | 4 个应用镜像已推到 GHCR；private 包先在宿主机登录 |
 
+Docker 必须开机自启：
+
+```bash
+sudo systemctl enable --now docker
+```
+
+所有容器都是 `restart: unless-stopped`，服务器重启后会自动拉起。
+
 ## 2. 上传部署文件
 
 在**本地仓库根**执行：

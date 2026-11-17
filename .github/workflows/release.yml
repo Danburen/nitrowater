@@ -2,6 +2,7 @@
 #
 #   build  -> build.yml   (probe, checks, then 4 images to GHCR)
 #   deploy -> deploy.yml  (preflight, then pull + backup + up -d on the host)
+#   deploy.yml also enforces restart=unless-stopped, so a host reboot brings the stack back.
 #
 # The deploy uses build's `sha` output, not the `tag` input: sha tags are what the
 # commit actually produced, while `tag` is a moving name (latest / v1.2.3) that a later

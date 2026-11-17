@@ -46,8 +46,11 @@ services:
     container_name: nitrowater-redis
     volumes:
       - nitrowater-redis:/data
-    # 口令由 compose 从 .env 插值到命令行（不是 sh -c 里再展开一次）；必填。
+    # 会话持久化：AOF 落在命名卷里，容器 / 整机重启后 Redis 恢复数据，登录态不丢。
+    # everysec 最多丢 1 秒写入；正常重启会先收到 SIGTERM 并 flush AOF。
+    # stop_grace_period 留足 flush 时间（默认 10s）。
     command: redis-server --appendonly yes --appendfsync everysec --maxmemory 512mb --maxmemory-policy volatile-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
       interval: 10s

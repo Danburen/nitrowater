@@ -156,6 +156,8 @@ printf '%s' "$PASS" | bash deploy/bin/create-account.sh -u opsbot   # 无人值�
 2. 宿主机只保留状态：`.env`、`.env.prod.secrets`、`keys/`、`content/`、`backups/`、`RESOURCE_DATA_DIR` 与数据卷。
 3. 换机器 = 搬上面这些状态加数据卷。
 
+容器均为 `restart: unless-stopped`，服务器重启后自动拉起；登录会话保存在 `nitrowater-redis` 卷里。
+
 ## 安全红线
 
 - `CORS_ALLOWED_ORIGIN_PATTERNS` 禁止 `*`。

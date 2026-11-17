@@ -6,6 +6,7 @@
 #   pull           the four images of <tag> — all of them, before any container is touched
 #   backup         deploy/bin/backup_mysql.sh (the only pre-Flyway recovery point)
 #   apply          account -> app, `up -d --no-build` (infra is deployed by hand, see deploy/README.md)
+#   restart        every nitrowater-* container gets `unless-stopped` (host reboots daily)
 #   verify         account discovery, /api/public/ping, bff health — a red bff fails the run
 #
 # <tag> defaults to the commit sha of `ref`, so "deploy this commit" means "the images
@@ -269,6 +270,37 @@ jobs:
 
             echo '==> app: up -d --no-build'
             docker compose $ENVF -f deploy/docker/docker-compose.app.yml up -d --no-build
+
+            # Host reboots daily: containers must come back on their own. Compose already declares
+            # restart: unless-stopped; this also fixes containers created before that policy.
+            echo '==> restart policy: unless-stopped'
+            # A restart policy only helps if the daemon itself starts at boot.
+            if command -v systemctl >/dev/null 2>&1; then
+              boot="$(systemctl is-enabled docker 2>/dev/null || true)"
+              [ "$boot" = "enabled" ] || echo "WARN: docker is not enabled at boot ($boot); run: sudo systemctl enable --now docker"
+            fi
+            for c in nitrowater-mysql nitrowater-redis \
+                     nitrowater-account nitrowater-resource nitrowater-server nitrowater-bff \
+                     nitrowater-docs nitrowater-qdrant nitrowater-piston \
+                     nitrowater-nginx-proxy nitrowater-acme; do
+              docker inspect "$c" >/dev/null 2>&1 || continue
+              docker update --restart unless-stopped "$c" >/dev/null
+              policy="$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$c")"
+              if [ "$policy" != "unless-stopped" ]; then
+                echo "ERROR: $c restart policy is $policy" >&2
+                exit 1
+              fi
+              echo "    ok $c"
+            done
+
+            # Login sessions live in Redis: without AOF they vanish on reboot.
+            if docker inspect nitrowater-redis >/dev/null 2>&1; then
+              aof="$(docker inspect -f '{{json .Config.Cmd}}' nitrowater-redis)"
+              case "$aof" in
+                *'"--appendonly","yes"'*) echo '    ok nitrowater-redis AOF' ;;
+                *) echo 'WARN: nitrowater-redis has no --appendonly yes; login sessions will not survive a reboot' ;;
+              esac
+            fi
 
             echo '==> verify'
             curl -fsS --retry 100 --retry-delay 3 --retry-connrefused -o /dev/null \
