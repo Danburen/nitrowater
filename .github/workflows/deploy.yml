@@ -65,6 +65,9 @@ on:
       # Optional: only for a non-default sshd port (default 22).
       SSH_PORT:
         required: false
+      # Optional: only when SSH_KEY itself is passphrase protected.
+      SSH_PASSPHRASE:
+        required: false
       SSH_FINGERPRINT:
         required: false
       GHCR_USER:
@@ -238,30 +241,53 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
         run: |-
           set -eu
           SSH_PORT="${SSH_PORT:-22}"
           # The bundle carries no secrets (tracked files only), but the private key must not
           # live on the runner: keep it in $RUNNER_TEMP and delete it on every exit path.
           key="$RUNNER_TEMP/deploy_key"
-          printf '%s\n' "$SSH_KEY" > "$key"
+          # Windows editors put CRLF in the secret; OpenSSH refuses the key with a CR in it.
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > "$key"
           chmod 600 "$key"
-          trap 'rm -f "$key"' EXIT
+          trap 'rm -f "$key"; [ -n "${SSH_AGENT_PID:-}" ] && ssh-agent -k >/dev/null 2>&1 || true' EXIT
+
+          # A key with a passphrase cannot prompt on a runner (there is no tty). Load it
+          # into an agent through SSH_ASKPASS, which is the only non-interactive way;
+          # the passphrase itself stays in the environment, never in a file.
+          if [ -n "${SSH_PASSPHRASE:-}" ]; then
+            echo "==> unlock key (passphrase)"
+            eval "$(ssh-agent -s)" >/dev/null
+            ask="$RUNNER_TEMP/askpass.sh"
+            printf '#!/bin/sh\nprintf "%%s\\n" "$SSH_PASSPHRASE"\n' > "$ask"
+            chmod 700 "$ask"
+            SSH_ASKPASS="$ask" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 \
+              ssh-add "$key" < /dev/null
+            unset SSH_PASSPHRASE
+          fi
 
           # A flaky link to the host is the usual cause here: retry the transfer a few
           # times, then give up instead of hammering it.
+          # With an agent, the identity comes from the agent (an encrypted key file cannot
+          # be unlocked here); without one, scp reads the key file directly.
+          set -- -q -P "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=20 \
+                 -o StrictHostKeyChecking=accept-new
+          [ -n "${SSH_AUTH_SOCK:-}" ] || set -- "$@" -i "$key"
+          set -- "$@" /tmp/nitrowater-deploy.tgz \
+                 "$SSH_USER@$SSH_HOST:/tmp/nitrowater-deploy.tgz"
+
           attempt=1
           max=3
           while :; do
             echo "==> scp attempt $attempt/$max"
-            if scp -q -P "$SSH_PORT" -i "$key" -o BatchMode=yes -o ConnectTimeout=20 \
-                 -o StrictHostKeyChecking=accept-new \
-                 /tmp/nitrowater-deploy.tgz "$SSH_USER@$SSH_HOST:/tmp/nitrowater-deploy.tgz"; then
+            if scp "$@"; then
               echo "    ok"
               exit 0
             fi
             if [ "$attempt" -ge "$max" ]; then
               echo "::error::scp failed after $max attempts"
+              echo "::error::if the key has a passphrase, set the SSH_PASSPHRASE secret; otherwise check host/port and that the public key is in authorized_keys"
               exit 1
             fi
             attempt=$((attempt + 1))
@@ -285,6 +311,7 @@ jobs:
           port: ${{ secrets.SSH_PORT || '22' }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           # Pin the host key when the secret is set (optional; empty = TOFU like scp above).
           fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           timeout: 30s
