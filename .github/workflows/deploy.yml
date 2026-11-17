@@ -9,11 +9,15 @@
 #   restart        every nitrowater-* container gets `unless-stopped` (host reboots daily)
 #   verify         account discovery, /api/public/ping, bff health — a red bff fails the run
 #
-# <tag> defaults to the commit sha of `ref`, so "deploy this commit" means "the images
-# built from this commit". Pass `tag` only to move a mutable tag (latest) or a version tag.
+# Tag resolution (in order):
+#   tag set        -> that tag (a version like v1.2.3, or a sha)
+#   ref set        -> the images that commit produced (rollback)
+#   neither        -> `latest`, i.e. the newest build; nothing has to be built first
 #
-# Rollback = run this again with `ref` set to the commit that produced the images; the
-# default tag then follows that commit and deploy/ comes from the same tree.
+# `gh workflow run deploy.yml` therefore just re-ships the current build; use
+# Release when the commit has new code (it builds, then deploys the identical sha).
+# deploy/ always comes from this commit, so a `latest` that predates it logs a
+# warning instead of silently mixing an old image with new config.
 
 name: Deploy
 
@@ -21,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag (empty = the commit sha of `ref`; use a tag only for rollback by name)'
+        description: 'Image tag (empty = `latest`, or the images of `ref` when ref is set)'
         required: false
         default: ''
       ref:
@@ -37,7 +41,7 @@ on:
   workflow_call:
     inputs:
       tag:
-        description: 'Image tag (empty = the commit sha of `ref`)'
+        description: 'Image tag (empty = latest, or the images of `ref`)'
         required: false
         type: string
         default: ''
@@ -91,9 +95,10 @@ jobs:
       packages: read
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
-      # The tag default is the sha of the tree being deployed, so it must be resolved
-      # after checking out the same ref the deploy job uses.
+      # The deploy job checks out the same ref, and the `ref` branch of resolve uses its
+      # sha, so the checkout has to happen first.
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.sha }}
@@ -101,12 +106,21 @@ jobs:
 
       - id: resolve
         env:
-          # The tag comes from a form input: read it via env, never inline it in the script.
+          # Both come from form inputs: read via env, never inline them in the script.
           RAW_TAG: ${{ inputs.tag }}
+          RAW_REF: ${{ inputs.ref }}
         run: |
           set -eu
           sha="$(git rev-parse HEAD)"
-          tag="${RAW_TAG:-$sha}"
+          if [ -n "$RAW_TAG" ]; then
+            tag="$RAW_TAG"; why="input tag"
+          elif [ -n "$RAW_REF" ]; then
+            # Rollback: the images that this commit produced.
+            tag="$sha"; why="images of $RAW_REF"
+          else
+            # Default: whatever Build/Release pushed last — no build needed first.
+            tag="latest"; why="newest build"
+          fi
           # It ends up in a docker tag, so whitelist the allowed characters.
           case "$tag" in
             ''|*[!A-Za-z0-9._-]*) echo "::error::invalid tag: $tag"; exit 1 ;;
@@ -114,9 +128,10 @@ jobs:
           repo="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           {
             echo "tag=$tag"
+            echo "sha=$sha"
             echo "repo=$repo"
           } >> "$GITHUB_OUTPUT"
-          echo "target: ghcr.io/$repo/*:$tag (deploy/ from $sha)"
+          echo "images: ghcr.io/$repo/*:$tag ($why); deploy/ from $sha"
 
       - uses: docker/login-action@v3
         if: ${{ !inputs.skip_preflight }}
@@ -130,6 +145,7 @@ jobs:
         env:
           TAG: ${{ steps.resolve.outputs.tag }}
           REPO: ${{ steps.resolve.outputs.repo }}
+          SHA: ${{ steps.resolve.outputs.sha }}
         run: |
           set -eu
           missing=0
@@ -139,11 +155,23 @@ jobs:
               digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo n/a)"
               echo "ok    $ref  $digest"
             else
-              echo "::error::missing $ref (run Build with the same tag first)"
+              echo "::error::missing $ref (run Release, or Build with tag $TAG first)"
               missing=1
             fi
           done
-          [ "$missing" -eq 0 ]
+          [ "$missing" -eq 0 ] || exit 1
+
+          # deploy/ comes from this commit but `latest` may predate it. Say so, so a
+          # code/config mismatch is never silent.
+          if [ "$TAG" = "latest" ] && [ "$TAG" != "$SHA" ]; then
+            unbuilt=0
+            for svc in account resource server bff; do
+              docker manifest inspect "ghcr.io/$REPO/$svc:$SHA" >/dev/null 2>&1 || unbuilt=1
+            done
+            if [ "$unbuilt" -eq 1 ]; then
+              echo "::warning::no images built for $SHA; shipping '$TAG' with deploy/ from $SHA (run Release to build this commit)"
+            fi
+          fi
 
   # ---------------------------------------------------------------------------
   # deploy: ship deploy/, pull, backup, apply, verify

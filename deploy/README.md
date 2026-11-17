@@ -23,12 +23,15 @@
 ## 发版
 
 ```bash
-gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线（tag 只是别名，部署按 sha）
-gh workflow run deploy.yml                  # 只上线：当前 commit 已构建的镜像，不重建
-gh workflow run deploy.yml -f ref=<sha>     # 回滚：镜像与 deploy/ 一起回到那个 commit
+gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线（推荐；部署按 sha）
+gh workflow run deploy.yml                  # 只上线：用最新构建的镜像（latest），不构建
+gh workflow run deploy.yml -f tag=v1.2.3    # 只上线：指定 tag 的镜像
+gh workflow run deploy.yml -f ref=<sha>     # 回滚：那个 commit 构建的镜像 + 它的 deploy/
 ```
 
 `deploy.yml` 依次做：同步 `deploy/` → `check-env` → 拉镜像 → MySQL 备份 → 重启 account / app → 探活。
+
+`deploy/` 全取自本次运行的 commit，镜像默认 `latest`。本次 commit 还没构建过时 workflow 会打 warning（镜像比 `deploy/` 旧）；要上新代码就跑 `release.yml`。
 
 应急 / 手工操作：
 

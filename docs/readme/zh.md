@@ -186,7 +186,7 @@ cd nitrowater-web; npm run lint; npm run build
 cd nitrowater-account; pnpm lint; pnpm build
 ```
 
-三条流水线都是手动触发：`build.yml` 先 `probe` 当前 sha 的 4 个镜像是否已存在（存在就跳过检查与 `bake`），否则跑各项检查并用 `docker buildx bake` 构建四个应用镜像并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的 sha 通过 SSH 上线（回滚也用它）：同步同 commit 的 `deploy/` → 预拉 4 个镜像 → 备份 MySQL → `account` / `app` 依次 `up -d` → 探活；`release.yml` 把 build → deploy 串成一次运行，部署的是 build 产出的 sha。
+三条流水线都是手动触发：`build.yml` 先 `probe` 当前 sha 的 4 个镜像是否已存在（存在就跳过检查与 `bake`），否则跑各项检查并用 `docker buildx bake` 构建四个应用镜像并推 GHCR（`<tag>` + `<sha>` 双标签）；`deploy.yml` 只把已构建好的镜像通过 SSH 上线（默认 `latest`，`tag` 指定版本，`ref` 用来回滚）：同步同 commit 的 `deploy/` → 预拉 4 个镜像 → 备份 MySQL → `account` / `app` 依次 `up -d` → 探活；`release.yml` 把 build → deploy 串成一次运行，部署的是 build 产出的 sha。
 
 ## 📦 部署
 

@@ -195,8 +195,8 @@ curl -fsS https://<AUTH_DOMAIN>/api/auth/login-context | head      # 登录页�
 
 ### 发布
 
-- 语料 tracked 在本仓库，`deploy.yml` 随 commit 打包 `deploy/`，所以"镜像 tag ↔ 语料"天然同源；只改文档时
-  可以只跑 `deploy.yml -f ref=<sha>`，不必跑全量 `release.yml`。
+- 语料 tracked 在本仓库，`deploy.yml` 随 commit 打包 `deploy/`。只改文档时直接跑 `deploy.yml`
+  （镜像默认用 `latest`，不重建），要连二进制一起更新才跑全量 `release.yml`。
 - 线上语料不需要回滚，也不需要备份：下一次发布覆盖为最新即可。
 - 语料目录为空或缺失时服务照常启动，只是检索会静默退化，`deploy/bin/check-env.sh` 会在上线前拦这一条。
 
