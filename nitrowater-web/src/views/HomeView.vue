@@ -12,6 +12,7 @@
  * renders offline, weighs a few KB and uses the same palette as the page.
  */
 import { onMounted, onUnmounted, ref } from 'vue'
+import { fetchLegalIndex, type LegalDocument } from '../api/legal'
 import { readyTools } from '../features/tools/catalog'
 import toolboxShot from '../assets/home/toolbox-shot.svg'
 import nitrobotShot from '../assets/home/nitrobot-shot.svg'
@@ -32,6 +33,12 @@ const toolCount = readyTools.length
  */
 const heroRef = ref<HTMLElement | null>(null)
 const hintVisible = ref(false)
+
+/**
+ * Footer legal links, from the published index: a new policy document shows up without a release.
+ * A failure just leaves the footer without them.
+ */
+const legalDocuments = ref<LegalDocument[]>([])
 /** Keyboard focus keeps the hint on screen regardless of pointer position. */
 let hintPinned = false
 /** Set once the idle timer fires: the reader has had time to look around, so stop hiding it. */
@@ -94,6 +101,13 @@ onMounted(() => {
       hintVisible.value = true
     }
   }, HINT_IDLE_MS)
+  void fetchLegalIndex()
+    .then((documents) => {
+      legalDocuments.value = documents
+    })
+    .catch(() => {
+      legalDocuments.value = []
+    })
 })
 
 onUnmounted(() => {
@@ -391,16 +405,12 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
             关于
           </router-link>
           <router-link
-            to="/legal/privacy"
+            v-for="document in legalDocuments"
+            :key="document.key"
+            :to="`/legal/${document.key}`"
             class="transition hover:text-ink"
           >
-            隐私政策
-          </router-link>
-          <router-link
-            to="/legal/terms"
-            class="transition hover:text-ink"
-          >
-            用户协议
+            {{ document.title }}
           </router-link>
           <a
             :href="REPO.github"

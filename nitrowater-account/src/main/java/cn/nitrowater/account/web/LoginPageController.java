@@ -4,24 +4,22 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
 /**
- * SSO hosted auth pages. Forwards the public auth routes to the Vue SPA under
- * {@code /auth/} so login and registration stay on the same origin as the
- * Authorization Server (cookies / saved-request / OIDC resume all stay same-origin).
+ * SSO hosted auth pages. Forwards the public auth routes to the Vue SPA under {@code /auth/} so login
+ * and registration stay on the same origin as the Authorization Server (cookies / saved-request /
+ * OIDC resume all stay same-origin).
  *
- * <p>The SPA uses history routes {@code /login}, {@code /register} and {@code /legal/*}; the
- * Spring mappings forward to the same shell, and the browser keeps the real URL so the
- * {@code error} / {@code redirect} query parameters survive. Serving via the static
- * resource handler (instead of reading the classpath here) lets
- * {@code spring.web.resources.static-locations} point at the source tree in dev, so a
- * rebuilt {@code static/auth/*} reflects on refresh without a restart.</p>
+ * <p>The SPA uses history routes {@code /login} and {@code /register}; the Spring mappings forward to
+ * the same shell, and the browser keeps the real URL so the {@code error} / {@code redirect} query
+ * parameters survive. Serving via the static resource handler (instead of reading the classpath here)
+ * lets {@code spring.web.resources.static-locations} point at the source tree in dev, so a rebuilt
+ * {@code static/auth/*} reflects on refresh without a restart.</p>
  *
- * <p>The legal routes render {@code privacy.txt} / {@code terms.txt} (served by
- * {@link LegalDocumentController} from the mounted content directory) on the SSO origin, so the
- * consent links on the login and registration forms never leave this origin.</p>
+ * <p>No legal pages: the documents are published by the portal (BFF) only, so the SSO offers no
+ * entry point for them.</p>
  *
  * <p>Login remains a native form POST to {@code /login} handled by Spring Security; the
- * {@code SsoAuthenticationProvider} reads the {@code captcha} / {@code deviceFp} fields.
- * Register is a client-side flow calling {@code /api/auth/**}.</p>
+ * {@code SsoAuthenticationProvider} reads the {@code captcha} / {@code deviceFp} fields. Register is a
+ * client-side flow calling {@code /api/auth/**}.</p>
  */
 @Controller
 public class LoginPageController {
@@ -33,12 +31,6 @@ public class LoginPageController {
 
     @GetMapping("/register")
     public String register() {
-        return "forward:/auth/index.html";
-    }
-
-    /** Privacy policy / terms pages (client-side routes of the same SPA shell). */
-    @GetMapping("/legal/**")
-    public String legal() {
         return "forward:/auth/index.html";
     }
 }

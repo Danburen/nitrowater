@@ -50,6 +50,7 @@
 ## 其它工程约定
 
 - **无 subagent**：由主进程直接执行，不派子代理/后台任务。
+- **Git 提交只由用户执行（强制）**：AI 只改工作区文件，**不得** `git commit` / `git push` / 打 tag / 改写历史 / 建分支；提交信息可以草拟给用户，由用户自己提交。
 - **BFF 安全面（强制）**：`/api/**` 是**唯一数据命名空间**（需登录；`/api/public/**` 有意匿名）。其余路径是公开 SPA（静态资源 + history 深链接）+ OIDC 管线，故 `anyRequest().permitAll()`。`/actuator/**`、`/internal/**` 为**保留敏感前缀，默认 `denyAll`**（兜底，防新增依赖静默暴露）。**新增数据端点必须挂在 `/api/**` 下**；敏感内部接口不得落在该前缀之外。
 - **BFF 令牌刷新（强制）**：取 access token 一律走 `BffTokenService`（按会话串行 + 2 分钟内共享刷新结果），**不要**直接调 `OAuth2AuthorizedClientManager`；拿不到令牌时**失效会话**，由控制器用 `ReauthResponse` 回 **401 `session_expired`**（`X-Auth-Reason` + 过期 cookie），**禁止**让它落到 500。`MultiAccountAuthorizedClientRepository` 必须「先改副本再 `setAttribute`」（会话 `flush-mode=immediate`，先写后改会丢写）。
 - **管理端角色校验（强制）**：`/api/admin/**`、`/api/resource/upload/**` 这类前缀必须在 `SecurityFilterChain` 里兜底

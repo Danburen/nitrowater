@@ -309,31 +309,7 @@ onUnmounted(() => {
           aria-label="我已阅读并同意用户协议和隐私政策"
         />
         <div class="min-w-0">
-          <!-- Flex (not inline text) so the hairline gaps are intentional and no stray spaces
-               end up before Chinese punctuation. -->
-          <div class="flex flex-wrap items-center gap-x-1">
-            <span>我已阅读并同意</span>
-            <RouterLink
-              to="/legal/terms"
-              target="_blank"
-              rel="noopener"
-              class="auth-link"
-            >
-              《用户协议》
-            </RouterLink>
-            <span>和</span>
-            <RouterLink
-              to="/legal/privacy"
-              target="_blank"
-              rel="noopener"
-              class="auth-link"
-            >
-              《隐私政策》
-            </RouterLink>
-          </div>
-          <p class="mt-0.5 text-[11px] leading-5 text-faint">
-            并同意本站按该政策处理我的个人信息。
-          </p>
+          <p>我已阅读并同意《用户协议》和《隐私政策》，并同意本站按该政策处理我的个人信息。</p>
         </div>
       </div>
 

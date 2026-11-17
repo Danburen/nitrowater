@@ -4,7 +4,8 @@
 
 - `docs/`：**随仓库版本化的文档语料**（git 跟踪，随 CI 打包发布）。它决定 AI 回答的内容，必须和 commit 对齐。
 - `moderation/`：**宿主机状态**（生产词表，gitignore，不进部署包），改完热加载即可。
-- `legal/`：**宿主机状态**（用户协议 / 隐私政策纯文本，gitignore，不进部署包），改完按请求立即生效。
+- `legal/`：**宿主机状态**（用户协议 / 隐私政策等纯文本，gitignore，不进部署包），一篇一个 `.txt`，
+  改完按请求立即生效；篇数、顺序由文件名决定，标题取正文第一行，加文档不用改代码。
 
 三类都只读挂进容器，所以改内容都不需要重新构建镜像。
 
@@ -14,8 +15,8 @@ deploy/content/
 │   ├── words.txt        # 生产违禁词（追加到镜像内基线词表之后）
 │   └── allow.txt        # 误报逃生口（覆盖住命中的片段才生效，见下）
 ├── legal/               # 宿主机状态（不提交）
-│   ├── privacy.txt      # 隐私政策（纯文本）
-│   └── terms.txt        # 用户协议（纯文本）
+│   ├── terms.txt         # 用户协议（纯文本，文件名即 key）
+│   └── privacy.txt       # 隐私政策（纯文本）
 └── docs/                # 随仓库发布（tracked）
     ├── nitrowater/      # 平台自身语料
     │   ├── _corpus.yml
@@ -33,7 +34,7 @@ deploy/content/
 |---|---|---|
 | `${CONTENT_ROOT}/moderation` | `/etc/nitrowater/moderation` | 内容安全词表（`server`） |
 | `${CONTENT_ROOT}/docs` | `${AI_DOCS_ROOT:-/etc/nitrowater/docs}` | RAG 语料（`server`，`app.ai.docs-root`） |
-| `${CONTENT_ROOT}/legal` | `/etc/nitrowater/legal` | 法务文本（`bff` 与 `account`，`app.legal.dir`） |
+| `${CONTENT_ROOT}/legal` | `/etc/nitrowater/legal` | 法务文本（只挂给 `bff`，`app.legal.dir`） |
 
 生产（`DEPLOY_ROOT=/opt/nitrowater`，tarball 解到 `deploy/`）里 `CONTENT_ROOT=/opt/nitrowater/deploy/content`，
 所以语料就是 `/opt/nitrowater/deploy/content/docs`；本地相对路径 `../content` 与之等价（相对 `deploy/docker/`）。
@@ -108,43 +109,54 @@ allow 只抑制**它自己覆盖的那一段**，且长度必须 ≥ 命中的�
 
 ## 法务文本：宿主机维护，按请求读取
 
-`legal/privacy.txt` 与 `legal/terms.txt` 是**纯文本**（不是 Markdown），由 **BFF 与 account（SSO）**
-在每次请求时从**同一个**挂载目录读取，所以改完保存即生效：不用重启容器、不用重新构建、也不会被
-浏览器 / 代理缓存（响应带 `no-store`）。
+`legal/` 下每个 `.txt` 是**一篇纯文本**法务文档（不是 Markdown，没有 front matter、没有标记语法），
+由 **BFF（门户）** 在每次请求时读取，所以改完保存即生效：不用重启容器、不用重新构建、
+也不会被浏览器 / 代理缓存（响应带 `no-store`）。
 
-两份文件覆盖的是「整个服务」（SSO、门户、NitroBot、插件中心、在线工具），**不要**按应用各存一份；
-一处修改，两个源站同时生效。
+- **文件名即 key**：`<key>.txt`，只允许小写字母、数字和连字符（`[a-z0-9-]`），其他文件一律忽略，
+  不会变成接口。**没有顺序约定**：清单按目录返回顺序，页面就按那个顺序渲染。
+- **标题取正文第一行**（跳过前面的空行）：页脚链接和详情页标题都用这一行，页面只显示一次——
+  接口返回的正文已去掉这行标题。第一行超过 40 字或含控制字符（RTL 覆盖、ANSI 转义）时视为正文，
+  该篇改用文件名作标题。所以**每篇开头写一行标题**，例如 `NitroWater 隐私政策`。
+- **日期不用手写**：接口返回文件的**最后修改时间**，页面同时把它显示为「最近更新」和「生效日期」。
+  想改生效日期就改文件（保存即变），正文里不要再写日期行。
+- **联系渠道**：写「用户中心 / 站内公告公布的联系渠道」，不公开具体邮箱与注册地址。
 
 | 项 | 值 |
 |---|---|
-| 对外地址 | 两个源站同路径：`GET /api/public/legal/privacy`、`GET /api/public/legal/terms`（`text/plain; charset=utf-8`） |
-| 门户源站 | `<WEB_DOMAIN>`（BFF），页面路由 `/legal/privacy`、`/legal/terms`（页脚入口） |
-| SSO 源站 | `<AUTH_DOMAIN>`（account），页面路由 `/legal/privacy`、`/legal/terms`；登录页底部为被动告知，注册页为必选勾选（服务端 `@AssertTrue` 兜底） |
-| 容器内目录 | `/etc/nitrowater/legal`（`docker-compose.app.yml` 与 `docker-compose.account.yml` 都挂，`LEGAL_DIR`） |
+| 清单 | `GET /api/public/legal` → `[{key,title,updatedAt}]`（只由 BFF 提供） |
+| 单篇 | `GET /api/public/legal/<key>`（`text/plain; charset=utf-8`、`no-store`） |
+| 门户源站 | `<WEB_DOMAIN>`（BFF），页面路由 `/legal/<key>`，页脚按清单渲染 |
+| SSO 源站 | `<AUTH_DOMAIN>`（account）**不提供**：法务只归门户，`/api/public/legal*` 是 404；登录页底部为纯文本被动告知，注册页勾选仍必填（服务端 `@AssertTrue` 兜底） |
+| 容器内目录 | `/etc/nitrowater/legal`（只有 `docker-compose.app.yml` 挂，`LEGAL_DIR`） |
 | 本地 bootRun | 自动探测 `deploy/content/legal` → `../deploy/content/legal` → `/etc/nitrowater/legal` |
-| 文件命名 | 只认 `privacy.txt` / `terms.txt`，其余名字一律 404（白名单，不做路径拼接） |
 | 版本管理 | **不提交**（`.gitignore` 已覆盖），每台机器自己放；换机时从私有备份恢复 |
 
-> 登录页为什么不是勾选框：账号在注册时已经同意过这两份文件，每次登录再勾一遍只会训练用户盲点，
-> 也不构成新的同意。注册页的勾选是**必填**，前端拦截之外服务端还会校验 `agreed=true`。
+> 加一篇新文档 = 往目录里丢一个 `refund.txt`，不用发版：清单和门户页脚会自动多一个入口。
+
+> SSO 为什么不做入口：account 对任意 client 通用，它没有"这个 client 的后端在哪"的映射，
+> 让 SSO 去读某个具体子应用的后端等于把可用性绑在一个业务服务上。需要时在登录/注册页放一个
+> 指向门户域名的绝对链接即可，不必给 account 加法务能力。
+
+登录页为什么不是勾选框：账号在注册时已经同意过这些文件，每次登录再勾一遍只会训练用户盲点，
+也不构成新的同意。注册页的勾选是**必填**，前端拦截之外服务端还会校验 `agreed=true`。
 
 首次部署：
 
 ```bash
 sudo mkdir -p /opt/nitrowater/deploy/content/legal
 sudo chown -R "$USER": /opt/nitrowater/deploy/content/legal
-$EDITOR /opt/nitrowater/deploy/content/legal/privacy.txt
 $EDITOR /opt/nitrowater/deploy/content/legal/terms.txt
-curl -fsS https://<WEB_DOMAIN>/api/public/legal/privacy | head
-curl -fsS https://<AUTH_DOMAIN>/api/public/legal/privacy | head
+$EDITOR /opt/nitrowater/deploy/content/legal/privacy.txt
+curl -fsS https://<WEB_DOMAIN>/api/public/legal | head           # 清单
+curl -fsS https://<WEB_DOMAIN>/api/public/legal/terms | head     # 正文
 ```
 
-**改文本时同步改日期**：两份文件头部各有「更新日期 / 生效日期」两行，运营主体统一写
-`NitroWater`，联系方式写「用户中心 · 站内公告公布的联系渠道」（不写具体邮箱与注册地址）。
-改完记得把日期改成当次修改日（`YYYY-MM-DD`）——文本每请求现读，日期却是死值，不改就会对不上。
-发布前 `grep -n '{{' legal/*.txt` 自查，没有输出才算干净。
+**运营主体统一写 `NitroWater`**；正文里不再写「更新日期 / 生效日期」（由文件修改时间带出）；
+最后一节的联系方式写「用户中心 / 站内公告公布的联系渠道」。发布前 `grep -n '{{' legal/*.txt` 自查，
+没有输出才算干净。
 
-> 目录不存在时接口返回 404，而不是回退到镜像里的旧版本——这是有意的：宁可暴露"还没上传"，
+> 目录不存在时清单为空、单篇 404，而不是回退到镜像里的旧版本——这是有意的：宁可暴露"还没上传"，
 > 也不要让用户看到上一版、甚至别家运营主体的协议。
 
 ## 文档语料：目录即语料，自动发现

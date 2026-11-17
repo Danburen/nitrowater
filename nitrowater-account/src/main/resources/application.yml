@@ -99,33 +99,13 @@ jwt:
 # -------- 设备指纹（did 计算依赖；复用 waterfun 开发盐值）--------
 device:
   salt: "${DEVICE_SALT:8c4uWcFWgRFFJHoE/MVnE8XpX4m3JQd5XtUj/tW13VA=}"   # 生产用 DEVICE_SALT 覆盖；dev 盐值禁止上生产
-  temp:
-    ttl: 3600
-  short:
-    ttl: 604800
-  long:
-    ttl: 7776000
 
-# -------- 设备清理（DeviceServiceImpl 读取，复用 waterfun 值）--------
-clean-up:
-  device:
-    max-days: 90
-
-# -------- Token（复用 waterfun 值）--------
-token:
-  access:
-    expiration: 7200      # 2h
-  refresh:
-    rotate: 604800        # 7d
-    family: 2592000       # 30d
-
-# -------- 验证码/邮件有效期（分钟/小时，复用 waterfun）--------
+# -------- 验证码/邮件有效期（分钟）--------
+# 只保留被代码读取的键：captcha 的有效期是 CaptchaServiceImpl 里的常量（2 分钟），不在这里。
 expire:
   email:
     verify: 5
-    unverified-expire-hours: 24
   sms-code: 2
-  captcha: 2
 
 # RegisterServiceImpl 读取的字面量键（大小写敏感，勿改）
 expiresIn:
@@ -169,12 +149,8 @@ app:
   # redirect. It must point at the portal, never at /admin/.
   sso:
     default-redirect: "${SSO_DEFAULT_REDIRECT:http://localhost:5173}"
-  # Public legal texts (privacy policy / terms) read from disk on every request.
-  # The BFF mounts the SAME directory, so the portal and the SSO pages cannot drift apart.
-  # Docker sets LEGAL_DIR=/etc/nitrowater/legal; bootRun auto-detects deploy/content/legal.
-  # Blank means auto-detect, not "disable" — a missing file is a 404 by design.
-  legal:
-    dir: ${LEGAL_DIR:}
+  # 法务文本只由 BFF（门户）提供：SSO 对任意 client 通用，没有"这个 client 的后端在哪"的映射，
+  # 所以这里不代理、不挂载，`/api/public/legal*` 自然 404，前端拉不到就不渲染入口。
   # Hosted login 是顶层表单 POST：成功后 302 到待处理的 /oauth2/authorize，再 302 到客户端的
   # redirect_uri（跨域回跳是 OIDC 设计本身）。Chrome 会按 form-action 校验整条重定向链，所以回调
   # 域必须显式列出，否则导航被中止（此时会话已建立 → 表现为"停在登录页、刷新却已登录"）。

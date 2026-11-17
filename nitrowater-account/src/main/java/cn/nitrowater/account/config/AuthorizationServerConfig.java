@@ -127,12 +127,15 @@ public class AuthorizationServerConfig {
             PasswordEncoderFactories.createDelegatingPasswordEncoder();
 
     /**
-     * Paths reachable without a session and exempt from CSRF — hosted auth pages, the public
-     * legal texts linked from those pages, and the public auth API. One array so the two lists
-     * cannot drift apart.
+     * Paths reachable without a session and exempt from CSRF — the hosted auth pages, their static
+     * assets, and the public auth API. One array so the two lists cannot drift apart.
+     *
+     * <p>No legal paths: the documents belong to the portal (BFF), so the SSO serves neither an index
+     * nor a body. The pages still load without them (the frontend renders nothing when the fetch
+     * fails).</p>
      */
     private static final String[] UNPROTECTED_PATHS = {
-            "/login", "/register", "/legal/**", "/api/auth/**", "/api/public/legal/**", "/auth/**",
+            "/login", "/register", "/api/auth/**", "/auth/**",
             "/error", "/favicon.ico", "/favicon.svg", "/admin/favicon.svg"};
 
     /** AS 端点链（/oauth2/**、/.well-known/**、/userinfo 等）。未登录的 HTML 请求跳 /login。 */

@@ -49,8 +49,8 @@ services:
       BFF_POST_LOGOUT_REDIRECT_URIS: ${BFF_POST_LOGOUT_REDIRECT_URIS:-http://localhost:5173,http://localhost:5173/,http://localhost:8080,http://localhost:8080/}
       SSO_DEFAULT_REDIRECT: ${SSO_DEFAULT_REDIRECT:-http://localhost:5173}
       SSO_FORM_ACTION_ORIGINS: ${SSO_FORM_ACTION_ORIGINS:-http://localhost:5173,http://localhost:8080}
-      # 用户协议 / 隐私政策纯文本：与 bff 挂同一个宿主目录，按请求读取最新内容（不重新构建）。
-      LEGAL_DIR: /etc/nitrowater/legal
+      # 法务文本只由 bff（门户）提供：SSO 对任意 client 通用，无法得知"这个 client 的后端在哪"，
+      # 故不代理也不挂载，`/api/public/legal*` 404，前端静默不显示入口。
       # 走 HTTPS 时必须 true。
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       # 浏览器跨域白名单（带会话 Cookie，务必显式列出真实域名，不要用通配符）。
@@ -71,7 +71,6 @@ services:
       ALIYUN_SMS_ENDPOINT: ${ALIYUN_SMS_ENDPOINT:-dysmsapi.aliyuncs.com}
     volumes:
       - ../keys:/app/deploy/keys:ro
-      - ${CONTENT_ROOT:-../content}/legal:/etc/nitrowater/legal:ro
     mem_limit: 640m
     restart: unless-stopped
     networks:

@@ -2,14 +2,17 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { LEGAL_TITLES, fetchLegalText, isLegalDocument, type LegalDocument } from '../api/legal'
+import { fetchLegalIndex, fetchLegalText, formatLegalDate, isLegalKey } from '../api/legal'
 
 /**
- * Privacy policy / terms rendered from the plain-text file served by the BFF.
+ * One legal document rendered from the plain-text file served by the BFF.
  *
  * Plain text is intentional: the documents are host state edited on the deployment host, so
- * rendering Markdown would either need a build step or show raw syntax. `whitespace-pre-wrap`
- * keeps the paragraphs and line breaks exactly as written.
+ * rendering Markdown would need a build step or show raw syntax. `whitespace-pre-wrap` keeps the
+ * paragraphs exactly as written.
+ *
+ * Heading and version date come from the index (title + file modification time), so the operator
+ * never maintains a date line by hand.
  */
 const route = useRoute()
 const router = useRouter()
@@ -17,14 +20,14 @@ const router = useRouter()
 const text = ref('')
 const loading = ref(false)
 const error = ref('')
+const title = ref('法律声明')
+const updatedAt = ref('')
 
-const document = computed<LegalDocument | null>(() => {
+const document = computed<string | null>(() => {
   const raw = route.params.doc
   const value = Array.isArray(raw) ? raw[0] : raw
-  return isLegalDocument(value) ? value : null
+  return isLegalKey(value) ? value : null
 })
-
-const title = computed(() => (document.value ? LEGAL_TITLES[document.value] : '法律声明'))
 
 /** Return to where we came from; fall back to the portal when there is no history. */
 function goBack(): void {
@@ -37,15 +40,23 @@ function goBack(): void {
 }
 
 async function load(): Promise<void> {
-  if (!document.value) {
+  const current = document.value
+  if (!current) {
     error.value = '文档不存在。'
     text.value = ''
+    title.value = '法律声明'
+    updatedAt.value = ''
     return
   }
   loading.value = true
   error.value = ''
+  // Heading and date come from the index; if it fails the body is still served under the key.
+  const documents = await fetchLegalIndex().catch(() => [])
+  const metadata = documents.find((entry) => entry.key === current)
+  title.value = metadata?.title ?? current
+  updatedAt.value = metadata ? formatLegalDate(metadata.updatedAt) : ''
   try {
-    text.value = await fetchLegalText(document.value)
+    text.value = await fetchLegalText(current)
   } catch (cause) {
     error.value =
       cause instanceof Error && cause.message === 'not-published'
@@ -78,7 +89,12 @@ watch(document, load, { immediate: true })
           {{ title }}
         </h1>
         <p class="mt-2 text-[12.5px] text-faint">
-          NitroWater · 生效版本以本页内容为准
+          <template v-if="updatedAt">
+            NitroWater · 最近更新与生效日期：{{ updatedAt }}
+          </template>
+          <template v-else>
+            NitroWater · 生效版本以本页内容为准
+          </template>
         </p>
 
         <div

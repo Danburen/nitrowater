@@ -4,16 +4,29 @@
 #
 # The ops counterpart of portal registration: a hand-made account that has a
 # password and no phone/email. MySQL cannot compute BCrypt, so this script turns
-# the plaintext password into the digest the service expects and create-account.sql
+# the plaintext password into the digest the service expects and lib/create-account.sql
 # writes the rows (user + user_data + user_role).
+#
+# Parity with the Java side (org.springframework.security.crypto.bcrypt):
+#   - same algorithm: bcrypt over the password's UTF-8 bytes, 16-byte salt, 23-byte
+#     digest, truncated at 72 bytes - both implementations do exactly this;
+#   - cost pinned to 10 (`-C 10`) so it matches BCryptPasswordEncoder's default;
+#     verification would work at any cost, but a cost-5 digest (htpasswd's default)
+#     would be the weakest credential in the database;
+#   - the digest is shape-checked before it is written, so a broken tool fails loudly
+#     instead of storing an unusable credential;
+#   - the password alphabet is printable ASCII, so the bytes cannot differ between
+#     the tool and the JVM (a GBK console vs UTF-8 Java is the one real divergence);
+#   - `$2a$` / `$2b$` / `$2y$` are all accepted by the encoder; BcryptInteropTest in
+#     nitrowater-account pins that against a digest produced by htpasswd itself.
 #
 # Usage:
 #   bash deploy/bin/create-account.sh --username ops-admin --role ADMIN
 #   bash deploy/bin/create-account.sh -u ops-admin --force      # reset its password
 #   printf '%s' "$PASS" | bash deploy/bin/create-account.sh -u ops-admin
 #
-# The password is read from an interactive prompt (twice) or from stdin when stdin
-# is not a TTY - never from argv, so it stays out of shell history and `ps`.
+# The password is typed twice at a hidden prompt (echo off, like `passwd`), or piped
+# in on stdin - never taken from argv, so it stays out of shell history and `ps`.
 #
 # Requires one of: htpasswd (apache2-utils), python3 + bcrypt, or docker (pulls
 # httpd:alpine once). On a deployed host the SQL runs inside the mysql container
@@ -28,7 +41,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="$DEPLOY_ROOT/deploy/docker/.env"
 SECRETS_FILE="$DEPLOY_ROOT/deploy/docker/.env.prod.secrets"
-SQL_FILE="$SCRIPT_DIR/create-account.sql"
+SQL_FILE="$SCRIPT_DIR/lib/create-account.sql"
 
 MYSQL_CONTAINER="${MYSQL_CONTAINER:-nitrowater-mysql}"
 DATABASE="nitrowater_account"
@@ -39,8 +52,8 @@ die() {
 }
 
 usage() {
-    # Header comment only (2-23): line 24 is the closing banner, 25+ is code.
-    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+    # Header comment only (2-36): line 37 is the closing banner, 38+ is code.
+    sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
 }
 
@@ -115,16 +128,26 @@ esac
 # StrongPassword: ^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,20}$ - lookaheads are not
 # portable to bash's ERE, so the rule is spelled out.
 read_password() {
-    if [ ! -t 0 ]; then
+    # A pipe or a redirected file carries the value: take it verbatim (a pipe echoes nothing).
+    if [ ! -t 0 ] && { [ -p /dev/stdin ] || [ -f /dev/stdin ]; }; then
         cat
         return
     fi
+    # Not a pipe, so ask the terminal - even when stdin is not reported as a TTY, because `cat`
+    # there would sit waiting for EOF with the password echoed on screen. No terminal at all
+    # (CI, cron) means stdin is all we have.
+    if ! { true </dev/tty; } 2>/dev/null; then
+        cat
+        return
+    fi
+    exec </dev/tty
     local first second
+    # -s turns the terminal's echo off: the password is never displayed, not even as stars.
     printf 'Password for %s: ' "$USERNAME" >&2
-    IFS= read -r -s first || true
+    IFS= read -r -s first || die "could not read the password from the terminal (Ctrl-D?)"
     printf '\n' >&2
     printf 'Repeat password: ' >&2
-    IFS= read -r -s second || true
+    IFS= read -r -s second || die "could not read the password from the terminal (Ctrl-D?)"
     printf '\n' >&2
     [ "$first" = "$second" ] || die "passwords do not match"
     printf '%s' "$first"
@@ -136,6 +159,11 @@ PASSWORD="$(read_password)"
     die "password must be 8-20 characters long"
 [[ "$PASSWORD" =~ [a-z] ]] && [[ "$PASSWORD" =~ [A-Z] ]] && [[ "$PASSWORD" =~ [0-9] ]] ||
     die "password must contain a lowercase letter, an uppercase letter and a digit"
+# Printable ASCII only (no space): the digest is over the password's bytes, and the tool that
+# computes it sees whatever the console/pipe hands over (a Windows console may be GBK while the
+# service hashes UTF-8). Restricting the alphabet removes that class of mismatch entirely.
+[[ "$PASSWORD" =~ ^[!-~]+$ ]] ||
+    die "password must be printable ASCII (letters, digits, punctuation; no spaces or non-ASCII)"
 
 # BCrypt cost 10 to match Spring's default: a cost-5 digest (htpasswd's default)
 # would still verify, but it would be the weakest credential in the database.
@@ -233,6 +261,14 @@ uid_owner="$(preflight_field 5)"
 [ -n "$aes_key_id" ] ||
     die "no ACTIVE AES_DATA key - start nitrowater-account once so it bootstraps one"
 [ -n "$derived_uid" ] || die "could not derive a uid for '$USERNAME'"
+
+# Everything that reaches the SQL below as a literal is shape-checked first: username, role and
+# digest are validated above, the ids come from MySQL as digits, and the key id is stored as a
+# string, so it is checked here rather than trusted.
+[[ "$role_id" =~ ^[0-9]{1,20}$ ]] || die "unexpected role id: $role_id"
+[[ "$derived_uid" =~ ^[0-9]{1,20}$ ]] || die "unexpected uid: $derived_uid"
+[[ -z "$existing_uid" || "$existing_uid" =~ ^[0-9]{1,20}$ ]] || die "unexpected uid: $existing_uid"
+[[ "$aes_key_id" =~ ^[-A-Za-z0-9_.:]{1,64}$ ]] || die "unexpected encryption key id: $aes_key_id"
 
 if [ -n "$existing_uid" ]; then
     [ "$FORCE" -eq 1 ] ||

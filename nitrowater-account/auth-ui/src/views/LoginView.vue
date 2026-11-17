@@ -418,25 +418,11 @@ onMounted(() => {
     </div>
 
     <!--
-      Login is not a new consent: the account already accepted these documents at registration.
-      Keeping this as a passive notice (not a checkbox) matches mainstream SSO pages and avoids
-      training users to click through a box on every sign-in.
+      Passive notice, not a checkbox: the account already accepted the documents at registration, and
+      the terms themselves are published on the portal (the SSO host serves none).
     -->
     <p class="mt-4 text-center text-[11px] leading-5 text-faint">
-      继续即表示你已阅读并同意
-      <RouterLink
-        to="/legal/terms"
-        class="auth-link"
-      >
-        《用户协议》
-      </RouterLink>
-      与
-      <RouterLink
-        to="/legal/privacy"
-        class="auth-link"
-      >
-        《隐私政策》
-      </RouterLink>
+      继续即表示你已阅读并同意《用户协议》与《隐私政策》。
     </p>
 
     <CaptchaDialog

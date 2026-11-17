@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { creditGroups } from '../shared/data/credits'
+import { fetchLegalIndex, type LegalDocument } from '../api/legal'
 
 const route = useRoute()
 const router = useRouter()
+
+/** Footer legal links; see HomeView — published index, never a hard-coded pair. */
+const legalDocuments = ref<LegalDocument[]>([])
 
 const REPO = {
   github: 'https://github.com/danburen/nitrowater',
@@ -33,6 +37,13 @@ onMounted(() => {
   if (route.hash) {
     document.getElementById(route.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' })
   }
+  void fetchLegalIndex()
+    .then((documents) => {
+      legalDocuments.value = documents
+    })
+    .catch(() => {
+      legalDocuments.value = []
+    })
 })
 </script>
 
@@ -231,16 +242,12 @@ onMounted(() => {
             返回门户
           </router-link>
           <router-link
-            to="/legal/privacy"
+            v-for="document in legalDocuments"
+            :key="document.key"
+            :to="`/legal/${document.key}`"
             class="transition hover:text-ink"
           >
-            隐私政策
-          </router-link>
-          <router-link
-            to="/legal/terms"
-            class="transition hover:text-ink"
-          >
-            用户协议
+            {{ document.title }}
           </router-link>
           <a
             :href="REPO.github"
