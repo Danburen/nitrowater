@@ -442,12 +442,39 @@ jobs:
 
             echo '==> account: up -d --no-build'
             docker compose $ENVF -f deploy/docker/docker-compose.account.yml up -d --no-build
-            # bff fetches this at boot; wait for it instead of letting bff crash-loop.
-            curl -fsS --retry 60 --retry-delay 3 --retry-connrefused -o /dev/null \
-              http://127.0.0.1:8090/.well-known/openid-configuration
+            # No HTTP probing from the host: wait for docker's own view. A container with a
+            # healthcheck must reach `healthy`; one without (resource/server) only has to be
+            # running and not restarting. Budget is per call, polling every 5s.
+            wait_containers() {
+              budget="${WAIT_SECONDS:-300}"
+              deadline=$(( $(date +%s) + budget ))
+              while :; do
+                bad=""
+                for c in "$@"; do
+                  running="$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null || echo missing)"
+                  health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null || echo missing)"
+                  restarts="$(docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null || echo 0)"
+                  if [ "$running" != "true" ]; then bad="$bad $c(running=$running)"; continue; fi
+                  case "$health" in
+                    healthy|none) [ "$restarts" = "0" ] || bad="$bad $c(restarts=$restarts)" ;;
+                    *) bad="$bad $c(health=$health)" ;;
+                  esac
+                done
+                [ -z "$bad" ] && return 0
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  echo "ERROR: containers not ready after ${budget}s:$bad" >&2
+                  docker ps -a --filter "name=nitrowater" --format '  {{.Names}}  {{.Status}}' || true
+                  for c in "$@"; do docker logs --tail 30 "$c" 2>&1 | sed "s/^/  [$c] /" || true; done
+                  exit 1
+                fi
+                sleep 5
+              done
+            }
+            wait_containers nitrowater-account
 
             echo '==> app: up -d --no-build'
             docker compose $ENVF -f deploy/docker/docker-compose.app.yml up -d --no-build
+            wait_containers nitrowater-resource nitrowater-server nitrowater-bff
 
             # Host reboots daily: containers must come back on their own. Compose already declares
             # restart: unless-stopped; this also fixes containers created before that policy.
@@ -481,20 +508,9 @@ jobs:
             fi
 
             echo '==> verify'
-            curl -fsS --retry 100 --retry-delay 3 --retry-connrefused -o /dev/null \
-              http://127.0.0.1:8080/api/public/ping
-            tries=0
-            while [ "$tries" -lt 60 ]; do
-              status="$(docker inspect -f '{{.State.Health.Status}}' nitrowater-bff 2>/dev/null || echo missing)"
-              [ "$status" = "healthy" ] && break
-              tries=$((tries + 1))
-              sleep 3
+            for c in nitrowater-account nitrowater-resource nitrowater-server nitrowater-bff; do
+              docker ps --filter "name=$c" --format '    {{.Names}}  {{.Status}}'
             done
-            if [ "$status" != "healthy" ]; then
-              echo "ERROR: nitrowater-bff is $status after 180s" >&2
-              docker logs --tail 50 nitrowater-bff || true
-              exit 1
-            fi
 
             # Untagged only: `-a` would also drop mysql/qdrant/piston and the next `up` would
             # re-pull piston, which has no tag pinned in compose.
