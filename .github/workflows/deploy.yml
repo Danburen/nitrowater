@@ -62,6 +62,9 @@ on:
         required: true
       SSH_KEY:
         required: true
+      # Optional: only for a non-default sshd port (default 22).
+      SSH_PORT:
+        required: false
       SSH_FINGERPRINT:
         required: false
       GHCR_USER:
@@ -198,20 +201,27 @@ jobs:
 
       - name: SSH secrets present
         env:
-          # Host/user are not really secret, so the Variables tab is accepted too.
-          # The private key must be a Secret (variables are readable by everyone).
-          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
+          # Secrets only: GitHub masks secret values in the log, so host/user/port cannot
+          # leak through scp/ssh error messages either. Nothing below echoes them.
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |
           set -eu
+          SSH_PORT="${SSH_PORT:-22}"
           echo "repo:     $GITHUB_REPOSITORY"
           echo "workflow: $GITHUB_WORKFLOW_REF"
           echo "env:      app_nitrowater_deploy"
+          # No host/user/port in the output: secrets are masked by GitHub, but keeping the
+          # values out of our own logs means a redaction slip cannot leak them either.
+          case "$SSH_PORT" in
+            ''|*[!0-9]*) echo "::error::SSH_PORT must be numeric"; exit 1 ;;
+          esac
           missing=""
           check() {
             if [ -n "$2" ]; then
-              echo "    ok       $1 (${#2} chars)"
+              echo "    ok       $1"
             else
               echo "    MISSING  $1"
               missing="$missing $1"
@@ -227,11 +237,13 @@ jobs:
 
       - name: Copy bundle to host
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |-
           set -eu
+          SSH_PORT="${SSH_PORT:-22}"
           # The bundle carries no secrets (tracked files only), but the private key must not
           # live on the runner: keep it in $RUNNER_TEMP and delete it on every exit path.
           key="$RUNNER_TEMP/deploy_key"
@@ -245,7 +257,7 @@ jobs:
           max=3
           while :; do
             echo "==> scp attempt $attempt/$max"
-            if scp -q -i "$key" -o BatchMode=yes -o ConnectTimeout=20 \
+            if scp -q -P "$SSH_PORT" -i "$key" -o BatchMode=yes -o ConnectTimeout=20 \
                  -o StrictHostKeyChecking=accept-new \
                  /tmp/nitrowater-deploy.tgz "$SSH_USER@$SSH_HOST:/tmp/nitrowater-deploy.tgz"; then
               echo "    ok"
@@ -272,8 +284,9 @@ jobs:
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
         with:
-          host: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
-          username: ${{ secrets.SSH_USER || vars.SSH_USER }}
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           # Pin the host key when the secret is set (optional; empty = TOFU like scp above).
           fingerprint: ${{ secrets.SSH_FINGERPRINT }}

@@ -54,6 +54,7 @@ jobs:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
       SSH_FINGERPRINT: ${{ secrets.SSH_FINGERPRINT }}
       GHCR_USER: ${{ secrets.GHCR_USER }}
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
