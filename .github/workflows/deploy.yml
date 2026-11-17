@@ -95,8 +95,8 @@ permissions:
   contents: read
 
 env:
-  # Empty = do not inject: the host resolves ${REGISTRY} from deploy/docker/.env
-  # (compose: shell env > --env-file > .env, so a value here would win over .env).
+  # Host-side pull only: empty = leave it to deploy/docker/.env (compose precedence is
+  # shell env > --env-file > .env). The preflight check always uses ghcr.io instead.
   REGISTRY: ${{ inputs.registry }}
   DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT || '/opt/nitrowater' }}
 
@@ -148,11 +148,13 @@ jobs:
             echo "sha=$sha"
             echo "repo=$repo"
           } >> "$GITHUB_OUTPUT"
-          echo "images: ${REGISTRY:-ghcr.io}/$repo/*:$tag ($why); deploy/ from $sha"
+          echo "check: ghcr.io/$repo/*:$tag ($why); deploy/ from $sha"
+          echo "pull:  ${REGISTRY:-<deploy/docker/.env>}/$repo/*:$tag (on the host)"
 
-      # Only ghcr.io takes the workflow token; a pull-only mirror is used anonymously.
+      # ghcr.io is where Build/Release push, so it is always what gets logged in to;
+      # an injected/mirror registry is only the host's pull path.
       - uses: docker/login-action@v3
-        if: ${{ !inputs.skip_preflight && (inputs.registry == '' || inputs.registry == 'ghcr.io') }}
+        if: ${{ !inputs.skip_preflight }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -164,15 +166,14 @@ jobs:
           TAG: ${{ steps.resolve.outputs.tag }}
           REPO: ${{ steps.resolve.outputs.repo }}
           SHA: ${{ steps.resolve.outputs.sha }}
-          REGISTRY: ${{ env.REGISTRY }}
         run: |
           set -eu
-          # The host resolves the registry itself (input -> .env -> ghcr.io); this check
-          # can only see the input, so fall back to the canonical source.
-          REGISTRY="${REGISTRY:-ghcr.io}"
+          # Always the source registry: a mirror/proxy serving the host may lag behind it,
+          # so "exists" has to be answered by the place the images were actually pushed.
+          SRC=ghcr.io
           missing=0
           for svc in account resource server bff; do
-            ref="$REGISTRY/$REPO/$svc:$TAG"
+            ref="$SRC/$REPO/$svc:$TAG"
             if docker manifest inspect "$ref" >/dev/null 2>&1; then
               digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo n/a)"
               echo "ok    $ref  $digest"
@@ -188,7 +189,7 @@ jobs:
           if [ "$TAG" = "latest" ] && [ "$TAG" != "$SHA" ]; then
             unbuilt=0
             for svc in account resource server bff; do
-              docker manifest inspect "$REGISTRY/$REPO/$svc:$SHA" >/dev/null 2>&1 || unbuilt=1
+              docker manifest inspect "$SRC/$REPO/$svc:$SHA" >/dev/null 2>&1 || unbuilt=1
             done
             if [ "$unbuilt" -eq 1 ]; then
               echo "::warning::no images built for $SHA; shipping '$TAG' with deploy/ from $SHA (run Release to build this commit)"
@@ -373,12 +374,36 @@ jobs:
             fi
 
             # Fail here — with the host's own credentials, before anything is replaced —
-            # instead of in the middle of the pull.
+            # instead of in the middle of the pull. Only a definitive "no such manifest"
+            # answer is fatal: a mirror on a flaky link resets connections, and
+            # `docker manifest inspect` does not retry, so one reset must not be read as
+            # "the image is missing". Unreachable after retries degrades to a warning —
+            # the pull below is the authoritative test.
             echo '==> images'
             for svc in account resource server bff; do
               img="$REGISTRY/$GITHUB_REPOSITORY/$svc:$TAG"
-              docker manifest inspect "$img" >/dev/null || { echo "ERROR: not visible from this host: $img" >&2; exit 1; }
-              echo "    ok $img"
+              n=1
+              while :; do
+                # stderr only: the manifest JSON on stdout is not interesting here.
+                if err="$(docker manifest inspect "$img" 2>&1 >/dev/null)"; then
+                  echo "    ok $img"
+                  break
+                fi
+                case "$err" in
+                  *"manifest unknown"*|*"no such manifest"*|*"not found"*|*denied*)
+                    echo "ERROR: $img is not available on $REGISTRY" >&2
+                    echo "       (push it there, or point REGISTRY at a mirror that has it)" >&2
+                    exit 1 ;;
+                esac
+                if [ "$n" -ge 3 ]; then
+                  echo "WARN: cannot verify $img from this host after 3 attempts; letting the pull decide" >&2
+                  echo "      last error: $err" >&2
+                  break
+                fi
+                echo "    check $img failed (attempt $n/3), retrying in 10s: $err" >&2
+                n=$((n + 1))
+                sleep 10
+              done
             done
 
             # deploy/ arrives as a tarball from the same commit as the images. The documentation
