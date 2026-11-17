@@ -37,6 +37,10 @@ on:
         required: false
         type: boolean
         default: false
+      registry:
+        description: 'Container registry to pull from (empty = whatever deploy/docker/.env sets, else ghcr.io)'
+        required: false
+        default: ''
 
   workflow_call:
     inputs:
@@ -55,6 +59,11 @@ on:
         required: false
         type: boolean
         default: false
+      registry:
+        description: 'Container registry (empty = deploy/docker/.env on the host, else ghcr.io)'
+        required: false
+        type: string
+        default: ''
     secrets:
       SSH_HOST:
         required: true
@@ -86,7 +95,9 @@ permissions:
   contents: read
 
 env:
-  REGISTRY: ghcr.io
+  # Empty = do not inject: the host resolves ${REGISTRY} from deploy/docker/.env
+  # (compose: shell env > --env-file > .env, so a value here would win over .env).
+  REGISTRY: ${{ inputs.registry }}
   DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT || '/opt/nitrowater' }}
 
 jobs:
@@ -137,10 +148,11 @@ jobs:
             echo "sha=$sha"
             echo "repo=$repo"
           } >> "$GITHUB_OUTPUT"
-          echo "images: ghcr.io/$repo/*:$tag ($why); deploy/ from $sha"
+          echo "images: ${REGISTRY:-ghcr.io}/$repo/*:$tag ($why); deploy/ from $sha"
 
+      # Only ghcr.io takes the workflow token; a pull-only mirror is used anonymously.
       - uses: docker/login-action@v3
-        if: ${{ !inputs.skip_preflight }}
+        if: ${{ !inputs.skip_preflight && (inputs.registry == '' || inputs.registry == 'ghcr.io') }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -152,11 +164,15 @@ jobs:
           TAG: ${{ steps.resolve.outputs.tag }}
           REPO: ${{ steps.resolve.outputs.repo }}
           SHA: ${{ steps.resolve.outputs.sha }}
+          REGISTRY: ${{ env.REGISTRY }}
         run: |
           set -eu
+          # The host resolves the registry itself (input -> .env -> ghcr.io); this check
+          # can only see the input, so fall back to the canonical source.
+          REGISTRY="${REGISTRY:-ghcr.io}"
           missing=0
           for svc in account resource server bff; do
-            ref="ghcr.io/$REPO/$svc:$TAG"
+            ref="$REGISTRY/$REPO/$svc:$TAG"
             if docker manifest inspect "$ref" >/dev/null 2>&1; then
               digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo n/a)"
               echo "ok    $ref  $digest"
@@ -172,7 +188,7 @@ jobs:
           if [ "$TAG" = "latest" ] && [ "$TAG" != "$SHA" ]; then
             unbuilt=0
             for svc in account resource server bff; do
-              docker manifest inspect "ghcr.io/$REPO/$svc:$SHA" >/dev/null 2>&1 || unbuilt=1
+              docker manifest inspect "$REGISTRY/$REPO/$svc:$SHA" >/dev/null 2>&1 || unbuilt=1
             done
             if [ "$unbuilt" -eq 1 ]; then
               echo "::warning::no images built for $SHA; shipping '$TAG' with deploy/ from $SHA (run Release to build this commit)"
@@ -334,11 +350,25 @@ jobs:
             GITHUB_REPOSITORY="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
             export GITHUB_REPOSITORY
 
-            if [ -n "${GHCR_PAT:-}" ]; then
-              echo '==> docker login ghcr.io'
-              printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:?GHCR_USER is required when GHCR_PAT is set}" --password-stdin
+            # Registry precedence: injected input (shell env) > deploy/docker/.env > ghcr.io.
+            # Compose resolves ${REGISTRY} the same way, so the pulls below and `up -d`
+            # must agree on this one value; exporting it is what keeps them in step.
+            if [ -z "${REGISTRY:-}" ]; then
+              REGISTRY="$(sed -n 's/^[[:space:]]*REGISTRY[[:space:]]*=[[:space:]]*//p' \
+                deploy/docker/.env 2>/dev/null | tail -n 1 | tr -d '\r"')"
+            fi
+            REGISTRY="${REGISTRY:-ghcr.io}"
+            export REGISTRY
+            echo "    registry: $REGISTRY"
+
+            if [ -n "${GHCR_PAT:-}" ] && [ "$REGISTRY" = "ghcr.io" ]; then
+              echo "==> docker login $REGISTRY"
+              printf '%s' "$GHCR_PAT" | docker login "$REGISTRY" -u "${GHCR_USER:?GHCR_USER is required when GHCR_PAT is set}" --password-stdin
               # The token is only needed for the pull; keep it out of the rest of the session
               # so a later `env` dump / failing command cannot surface it.
+              unset GHCR_PAT
+            elif [ -n "${GHCR_PAT:-}" ]; then
+              echo "==> docker login skipped: $REGISTRY is not ghcr.io (a mirror pulls anonymously)"
               unset GHCR_PAT
             fi
 

@@ -23,6 +23,10 @@ on:
         description: 'Image tag for a human-readable alias (default latest; deployment uses the sha)'
         required: false
         default: 'latest'
+      registry:
+        description: 'Container registry (empty = deploy/docker/.env on the host, else ghcr.io)'
+        required: false
+        default: ''
 
 # Do not use the same group as deploy.yml: the callee would wait on the caller.
 concurrency:
@@ -50,6 +54,8 @@ jobs:
       # Immutable ref of what was just built (or already existed) for this commit.
       tag: ${{ needs.build.outputs.sha }}
       skip_preflight: false
+      # Empty keeps the host's own deploy/docker/.env in charge.
+      registry: ${{ inputs.registry }}
     secrets:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
