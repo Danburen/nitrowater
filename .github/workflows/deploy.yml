@@ -210,9 +210,6 @@ jobs:
         run: |
           set -eu
           SSH_PORT="${SSH_PORT:-22}"
-          echo "repo:     $GITHUB_REPOSITORY"
-          echo "workflow: $GITHUB_WORKFLOW_REF"
-          echo "env:      app_nitrowater_deploy"
           # No host/user/port in the output: secrets are masked by GitHub, but keeping the
           # values out of our own logs means a redaction slip cannot leak them either.
           case "$SSH_PORT" in
