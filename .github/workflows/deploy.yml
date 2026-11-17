@@ -194,6 +194,23 @@ jobs:
         # deploy/docker/.env or deploy/keys/*.key that happens to exist in the workspace.
         run: git archive --format=tar.gz -o /tmp/nitrowater-deploy.tgz HEAD deploy
 
+      - name: SSH secrets present
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -eu
+          missing=""
+          [ -n "$SSH_HOST" ] || missing="$missing SSH_HOST"
+          [ -n "$SSH_USER" ] || missing="$missing SSH_USER"
+          [ -n "$SSH_KEY" ]  || missing="$missing SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::missing secrets:$missing - set them in Settings -> Secrets and variables -> Actions (repository or the 'production' environment)"
+            exit 1
+          fi
+          echo "target: $SSH_USER@$SSH_HOST"
+
       - name: Copy bundle to host
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -201,14 +218,32 @@ jobs:
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |-
           set -eu
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          scp -q -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            /tmp/nitrowater-deploy.tgz "$SSH_USER@$SSH_HOST:/tmp/nitrowater-deploy.tgz"
-          # The bundle carries no secrets (tracked files only), but the key does not belong
-          # in a shared/self-hosted runner's home.
-          rm -f ~/.ssh/deploy_key
+          # The bundle carries no secrets (tracked files only), but the private key must not
+          # live on the runner: keep it in $RUNNER_TEMP and delete it on every exit path.
+          key="$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+
+          # A flaky link to the host is the usual cause here: retry the transfer a few
+          # times, then give up instead of hammering it.
+          attempt=1
+          max=3
+          while :; do
+            echo "==> scp attempt $attempt/$max"
+            if scp -q -i "$key" -o BatchMode=yes -o ConnectTimeout=20 \
+                 -o StrictHostKeyChecking=accept-new \
+                 /tmp/nitrowater-deploy.tgz "$SSH_USER@$SSH_HOST:/tmp/nitrowater-deploy.tgz"; then
+              echo "    ok"
+              exit 0
+            fi
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::scp failed after $max attempts"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep 10
+          done
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0

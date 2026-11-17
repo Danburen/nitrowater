@@ -23,17 +23,13 @@
 ## 发版
 
 ```bash
-gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线（推荐；部署按 sha）
-gh workflow run deploy.yml                  # 只上线：用最新构建的镜像（latest），不构建
+gh workflow run release.yml -f tag=v1.2.3   # 构建 + 上线
+gh workflow run deploy.yml                  # 只上线：最新构建的镜像
 gh workflow run deploy.yml -f tag=v1.2.3    # 只上线：指定 tag 的镜像
-gh workflow run deploy.yml -f ref=<sha>     # 回滚：那个 commit 构建的镜像 + 它的 deploy/
+gh workflow run deploy.yml -f ref=<sha>     # 回滚：该 commit 的镜像
 ```
 
-`deploy.yml` 依次做：同步 `deploy/` → `check-env` → 拉镜像 → MySQL 备份 → 重启 account / app → 探活。
-
-`deploy/` 全取自本次运行的 commit，镜像默认 `latest`。本次 commit 还没构建过时 workflow 会打 warning（镜像比 `deploy/` 旧）；要上新代码就跑 `release.yml`。
-
-应急 / 手工操作：
+手工操作：
 
 ```bash
 # 只重发身份服务或业务面
@@ -77,7 +73,7 @@ bash deploy/bin/backup_mysql.sh      # 三库全量 → deploy/backups/nitrowate
 bash deploy/bin/backup_resource.sh   # 资源快照 → deploy/backups/resource/<时间>/
 ```
 
-`deploy.yml` 每次发版前自动备份 MySQL。建议加入 crontab：
+`deploy.yml` 每次发版前自动备份 MySQL。另建议加入 crontab：
 
 ```bash
 0  3 * * * /opt/nitrowater/deploy/bin/backup_mysql.sh    >/dev/null 2>&1
@@ -103,10 +99,10 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 | 用途 | 脚本 |
 |---|---|
-| 环境自检 / 部署门禁（`deploy.yml` 每次必跑） | `check-env.sh` |
+| 环境自检 / 部署门禁 | `check-env.sh` |
 | 生成 JWT 密钥 | `gen-keys.sh` |
 | 按模板同步 `.env`（补新键、删废弃键、刷新注释） | `sync-env.sh` |
-| 备份 MySQL（`deploy.yml` 发版前自动执行） | `backup_mysql.sh` |
+| 备份 MySQL（三库全量） | `backup_mysql.sh` |
 | 备份资源字节 | `backup_resource.sh` |
 | 给 Piston 装 / 升级语言包 | `install-piston-runtimes.sh` |
 | 手工建「用户名 + 密码」账号 / 重置其密码 | `create-account.sh` |
@@ -155,7 +151,7 @@ printf '%s' "$PASS" | bash deploy/bin/create-account.sh -u opsbot   # 无人值�
 
 ## 三条规则
 
-1. `deploy/` 是发布产物，由 `deploy.yml` 同步；不要手改。
+1. `deploy/` 是发布产物，不要手改。
 2. 宿主机只保留状态：`.env`、`.env.prod.secrets`、`keys/`、`content/`、`backups/`、`RESOURCE_DATA_DIR` 与数据卷。
 3. 换机器 = 搬上面这些状态加数据卷。
 
