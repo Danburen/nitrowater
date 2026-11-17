@@ -196,25 +196,36 @@ jobs:
 
       - name: SSH secrets present
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          # Host/user are not really secret, so the Variables tab is accepted too.
+          # The private key must be a Secret (variables are readable by everyone).
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           set -eu
+          echo "repo:     $GITHUB_REPOSITORY"
+          echo "workflow: $GITHUB_WORKFLOW_REF"
           missing=""
-          [ -n "$SSH_HOST" ] || missing="$missing SSH_HOST"
-          [ -n "$SSH_USER" ] || missing="$missing SSH_USER"
-          [ -n "$SSH_KEY" ]  || missing="$missing SSH_KEY"
+          check() {
+            if [ -n "$2" ]; then
+              echo "    ok       $1 (${#2} chars)"
+            else
+              echo "    MISSING  $1"
+              missing="$missing $1"
+            fi
+          }
+          check SSH_HOST "$SSH_HOST"
+          check SSH_USER "$SSH_USER"
+          check SSH_KEY  "$SSH_KEY"
           if [ -n "$missing" ]; then
-            echo "::error::missing secrets:$missing - set them in Settings -> Secrets and variables -> Actions (repository or the 'production' environment)"
+            echo "::error::missing:$missing - looked in Settings -> Secrets and variables -> Actions, both repo scope and the 'production' environment. SSH_KEY has to be a Secret holding the private key, not a Variable."
             exit 1
           fi
-          echo "target: $SSH_USER@$SSH_HOST"
 
       - name: Copy bundle to host
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |-
           set -eu
@@ -258,8 +269,8 @@ jobs:
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          host: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+          username: ${{ secrets.SSH_USER || vars.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           # Pin the host key when the secret is set (optional; empty = TOFU like scp above).
           fingerprint: ${{ secrets.SSH_FINGERPRINT }}
