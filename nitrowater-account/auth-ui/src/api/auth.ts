@@ -16,17 +16,30 @@ export function postJson<T>(url: string, body: unknown): Promise<T> {
   return http.post<T>(url, body)
 }
 
-/** The application that started the current login, if any. */
+/** One legal document link registered by the application that started this login. */
+export interface LegalLink {
+  /** Label shown on the page, e.g. `用户协议`. */
+  title: string
+  /** Absolute URL on the application's own host. */
+  url: string
+}
+
+/** Context of the hosted auth pages, including the application's legal links. */
 export interface LoginContext {
+  /** Pending OIDC `client_id`, null when the page was opened directly. */
   clientId: string | null
+  /** Display name of that application, null when nothing is pending. */
   clientName: string | null
+  /** Documents that application registered, in display order; empty when it registered none. */
+  legalLinks: LegalLink[]
 }
 
 /**
- * Reads the client of the pending OIDC authorization request.
+ * Reads the client of the pending OIDC authorization request, plus its legal links.
  *
  * The account service keeps that request in the session, so this answers "which app is the user
- * logging in to". Both fields are null when the page was opened directly.
+ * logging in to". The client fields are null when the page was opened directly; `legalLinks` is
+ * whatever that application registered in `client_legal_link` (empty when it registered none).
  */
 export function fetchLoginContext(): Promise<LoginContext> {
   return http.get<LoginContext>('/api/auth/login-context')

@@ -1,8 +1,8 @@
 package cn.nitrowater.core.infrastructure.persistence;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import cn.nitrowater.core.domain.EncryptionDataKey;
-import cn.nitrowater.core.domain.KeyStatus;
+import cn.nitrowater.core.infrastructure.domain.EncryptionDataKey;
+import cn.nitrowater.core.infrastructure.domain.KeyStatus;
 
 import java.util.List;
 import java.util.Optional;

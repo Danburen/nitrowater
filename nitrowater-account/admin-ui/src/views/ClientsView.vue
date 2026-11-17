@@ -5,6 +5,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { adminApi, type ClientForm, type ClientVO } from '@/api/admin'
 import AdminFilterCard from '@/components/AdminFilterCard.vue'
 import AdminPage from '@/components/AdminPage.vue'
+import LegalLinksEditor from '@/components/LegalLinksEditor.vue'
 
 const loading = ref(false)
 const clients = ref<ClientVO[]>([])
@@ -19,6 +20,7 @@ const editing = ref<ClientVO | null>(null)
 interface FormState {
   clientId: string
   clientName: string
+  legalLinks: Array<{ title: string; url: string }>
   clientAuthenticationMethods: string[]
   authorizationGrantTypes: string[]
   redirectUrisText: string
@@ -53,6 +55,7 @@ function blankForm(): FormState {
   return {
     clientId: '',
     clientName: '',
+    legalLinks: [],
     clientAuthenticationMethods: ['client_secret_basic'],
     authorizationGrantTypes: ['authorization_code', 'refresh_token'],
     redirectUrisText: '',
@@ -130,6 +133,7 @@ function openEdit(row: ClientVO) {
   form.value = {
     clientId: row.clientId,
     clientName: row.clientName,
+    legalLinks: row.legalLinks.map((link) => ({ ...link })),
     clientAuthenticationMethods: [...row.clientAuthenticationMethods],
     authorizationGrantTypes: [...row.authorizationGrantTypes],
     redirectUrisText: arrayToLines(row.redirectUris),
@@ -147,6 +151,9 @@ function buildPayload(): ClientForm {
   return {
     clientId: form.value.clientId.trim(),
     clientName: form.value.clientName.trim(),
+    legalLinks: form.value.legalLinks
+      .map((link) => ({ title: link.title.trim(), url: link.url.trim() }))
+      .filter((link) => link.title.length > 0 || link.url.length > 0),
     clientAuthenticationMethods: [...form.value.clientAuthenticationMethods],
     authorizationGrantTypes: [...form.value.authorizationGrantTypes],
     redirectUris: linesToArray(form.value.redirectUrisText),
@@ -163,6 +170,7 @@ function buildPayload(): ClientForm {
 function toUpdatePayload(full: ClientForm): Omit<ClientForm, 'clientId'> {
   return {
     clientName: full.clientName,
+    legalLinks: full.legalLinks,
     clientAuthenticationMethods: full.clientAuthenticationMethods,
     authorizationGrantTypes: full.authorizationGrantTypes,
     redirectUris: full.redirectUris,
@@ -182,6 +190,17 @@ function validate(): string | null {
   if (form.value.authorizationGrantTypes.length === 0) return '至少选择一种授权类型'
   if (linesToArray(form.value.redirectUrisText).length === 0) return '至少填写一个重定向 URI'
   if (form.value.scopes.length === 0) return '至少填写一个作用域'
+  if (form.value.legalLinks.length > 20) return '法务链接最多 20 条'
+  const titles: string[] = []
+  for (const link of form.value.legalLinks) {
+    const title = link.title.trim()
+    const url = link.url.trim()
+    if (!title && !url) continue
+    if (!title) return '请填写法务链接的标题'
+    if (!/^https?:\/\/\S+$/.test(url)) return '法务链接必须是 http(s) 地址'
+    titles.push(title)
+  }
+  if (new Set(titles).size !== titles.length) return '法务链接标题不能重复'
   return null
 }
 
@@ -461,6 +480,9 @@ onMounted(load)
             v-model="form.clientName"
             placeholder="应用显示名"
           />
+        </el-form-item>
+        <el-form-item label="法务链接">
+          <LegalLinksEditor v-model="form.legalLinks" />
         </el-form-item>
         <el-form-item label="认证方式">
           <el-select

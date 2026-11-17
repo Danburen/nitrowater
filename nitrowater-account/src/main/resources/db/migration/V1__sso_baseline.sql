@@ -189,6 +189,28 @@ CREATE TABLE IF NOT EXISTS oauth2_authorization_consent (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='OIDC 授权同意（Spring AS 标准表）';
 
 -- ============================================================
+-- client_legal_link —— 登录页法务链接（每个 OIDC 应用可登记多份）
+--
+-- 与 oauth2_registered_client.client_id 逻辑关联：client 表由 Spring Authorization Server
+-- 直接管理，这里不建物理 FK；删除应用时由 RegisteredClientAdminService 同步清理。
+-- 正文（用户协议 / 隐私政策 / 退款政策 …）仍由各应用自己托管，SSO 只读取本表并渲染 <a>，
+-- 与 Microsoft Entra ID / Amazon Cognito 的“应用注册时声明链接”模型一致。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS client_legal_link (
+    id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    client_id  VARCHAR(100)    NOT NULL COMMENT '关联 oauth2_registered_client.client_id',
+    title      VARCHAR(64)     NOT NULL COMMENT '登录页显示名，如 用户协议 / 隐私政策',
+    url        VARCHAR(500)    NOT NULL COMMENT '应用自己托管的正文地址',
+    sort_order INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT '同一应用内的展示顺序（升序）',
+    created_at TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at TIMESTAMP(3)    NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_client_legal_link_client_title (client_id, title),
+    KEY idx_client_legal_link_client_sort (client_id, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SSO 登录页法务链接（每个应用登记多份，正文由应用托管）';
+
+-- ============================================================
 -- RBAC（原 V1_1 + V1_2）
 -- role 是 SSO 粗粒度角色词汇表，user_role 是用户映射；user.user_type 仅表达账号类别。
 -- `role` 是 MySQL 8 保留字，必须反引号。

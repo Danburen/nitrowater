@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElButton, ElCheckbox, ElIcon, ElInput } from 'element-plus'
 import { ArrowDown, Iphone, Lock, Message, User } from '@element-plus/icons-vue'
 
 import AuthLayout from '@/components/AuthLayout.vue'
 import CaptchaDialog from '@/components/CaptchaDialog.vue'
-import { ApiError, postJson } from '@/api/auth'
+import LegalDocList from '@/components/LegalDocList.vue'
+import { ApiError, fetchLoginContext, postJson, type LoginContext } from '@/api/auth'
 import { getDeviceFp } from '@/composables/useDeviceFp'
 import { useCodeCooldown, type CooldownScope } from '@/composables/useCodeCooldown'
+
+/** The app that started this registration (null for a direct visit): its legal links apply. */
+const loginContext = ref<LoginContext | null>(null)
+
+/** Documents registered by that app; empty means the consent line stays plain text. */
+const legalLinks = computed(() => loginContext.value?.legalLinks ?? [])
 
 const username = ref('')
 const phone = ref('')
@@ -54,6 +61,13 @@ watch(phone, () => {
 
 onMounted(() => {
   if (phone.value.trim()) restoreSmsCooldown(smsScope())
+  void fetchLoginContext()
+    .then((context) => {
+      loginContext.value = context
+    })
+    .catch(() => {
+      // Links are a nicety; a failure must never block the form.
+    })
 })
 
 function messageOf(error: unknown): string {
@@ -134,7 +148,7 @@ async function register() {
     return
   }
   if (!agreed.value) {
-    errorMessage.value = '请先阅读并同意《用户协议》和《隐私政策》'
+    errorMessage.value = '请先阅读并同意相关条款'
     return
   }
 
@@ -306,10 +320,15 @@ onUnmounted(() => {
         <ElCheckbox
           v-model="agreed"
           class="mt-[1px] shrink-0"
-          aria-label="我已阅读并同意用户协议和隐私政策"
+          aria-label="我已阅读并同意相关条款"
         />
         <div class="min-w-0">
-          <p>我已阅读并同意《用户协议》和《隐私政策》，并同意本站按该政策处理我的个人信息。</p>
+          <p v-if="legalLinks.length">
+            我已阅读并同意<LegalDocList :links="legalLinks" />，并同意本站按该政策处理我的个人信息。
+          </p>
+          <p v-else>
+            我已阅读并同意本服务的服务条款与隐私政策，并同意本站按该政策处理我的个人信息。
+          </p>
         </div>
       </div>
 

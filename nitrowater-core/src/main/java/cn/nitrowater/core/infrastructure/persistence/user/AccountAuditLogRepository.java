@@ -1,6 +1,6 @@
 package cn.nitrowater.core.infrastructure.persistence.user;
 
-import cn.nitrowater.core.domain.user.AccountAuditLog;
+import cn.nitrowater.core.infrastructure.domain.user.AccountAuditLog;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**

@@ -1,7 +1,8 @@
 package cn.nitrowater.account.admin;
 
 import cn.nitrowater.account.admin.dto.RevokedSessionsVO;
-import cn.nitrowater.core.domain.user.AccountAuditLog;
+import cn.nitrowater.account.service.security.SessionInvalidationListener;
+import cn.nitrowater.core.infrastructure.domain.user.AccountAuditLog;
 import cn.nitrowater.core.infrastructure.persistence.user.AccountAuditLogRepository;
 import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +35,7 @@ import java.util.Set;
  * </ol>
  *
  * <p>This is deliberately global. Per-account revocation already exists as
- * {@link cn.nitrowater.account.security.SessionInvalidationListener} (password / role changes);
+ * {@link SessionInvalidationListener} (password / role changes);
  * this service is the emergency "everyone out" switch that used to be an environment variable.</p>
  */
 @Slf4j

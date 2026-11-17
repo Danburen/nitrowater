@@ -3,7 +3,7 @@ package cn.nitrowater.bff;
 import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
 import cn.nitrowater.core.web.ApiResponseAdvice;
 import cn.nitrowater.core.web.GlobalExceptionHandler;
-import cn.nitrowater.core.web.legal.LegalDocuments;
+import cn.nitrowater.core.web.legal.LegalDocumentService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Import;
@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Import;
  * renewal happens here (no iframe, no token in the browser).</p>
  */
 @SpringBootApplication
-@Import({ApiResponseAdvice.class, GlobalExceptionHandler.class, LegalDocuments.class,
+@Import({ApiResponseAdvice.class, GlobalExceptionHandler.class, LegalDocumentService.class,
         SessionEpochStore.class})
 public class NitrowaterBffApplication {
 

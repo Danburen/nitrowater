@@ -1,6 +1,6 @@
 package cn.nitrowater.core.api.auth;
 
-import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.infrastructure.domain.user.User;
 
 /**
  * Outcome of a successful credential check.

@@ -1,9 +1,9 @@
 package cn.nitrowater.core.infrastructure.persistence.specification;
 
-import cn.nitrowater.core.domain.role.UserRole;
-import cn.nitrowater.core.domain.user.AccountStatus;
-import cn.nitrowater.core.domain.user.User;
-import cn.nitrowater.core.domain.user.UserType;
+import cn.nitrowater.core.infrastructure.domain.role.UserRole;
+import cn.nitrowater.core.infrastructure.domain.user.AccountStatus;
+import cn.nitrowater.core.infrastructure.domain.user.User;
+import cn.nitrowater.core.infrastructure.domain.user.UserType;
 import cn.nitrowater.lib.utils.StringUtil;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;

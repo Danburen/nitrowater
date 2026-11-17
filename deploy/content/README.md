@@ -34,7 +34,7 @@ deploy/content/
 |---|---|---|
 | `${CONTENT_ROOT}/moderation` | `/etc/nitrowater/moderation` | 内容安全词表（`server`） |
 | `${CONTENT_ROOT}/docs` | `${AI_DOCS_ROOT:-/etc/nitrowater/docs}` | RAG 语料（`server`，`app.ai.docs-root`） |
-| `${CONTENT_ROOT}/legal` | `/etc/nitrowater/legal` | 法务文本（只挂给 `bff`，`app.legal.dir`） |
+| `${CONTENT_ROOT}/legal` | `/etc/nitrowater/legal` | 法务文本：`bff` 读正文（`LEGAL_DIR` / `app.legal.dir`）；`account` 不挂载，只读 `client_legal_link` 表里的链接 |
 
 生产（`DEPLOY_ROOT=/opt/nitrowater`，tarball 解到 `deploy/`）里 `CONTENT_ROOT=/opt/nitrowater/deploy/content`，
 所以语料就是 `/opt/nitrowater/deploy/content/docs`；本地相对路径 `../content` 与之等价（相对 `deploy/docker/`）。
@@ -109,9 +109,22 @@ allow 只抑制**它自己覆盖的那一段**，且长度必须 ≥ 命中的�
 
 ## 法务文本：宿主机维护，按请求读取
 
-`legal/` 下每个 `.txt` 是**一篇纯文本**法务文档（不是 Markdown，没有 front matter、没有标记语法），
-由 **BFF（门户）** 在每次请求时读取，所以改完保存即生效：不用重启容器、不用重新构建、
+`legal/` 下每个 `.txt` 是**一篇纯文本**法务文档（不是 Markdown，没有 front matter、没有标记语法）。
+**正文由 BFF（门户）** 在每次请求时读取，所以改完保存即生效：不用重启容器、不用重新构建、
 也不会被浏览器 / 代理缓存（响应带 `no-store`）。
+
+登录 / 注册页的链接**不拉取正文，也不由 SSO 托管**：SSO 库有一张独立的 `client_legal_link`
+表（`client_id` 逻辑关联 `oauth2_registered_client`，不建物理 FK），每个应用可以登记任意多条
+（用户协议、隐私政策、退款政策 …），按 `sort_order` 排序。用户被重定向到登录页时，account 按
+待处理请求的 `client_id` 读这张表，把**该应用登记的全部文档**依次渲染成《…》链接，点击跳到
+**该应用自己的页面**。这与 Microsoft Entra ID、Amazon Cognito、SAP Cloud Identity Services 的做法一致：
+IdP 只负责指路，法务文本仍由各应用（BFF / 静态站）自行托管和更新。
+
+- 第一方 `nitrowater-bff`：seeder 自动写入两条（`<SSO_DEFAULT_REDIRECT>/legal/terms`、`.../privacy`）；
+  额外文档可在管理端「应用管理 → 法务链接」添加，重启不会被删。
+- 其他应用在管理端加自己的链接即可，不需要改 account 配置、更不需要发版。
+- 应用没登记 → 登录页只显示无链接的纯文本告知，**不会**借用运营方或其他应用的条款（那会造成误导）。
+- 直接打开 `/login`、`/register`（没有待登录应用）→ 渲染第一方 `nitrowater-bff` 的链接。
 
 - **文件名即 key**：`<key>.txt`，只允许小写字母、数字和连字符（`[a-z0-9-]`），其他文件一律忽略，
   不会变成接口。**没有顺序约定**：清单按目录返回顺序，页面就按那个顺序渲染。
@@ -124,19 +137,21 @@ allow 只抑制**它自己覆盖的那一段**，且长度必须 ≥ 命中的�
 
 | 项 | 值 |
 |---|---|
-| 清单 | `GET /api/public/legal` → `[{key,title,updatedAt}]`（只由 BFF 提供） |
+| 清单 | `GET /api/public/legal` → `ApiResponse<[{key,title,updatedAt}]>`（只由 BFF 提供） |
 | 单篇 | `GET /api/public/legal/<key>`（`text/plain; charset=utf-8`、`no-store`） |
-| 门户源站 | `<WEB_DOMAIN>`（BFF），页面路由 `/legal/<key>`，页脚按清单渲染 |
-| SSO 源站 | `<AUTH_DOMAIN>`（account）**不提供**：法务只归门户，`/api/public/legal*` 是 404；登录页底部为纯文本被动告知，注册页勾选仍必填（服务端 `@AssertTrue` 兜底） |
+| 登录页链接 | `GET /api/auth/login-context`（account，公开）→ `{clientId, clientName, legalLinks:[{title,url}]}`；URL 取自 `client_legal_link`，SSO 不读取、不缓存正文 |
+| 门户源站 | `<WEB_DOMAIN>`（BFF），页面路由 `/legal/<key>`，页脚链到这里；登录页链接也指向这里（第一方应用的注册值） |
+| SSO 源站 | `<AUTH_DOMAIN>`（account）**只读链接表并渲染**，不提供正文、不挂载目录；应用没登记时退化为无链接的纯文本告知 |
 | 容器内目录 | `/etc/nitrowater/legal`（只有 `docker-compose.app.yml` 挂，`LEGAL_DIR`） |
-| 本地 bootRun | 自动探测 `deploy/content/legal` → `../deploy/content/legal` → `/etc/nitrowater/legal` |
+| 本地 bootRun | BFF 自动探测 `deploy/content/legal` → `../deploy/content/legal` → `/etc/nitrowater/legal` |
 | 版本管理 | **不提交**（`.gitignore` 已覆盖），每台机器自己放；换机时从私有备份恢复 |
 
-> 加一篇新文档 = 往目录里丢一个 `refund.txt`，不用发版：清单和门户页脚会自动多一个入口。
+> 加一篇新文档 = ① 门户里放 `refund.txt`（页脚入口自动出现）；② 管理端该应用的「法务链接」里
+> 加一条《退款政策》指向 `<WEB_DOMAIN>/legal/refund`。正文归门户，登录页只读 SSO 的链接表。
 
-> SSO 为什么不做入口：account 对任意 client 通用，它没有"这个 client 的后端在哪"的映射，
-> 让 SSO 去读某个具体子应用的后端等于把可用性绑在一个业务服务上。需要时在登录/注册页放一个
-> 指向门户域名的绝对链接即可，不必给 account 加法务能力。
+> 为什么不在登录时抓取：登录页是整条链路最关键的页面，不该依赖某个应用的可用性；IdP 也不该去读
+> 别人的文件。链接表在 SSO 本地，登录时只做一次查表，既解耦了认证与业务，也让每个应用能独立
+> 更新、增删自己的条款。
 
 登录页为什么不是勾选框：账号在注册时已经同意过这些文件，每次登录再勾一遍只会训练用户盲点，
 也不构成新的同意。注册页的勾选是**必填**，前端拦截之外服务端还会校验 `agreed=true`。
@@ -148,8 +163,9 @@ sudo mkdir -p /opt/nitrowater/deploy/content/legal
 sudo chown -R "$USER": /opt/nitrowater/deploy/content/legal
 $EDITOR /opt/nitrowater/deploy/content/legal/terms.txt
 $EDITOR /opt/nitrowater/deploy/content/legal/privacy.txt
-curl -fsS https://<WEB_DOMAIN>/api/public/legal | head           # 清单
-curl -fsS https://<WEB_DOMAIN>/api/public/legal/terms | head     # 正文
+curl -fsS https://<WEB_DOMAIN>/api/public/legal | head           # 门户清单
+curl -fsS https://<WEB_DOMAIN>/api/public/legal/terms | head     # 门户正文
+curl -fsS https://<AUTH_DOMAIN>/api/auth/login-context | head      # 登录页上下文（含应用条款链接）
 ```
 
 **运营主体统一写 `NitroWater`**；正文里不再写「更新日期 / 生效日期」（由文件修改时间带出）；

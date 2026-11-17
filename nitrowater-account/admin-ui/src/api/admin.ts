@@ -47,10 +47,20 @@ export interface RevokedSessionsVO {
   ssoSessions: number
 }
 
+/** One legal document link registered for an application (SSO renders it on the login page). */
+export interface LegalLink {
+  /** Label shown on the login page, e.g. `用户协议`. */
+  title: string
+  /** Absolute URL on the application's own host. */
+  url: string
+}
+
 export interface ClientVO {
   id: string
   clientId: string
   clientName: string
+  /** Documents this application publishes, in display order. */
+  legalLinks: LegalLink[]
   clientAuthenticationMethods: string[]
   authorizationGrantTypes: string[]
   redirectUris: string[]
@@ -80,6 +90,8 @@ export interface ClientSecretVO {
 export interface ClientForm {
   clientId: string
   clientName: string
+  /** Documents this application publishes; order is preserved on the login page. */
+  legalLinks: LegalLink[]
   clientAuthenticationMethods: string[]
   authorizationGrantTypes: string[]
   redirectUris: string[]

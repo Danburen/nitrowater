@@ -1,7 +1,7 @@
 package cn.nitrowater.core.application.user;
 
 import cn.nitrowater.core.api.auth.VerifyChannel;
-import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.infrastructure.domain.user.User;
 import cn.nitrowater.core.exception.notfound.NotFoundException;
 
 /**

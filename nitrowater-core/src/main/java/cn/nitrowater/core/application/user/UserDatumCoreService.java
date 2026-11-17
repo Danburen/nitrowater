@@ -2,7 +2,7 @@ package cn.nitrowater.core.application.user;
 
 import org.jetbrains.annotations.Nullable;
 import cn.nitrowater.core.api.resp.AccountResp;
-import cn.nitrowater.core.domain.user.UserDatum;
+import cn.nitrowater.core.infrastructure.domain.user.UserDatum;
 
 public interface UserDatumCoreService {
     UserDatum getUserDatum(long userUid);

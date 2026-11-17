@@ -1,6 +1,6 @@
 package cn.nitrowater.core.infrastructure.persistence.specification;
 
-import cn.nitrowater.core.domain.role.Role;
+import cn.nitrowater.core.infrastructure.domain.role.Role;
 import org.springframework.data.jpa.domain.Specification;
 
 /**

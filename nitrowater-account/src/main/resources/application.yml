@@ -139,6 +139,8 @@ generator:
 # 通配符让任意本地端口的页面都能读走 /api/auth/account 之类的个人数据。
 # Cookie 属性（SameSite 等）统一在 server.servlet.session.cookie 下配置，见文件头部。
 app:
+  # 每个应用的法务链接在 SSO 自己的 client_legal_link 表里（管理端「应用管理 → 法务链接」可加多条）；
+  # SSO 只读取并渲染链接，正文留在应用自己的站点上。第一方 nitrowater-bff 的两条由 seeder 写入。
   # 绝对上限：从"上一次输密码"起算。超过后 /oauth2/authorize 强制回登录页（PromptLoginFilter），
   # 因此门户那边即使旧会话还能静默续，也拿不到新令牌。
   session:
@@ -165,8 +167,8 @@ app:
   # redirect. It must point at the portal, never at /admin/.
   sso:
     default-redirect: "${SSO_DEFAULT_REDIRECT:http://localhost:5173}"
-  # 法务文本只由 BFF（门户）提供：SSO 对任意 client 通用，没有"这个 client 的后端在哪"的映射，
-  # 所以这里不代理、不挂载，`/api/public/legal*` 自然 404，前端拉不到就不渲染入口。
+  # 法务文本由各应用自己托管：登录页只渲染 client_legal_link 表里该应用的链接，account 不代理、
+  # 不挂载、也不提供正文（`/api/public/legal*` 在 SSO 上仍是 404）。
   # Hosted login 是顶层表单 POST：成功后 302 到待处理的 /oauth2/authorize，再 302 到客户端的
   # redirect_uri（跨域回跳是 OIDC 设计本身）。Chrome 会按 form-action 校验整条重定向链，所以回调
   # 域必须显式列出，否则导航被中止（此时会话已建立 → 表现为"停在登录页、刷新却已登录"）。

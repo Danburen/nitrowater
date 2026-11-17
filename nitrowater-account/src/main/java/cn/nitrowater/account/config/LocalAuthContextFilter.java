@@ -11,7 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import cn.nitrowater.account.security.SsoUserPrincipal;
+import cn.nitrowater.account.service.security.SsoUserPrincipal;
 import cn.nitrowater.core.infrastructure.security.CurrentUser;
 import cn.nitrowater.core.infrastructure.utils.context.AuthContext;
 import cn.nitrowater.core.infrastructure.utils.context.UserCtxHolder;

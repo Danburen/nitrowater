@@ -2,6 +2,8 @@ package cn.nitrowater.account.communication.email;
 
 import cn.nitrowater.account.config.EmailTemplateConfig;
 import cn.nitrowater.account.config.ResendConfig;
+import cn.nitrowater.account.infra.communication.email.EmailSendService;
+import cn.nitrowater.account.infra.communication.email.ResendEmailSendService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 

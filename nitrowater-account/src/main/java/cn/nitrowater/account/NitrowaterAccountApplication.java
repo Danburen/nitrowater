@@ -15,8 +15,14 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
         excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX, pattern = "cn\\.nitrowater\\.core\\.web\\..*"))
 @Import(ApiResponseAdvice.class)
 @EnableSpringDataWebSupport(pageSerializationMode = EnableSpringDataWebSupport.PageSerializationMode.VIA_DTO)
-@EntityScan(basePackages = "cn.nitrowater.core.domain")
-@EnableJpaRepositories(basePackages = "cn.nitrowater.core.infrastructure.persistence")
+// Account-only entities (client_legal_link) live in this module, not in core: core is the
+// shared persistence boundary, and this table only exists in the SSO schema.
+@EntityScan(basePackages = {
+        "cn.nitrowater.core.infrastructure.domain",
+        "cn.nitrowater.account.infra"})
+@EnableJpaRepositories(basePackages = {
+        "cn.nitrowater.core.infrastructure.persistence",
+        "cn.nitrowater.account.infra"})
 public class NitrowaterAccountApplication {
 
     public static void main(String[] args) {

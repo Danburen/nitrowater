@@ -1,11 +1,13 @@
 package cn.nitrowater.bff.web;
 
 import cn.nitrowater.core.web.legal.LegalDocumentSummary;
-import cn.nitrowater.core.web.legal.LegalDocuments;
+import cn.nitrowater.core.web.legal.LegalDocumentService;
+import cn.nitrowater.lib.api.ApiResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -40,13 +42,15 @@ class LegalDocumentControllerTest {
         write("terms.txt", "用户协议\n\n用户协议正文");
         LegalDocumentController controller = controller(dir);
 
-        ResponseEntity<List<LegalDocumentSummary>> response = controller.index();
+        MockHttpServletResponse servletResponse = new MockHttpServletResponse();
+        ApiResponse<List<LegalDocumentSummary>> body = controller.index(servletResponse);
 
-        assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getHeaders().getCacheControl()).isEqualTo("no-store");
-        assertThat(response.getBody()).extracting(LegalDocumentSummary::key)
+        assertThat(servletResponse.getHeader("Cache-Control")).isEqualTo("no-store");
+        assertThat(servletResponse.getStatus()).isEqualTo(200);
+        assertThat(body.getSuccess()).isTrue();
+        assertThat(body.getData()).extracting(LegalDocumentSummary::key)
                 .containsExactlyInAnyOrder("privacy", "terms");
-        assertThat(response.getBody()).extracting(LegalDocumentSummary::title)
+        assertThat(body.getData()).extracting(LegalDocumentSummary::title)
                 .containsExactlyInAnyOrder("隐私政策", "用户协议");
     }
 
@@ -54,7 +58,7 @@ class LegalDocumentControllerTest {
     void listsNothingBeforeAnythingHasBeenUploaded() {
         LegalDocumentController controller = controller(dir.resolve("missing"));
 
-        assertThat(controller.index().getBody()).isEmpty();
+        assertThat(controller.index(new MockHttpServletResponse()).getData()).isEmpty();
         assertThat(controller.get("terms").getStatusCode().value()).isEqualTo(404);
     }
 
@@ -75,7 +79,7 @@ class LegalDocumentControllerTest {
     }
 
     private LegalDocumentController controller(Path directory) {
-        return new LegalDocumentController(new LegalDocuments(directory.toString()));
+        return new LegalDocumentController(new LegalDocumentService(directory.toString()));
     }
 
     private void write(String name, String text) throws IOException {

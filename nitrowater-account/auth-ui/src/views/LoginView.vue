@@ -6,6 +6,7 @@ import { Lock, Message, User } from '@element-plus/icons-vue'
 
 import AuthLayout from '@/components/AuthLayout.vue'
 import CaptchaDialog from '@/components/CaptchaDialog.vue'
+import LegalDocList from '@/components/LegalDocList.vue'
 import {
   ApiError,
   fetchLoginContext,
@@ -42,6 +43,12 @@ const redirect = computed(() => {
 
 /** The app that started this login (null for a direct visit to /login). */
 const loginContext = ref<LoginContext | null>(null)
+
+/** Documents registered by the app that started this login (empty for an unconfigured client). */
+const legalLinks = computed(() => loginContext.value?.legalLinks ?? [])
+
+/** Whether the app registered at least one legal link; without one the notice stays plain text. */
+const hasLegalLinks = computed(() => legalLinks.value.length > 0)
 
 const formRef = ref<HTMLFormElement | null>(null)
 const username = ref('')
@@ -418,11 +425,21 @@ onMounted(() => {
     </div>
 
     <!--
-      Passive notice, not a checkbox: the account already accepted the documents at registration, and
-      the terms themselves are published on the portal (the SSO host serves none).
+      Passive notice, not a checkbox: the account already accepted the documents at registration.
+      The links are the ones this application registered (client_legal_link); the SSO renders them
+      in order and never hosts or fetches the texts.
     -->
-    <p class="mt-4 text-center text-[11px] leading-5 text-faint">
-      继续即表示你已阅读并同意《用户协议》与《隐私政策》。
+    <p
+      v-if="hasLegalLinks"
+      class="mt-4 text-center text-[11px] leading-5 text-faint"
+    >
+      继续即表示你已阅读并同意<LegalDocList :links="legalLinks" />。
+    </p>
+    <p
+      v-else
+      class="mt-4 text-center text-[11px] leading-5 text-faint"
+    >
+      继续即表示你已阅读并同意本服务的使用条款与隐私政策。
     </p>
 
     <CaptchaDialog

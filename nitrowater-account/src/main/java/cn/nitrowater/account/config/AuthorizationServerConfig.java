@@ -1,5 +1,7 @@
 package cn.nitrowater.account.config;
 
+import cn.nitrowater.account.service.ClientLegalLinkService;
+import cn.nitrowater.account.service.security.SessionInvalidationListener;
 import cn.nitrowater.lib.utils.StringUtil;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -13,7 +15,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -70,22 +71,21 @@ import cn.nitrowater.core.web.ApiResponseAccessDeniedHandler;
 import cn.nitrowater.core.web.ApiResponseAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
-import org.springframework.security.web.session.ConcurrentSessionFilter;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
-import cn.nitrowater.account.security.AccountSessionGuardFilter;
-import cn.nitrowater.account.security.PromptLoginFilter;
+import cn.nitrowater.account.service.security.AccountSessionGuardFilter;
+import cn.nitrowater.account.service.security.PromptLoginFilter;
 import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
-import cn.nitrowater.account.security.SsoUserPrincipal;
+import cn.nitrowater.account.service.security.SsoUserPrincipal;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+
 import java.io.IOException;
 import java.security.Principal;
 import java.security.PrivateKey;
@@ -134,9 +134,9 @@ public class AuthorizationServerConfig {
      * Paths reachable without a session and exempt from CSRF — the hosted auth pages, their static
      * assets, and the public auth API. One array so the two lists cannot drift apart.
      *
-     * <p>No legal paths: the documents belong to the portal (BFF), so the SSO serves neither an index
-     * nor a body. The pages still load without them (the frontend renders nothing when the fetch
-     * fails).</p>
+     * <p>Legal bodies are not served here: each client hosts its own. The SSO stores the link rows
+     * in {@code client_legal_link} and delivers them with the login context, so the hosted page can
+     * render them directly.</p>
      */
     private static final String[] UNPROTECTED_PATHS = {
             "/login", "/register", "/api/auth/**", "/auth/**",
@@ -293,7 +293,7 @@ public class AuthorizationServerConfig {
 
     /**
      * Session registry backed by Spring Session (Redis), so it survives a restart and sees sessions
-     * created on either node. {@link cn.nitrowater.account.security.SessionInvalidationListener}
+     * created on either node. {@link SessionInvalidationListener}
      * uses it to expire every session of an account whose credentials or roles changed.
      */
     @Bean
@@ -394,11 +394,20 @@ public class AuthorizationServerConfig {
     @Bean
     public ApplicationRunner registeredClientSeeder(
             RegisteredClientRepository registeredClientRepository,
+            ClientLegalLinkService clientLegalLinks,
             @Value("${app.oidc.bff-client-secret}") String bffClientSecret,
             @Value("${app.oidc.bff-redirect-uris}") String bffRedirectUris,
-            @Value("${app.oidc.bff-post-logout-redirect-uris}") String bffPostLogoutRedirectUris) {
-        return args -> upsertClient(registeredClientRepository, BFF_CLIENT_ID,
-                id -> nitrowaterBffClient(id, bffClientSecret, bffRedirectUris, bffPostLogoutRedirectUris));
+            @Value("${app.oidc.bff-post-logout-redirect-uris}") String bffPostLogoutRedirectUris,
+            @Value("${app.sso.default-redirect:http://localhost:5173}") String portalUrl) {
+        return args -> {
+            upsertClient(registeredClientRepository, BFF_CLIENT_ID,
+                    id -> nitrowaterBffClient(id, bffClientSecret, bffRedirectUris, bffPostLogoutRedirectUris));
+            // The first-party portal publishes these two documents under /legal/<key>. Existing
+            // rows keep their position; the seeder only reconciles the URL (and adds a missing
+            // row), so extra documents added in the console survive a restart.
+            clientLegalLinks.ensure(BFF_CLIENT_ID, "用户协议", legalUrl(portalUrl, "terms"));
+            clientLegalLinks.ensure(BFF_CLIENT_ID, "隐私政策", legalUrl(portalUrl, "privacy"));
+        };
     }
 
     /**
@@ -443,6 +452,15 @@ public class AuthorizationServerConfig {
             builder.postLogoutRedirectUri(uri);
         }
         return builder.build();
+    }
+
+    /** @return {@code <portal>/legal/<key>}, tolerating a trailing slash on the portal URL */
+    private static String legalUrl(String portalUrl, String key) {
+        String base = portalUrl == null ? "" : portalUrl.strip();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/legal/" + key;
     }
 
     /** Parses a comma separated list, ignoring blanks. */

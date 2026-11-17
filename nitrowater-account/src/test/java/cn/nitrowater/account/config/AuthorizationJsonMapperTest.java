@@ -1,8 +1,8 @@
 package cn.nitrowater.account.config;
 
-import cn.nitrowater.account.security.SsoUserPrincipal;
-import cn.nitrowater.core.domain.user.AccountStatus;
-import cn.nitrowater.core.domain.user.UserType;
+import cn.nitrowater.account.service.security.SsoUserPrincipal;
+import cn.nitrowater.core.infrastructure.domain.user.AccountStatus;
+import cn.nitrowater.core.infrastructure.domain.user.UserType;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import tools.jackson.databind.json.JsonMapper;

@@ -1,6 +1,6 @@
 package cn.nitrowater.account.web.admin;
 
-import cn.nitrowater.account.security.SsoUserPrincipal;
+import cn.nitrowater.account.service.security.SsoUserPrincipal;
 import org.springframework.security.core.Authentication;
 
 /**

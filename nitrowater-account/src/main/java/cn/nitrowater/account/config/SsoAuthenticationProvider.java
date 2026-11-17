@@ -1,11 +1,11 @@
 package cn.nitrowater.account.config;
 
-import cn.nitrowater.account.security.SsoUserPrincipal;
-import cn.nitrowater.account.security.UserRoleService;
+import cn.nitrowater.account.service.security.SsoUserPrincipal;
+import cn.nitrowater.account.service.UserRoleService;
 import cn.nitrowater.core.api.auth.LoginResult;
 import cn.nitrowater.core.api.req.auth.DeviceInfo;
 import cn.nitrowater.core.api.req.auth.PwdLoginReq;
-import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.infrastructure.domain.user.User;
 import cn.nitrowater.core.exception.threshold.AttemptLimitExceededException;
 import cn.nitrowater.core.exception.threshold.DailyLimitExceededException;
 import cn.nitrowater.core.application.auth.DeviceService;

@@ -5,8 +5,13 @@ import cn.nitrowater.account.admin.dto.ClientRegistrationVO;
 import cn.nitrowater.account.admin.dto.ClientSecretVO;
 import cn.nitrowater.account.admin.dto.ClientUpdateReq;
 import cn.nitrowater.account.admin.dto.ClientVO;
+import cn.nitrowater.account.admin.dto.LegalLinkReq;
+import cn.nitrowater.account.admin.dto.LegalLinkVO;
 import cn.nitrowater.account.config.AuthorizationServerConfig;
-import cn.nitrowater.core.domain.oauth2.RegisteredClientRow;
+import cn.nitrowater.account.infra.ClientLegalLink;
+import cn.nitrowater.account.service.ClientLegalLinkInput;
+import cn.nitrowater.account.service.ClientLegalLinkService;
+import cn.nitrowater.core.infrastructure.domain.oauth2.RegisteredClientRow;
 import cn.nitrowater.core.exception.BizException;
 import cn.nitrowater.core.infrastructure.persistence.oauth2.RegisteredClientRowRepository;
 import cn.nitrowater.core.infrastructure.persistence.specification.RegisteredClientSpec;
@@ -36,7 +41,6 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -88,6 +92,7 @@ public class RegisteredClientAdminService {
 
     private final RegisteredClientRepository registeredClientRepository;
     private final RegisteredClientRowRepository registeredClientRows;
+    private final ClientLegalLinkService clientLegalLinks;
     private final JdbcTemplate jdbcTemplate;
 
     // ------------------------------------------------------------------ queries
@@ -113,10 +118,15 @@ public class RegisteredClientAdminService {
 
         Page<RegisteredClientRow> matched = registeredClientRows.findAll(filters,
                 PageRequest.of(safePage, safeSize, Sort.by("clientId")));
+        List<String> clientIds = matched.getContent().stream()
+                .map(RegisteredClientRow::getClientId)
+                .toList();
+        // One extra query for the whole page instead of one per client.
+        var linksByClient = clientLegalLinks.findByClientIds(clientIds);
         List<ClientVO> rows = matched.getContent().stream()
                 .map(row -> registeredClientRepository.findById(row.getId()))
                 .filter(Objects::nonNull)
-                .map(RegisteredClientAdminService::toVO)
+                .map(client -> toVO(client, linksByClient.getOrDefault(client.getClientId(), List.of())))
                 .toList();
         return new PageImpl<>(rows, matched.getPageable(), matched.getTotalElements());
     }
@@ -124,7 +134,8 @@ public class RegisteredClientAdminService {
     /** One application by its internal id. */
     @Transactional(readOnly = true)
     public ClientVO getClient(String id) {
-        return toVO(requireClient(id));
+        RegisteredClient client = requireClient(id);
+        return toVO(client, clientLegalLinks.findByClientId(client.getClientId()));
     }
 
     // ------------------------------------------------------------------ commands
@@ -159,7 +170,9 @@ public class RegisteredClientAdminService {
 
         RegisteredClient client = builder.build();
         registeredClientRepository.save(client);
-        return new ClientRegistrationVO(toVO(client), plainSecret);
+        clientLegalLinks.replace(client.getClientId(), inputsOf(req.legalLinks()));
+        return new ClientRegistrationVO(
+                toVO(client, clientLegalLinks.findByClientId(client.getClientId())), plainSecret);
     }
 
     /**
@@ -193,7 +206,9 @@ public class RegisteredClientAdminService {
 
         RegisteredClient updated = builder.build();
         registeredClientRepository.save(updated);
-        return new ClientRegistrationVO(toVO(updated), plainSecret);
+        clientLegalLinks.replace(updated.getClientId(), inputsOf(req.legalLinks()));
+        return new ClientRegistrationVO(
+                toVO(updated, clientLegalLinks.findByClientId(updated.getClientId())), plainSecret);
     }
 
     /** Rotates a confidential client's secret; the new plaintext is returned once. */
@@ -225,6 +240,8 @@ public class RegisteredClientAdminService {
         jdbcTemplate.update("DELETE FROM oauth2_authorization_consent WHERE registered_client_id = ?", id);
         jdbcTemplate.update("DELETE FROM oauth2_authorization WHERE registered_client_id = ?", id);
         jdbcTemplate.update("DELETE FROM oauth2_registered_client WHERE id = ?", id);
+        // The legal rows are keyed by client_id, not by the vendor PK.
+        clientLegalLinks.deleteByClientId(existing.getClientId());
     }
 
     // ------------------------------------------------------------------ helpers
@@ -241,7 +258,8 @@ public class RegisteredClientAdminService {
     private static void applySettings(RegisteredClient.Builder builder, Set<String> authMethods,
             List<String> grantTypes, List<String> redirectUris, List<String> postLogoutRedirectUris,
             List<String> scopes, Boolean requireProofKey, Boolean requireAuthorizationConsent,
-            Integer accessTokenTtlMinutes, Integer refreshTokenTtlDays, boolean confidential) {
+            Integer accessTokenTtlMinutes, Integer refreshTokenTtlDays,
+            boolean confidential) {
         for (String method : authMethods) {
             builder.clientAuthenticationMethod(new ClientAuthenticationMethod(method));
         }
@@ -261,10 +279,11 @@ public class RegisteredClientAdminService {
         // confidential clients (authenticated by secret), mirroring the seeder's BFF client.
         boolean proofKey = requireProofKey != null ? requireProofKey : !confidential;
         boolean consent = Boolean.TRUE.equals(requireAuthorizationConsent);
-        builder.clientSettings(ClientSettings.builder()
+        ClientSettings settings = ClientSettings.builder()
                 .requireProofKey(proofKey)
                 .requireAuthorizationConsent(consent)
-                .build());
+                .build();
+        builder.clientSettings(settings);
         builder.tokenSettings(TokenSettings.builder()
                 .accessTokenTimeToLive(minutesOrDefault(accessTokenTtlMinutes, DEFAULT_ACCESS_TOKEN_TTL))
                 .refreshTokenTimeToLive(daysOrDefault(refreshTokenTtlDays, DEFAULT_REFRESH_TOKEN_TTL))
@@ -272,7 +291,7 @@ public class RegisteredClientAdminService {
                 .build());
     }
 
-    private static ClientVO toVO(RegisteredClient client) {
+    private static ClientVO toVO(RegisteredClient client, List<ClientLegalLink> legalLinks) {
         ClientSettings clientSettings = client.getClientSettings();
         TokenSettings tokenSettings = client.getTokenSettings();
         Set<String> authMethods = authMethodsOf(client);
@@ -280,6 +299,9 @@ public class RegisteredClientAdminService {
                 client.getId(),
                 client.getClientId(),
                 client.getClientName(),
+                legalLinks.stream()
+                        .map(link -> new LegalLinkVO(link.getTitle(), link.getUrl()))
+                        .toList(),
                 List.copyOf(authMethods),
                 values(client.getAuthorizationGrantTypes(), AuthorizationGrantType::getValue),
                 new ArrayList<>(client.getRedirectUris()),
@@ -292,6 +314,15 @@ public class RegisteredClientAdminService {
                 client.getClientIdIssuedAt(),
                 isConfidential(authMethods),
                 AuthorizationServerConfig.BFF_CLIENT_ID.equals(client.getClientId()));
+    }
+
+    private static List<ClientLegalLinkInput> inputsOf(List<LegalLinkReq> links) {
+        if (links == null || links.isEmpty()) {
+            return List.of();
+        }
+        return links.stream()
+                .map(link -> new ClientLegalLinkInput(link.title(), link.url()))
+                .toList();
     }
 
     /** Client authentication methods as their plain string values. */

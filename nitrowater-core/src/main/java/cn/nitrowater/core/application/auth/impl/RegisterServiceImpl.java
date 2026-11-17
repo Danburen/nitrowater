@@ -1,9 +1,9 @@
 package cn.nitrowater.core.application.auth.impl;
 
-import cn.nitrowater.core.domain.user.AccountStatus;
-import cn.nitrowater.core.domain.user.User;
-import cn.nitrowater.core.domain.user.UserDatum;
-import cn.nitrowater.core.domain.user.UserType;
+import cn.nitrowater.core.infrastructure.domain.user.AccountStatus;
+import cn.nitrowater.core.infrastructure.domain.user.User;
+import cn.nitrowater.core.infrastructure.domain.user.UserDatum;
+import cn.nitrowater.core.infrastructure.domain.user.UserType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,7 +20,7 @@ import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.api.auth.VerifyScene;
 import cn.nitrowater.core.api.req.auth.RegisterRequest;
 import cn.nitrowater.core.api.req.auth.VerifyCodeDto;
-import cn.nitrowater.core.domain.EncryptionDataKey;
+import cn.nitrowater.core.infrastructure.domain.EncryptionDataKey;
 import cn.nitrowater.core.exception.BizException;
 import cn.nitrowater.core.exception.RegisterChannelUnsupportedException;
 import cn.nitrowater.core.exception.UserNameAlreadyExistException;

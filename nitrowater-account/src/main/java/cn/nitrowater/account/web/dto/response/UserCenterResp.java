@@ -1,7 +1,7 @@
 package cn.nitrowater.account.web.dto.response;
 
 import cn.nitrowater.core.api.resp.AccountResp;
-import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.infrastructure.domain.user.User;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import cn.nitrowater.lib.utils.StringUtil;

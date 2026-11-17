@@ -1,10 +1,13 @@
 package cn.nitrowater.bff.web;
 
 import cn.nitrowater.core.web.legal.LegalDocumentSummary;
-import cn.nitrowater.core.web.legal.LegalDocuments;
+import cn.nitrowater.core.web.legal.LegalDocumentService;
+import cn.nitrowater.lib.api.ApiResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -25,31 +29,35 @@ import java.util.List;
  * empty index instead of a stale policy from an old image.</p>
  *
  * <p>Bodies are {@code text/plain} and therefore outside the JSON envelope (see the exception list in
- * {@code AGENTS.md}); the index is normal JSON and is enveloped.</p>
+ * {@code AGENTS.md}); that endpoint needs {@code ResponseEntity} for status codes. The index is a
+ * normal JSON endpoint and returns {@link ApiResponse} directly, matching every other controller;
+ * {@code no-store} is set on the servlet response so the wrapper type stays uniform.</p>
  */
 @RestController
 public class LegalDocumentController {
 
     private static final Logger log = LoggerFactory.getLogger(LegalDocumentController.class);
 
-    private final LegalDocuments documents;
+    private final LegalDocumentService documents;
 
-    public LegalDocumentController(LegalDocuments documents) {
+    public LegalDocumentController(LegalDocumentService documents) {
         this.documents = documents;
     }
 
     /**
-     * @return every published document; empty before anything is uploaded
+     * @param response current response, used to keep the document list out of every cache layer
+     * @return the published documents inside the standard envelope; empty before anything is
+     *         uploaded
      */
     @GetMapping("/api/public/legal")
-    public ResponseEntity<List<LegalDocumentSummary>> index() {
+    public ApiResponse<List<LegalDocumentSummary>> index(HttpServletResponse response) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, CacheControl.noStore().getHeaderValue());
         try {
-            return ResponseEntity.ok()
-                    .cacheControl(CacheControl.noStore())
-                    .body(documents.index());
+            return ApiResponse.success(documents.index());
         } catch (IOException ex) {
             log.warn("Failed to list legal documents: {}", ex.toString());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            // Let GlobalExceptionHandler produce the 500 with the standard envelope.
+            throw new UncheckedIOException(ex);
         }
     }
 

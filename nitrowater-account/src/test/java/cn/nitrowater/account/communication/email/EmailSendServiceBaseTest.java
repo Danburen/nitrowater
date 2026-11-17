@@ -1,6 +1,9 @@
 package cn.nitrowater.account.communication.email;
 
 import cn.nitrowater.account.config.EmailTemplateConfig;
+import cn.nitrowater.account.infra.communication.email.EmailSendServiceBase;
+import cn.nitrowater.account.infra.communication.email.EmailTemplateFragment;
+import cn.nitrowater.account.infra.communication.email.EmailTemplateLayout;
 import cn.nitrowater.core.exception.BizException;
 import cn.nitrowater.lib.api.BaseResponseCode;
 import org.junit.jupiter.api.Test;

@@ -211,11 +211,6 @@ services:
     container_name: nitrowater-bff
     ports:
       - "${PUBLISH_BIND:-127.0.0.1}:8080:8080"
-      # 管理端口（只跑 health）默认不发布：healthcheck 在容器内探测，公网/宿主机都到不了。
-      # 需要从宿主机 curl 时才取消下一行（仍只绑回环，绝不改 0.0.0.0）。
-      # - "${OPS_BIND:-127.0.0.1}:9080:9080"
-    # bff 启动即拉 issuer 的 OIDC discovery（见 application.yml）：公网入口（edge 证书 / frp /
-    # 反代）没就绪时它会崩溃重启，因此先在这里有界等待，等不到才退出（5 分钟后由 restart 接手）。
     entrypoint:
       - sh
       - -c

@@ -14,8 +14,9 @@ import org.springframework.web.bind.annotation.GetMapping;
  * lets {@code spring.web.resources.static-locations} point at the source tree in dev, so a rebuilt
  * {@code static/auth/*} reflects on refresh without a restart.</p>
  *
- * <p>No legal pages: the documents are published by the portal (BFF) only, so the SSO offers no
- * entry point for them.</p>
+ * <p>Legal bodies are not served here: each application hosts its own. The SSO stores the links in
+ * {@code client_legal_link} and the login page renders them from
+ * {@code /api/auth/login-context}.</p>
  *
  * <p>Login remains a native form POST to {@code /login} handled by Spring Security; the
  * {@code SsoAuthenticationProvider} reads the {@code captcha} / {@code deviceFp} fields. Register is a

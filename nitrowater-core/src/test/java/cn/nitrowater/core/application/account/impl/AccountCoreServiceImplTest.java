@@ -7,7 +7,7 @@ import cn.nitrowater.core.application.auth.SingleUseTokenService;
 import cn.nitrowater.core.application.auth.code.VerificationService;
 import cn.nitrowater.core.application.user.UserCoreService;
 import cn.nitrowater.core.application.user.UserDatumCoreService;
-import cn.nitrowater.core.domain.user.UserDatum;
+import cn.nitrowater.core.infrastructure.domain.user.UserDatum;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
 import cn.nitrowater.core.infrastructure.persistence.user.UserDatumRepo;
 import cn.nitrowater.core.infrastructure.persistence.user.UserRepository;

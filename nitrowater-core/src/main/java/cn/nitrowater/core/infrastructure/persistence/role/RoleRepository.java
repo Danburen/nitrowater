@@ -2,7 +2,7 @@ package cn.nitrowater.core.infrastructure.persistence.role;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import cn.nitrowater.core.domain.role.Role;
+import cn.nitrowater.core.infrastructure.domain.role.Role;
 
 import java.util.Optional;
 

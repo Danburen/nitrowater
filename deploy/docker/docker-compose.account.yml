@@ -49,8 +49,9 @@ services:
       BFF_POST_LOGOUT_REDIRECT_URIS: ${BFF_POST_LOGOUT_REDIRECT_URIS:-http://localhost:5173,http://localhost:5173/,http://localhost:8080,http://localhost:8080/}
       SSO_DEFAULT_REDIRECT: ${SSO_DEFAULT_REDIRECT:-http://localhost:5173}
       SSO_FORM_ACTION_ORIGINS: ${SSO_FORM_ACTION_ORIGINS:-http://localhost:5173,http://localhost:8080}
-      # 法务文本只由 bff（门户）提供：SSO 对任意 client 通用，无法得知"这个 client 的后端在哪"，
-      # 故不代理也不挂载，`/api/public/legal*` 404，前端静默不显示入口。
+      # 法务条款链接存在 SSO 自己的 client_legal_link 表（管理端「应用管理 → 法务链接」可加多条），
+      # 登录页直接渲染；正文由各应用自己托管。account 不挂载目录、不抓取、不代理，只负责指路。
+      # 没有待登录应用时（直接 /login、/register）渲染第一方应用的链接。
       # 走 HTTPS 时必须 true。
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       # 与门户一致：超过这个时间必须重新输密码（PromptLoginFilter 在 /oauth2/authorize 强制）。

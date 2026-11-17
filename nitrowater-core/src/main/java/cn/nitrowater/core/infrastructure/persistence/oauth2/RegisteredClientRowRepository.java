@@ -1,6 +1,6 @@
 package cn.nitrowater.core.infrastructure.persistence.oauth2;
 
-import cn.nitrowater.core.domain.oauth2.RegisteredClientRow;
+import cn.nitrowater.core.infrastructure.domain.oauth2.RegisteredClientRow;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 

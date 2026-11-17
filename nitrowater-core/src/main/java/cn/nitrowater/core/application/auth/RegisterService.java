@@ -4,7 +4,7 @@ import org.springframework.transaction.annotation.Transactional;
 import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.api.auth.VerifyScene;
 import cn.nitrowater.core.api.req.auth.RegisterRequest;
-import cn.nitrowater.core.domain.user.User;
+import cn.nitrowater.core.infrastructure.domain.user.User;
 
 public interface RegisterService {
     /**

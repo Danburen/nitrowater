@@ -7,13 +7,15 @@ import java.util.List;
  * Application (OIDC client) view for the admin console.
  *
  * <p>Never carries the client secret: the plaintext is returned exactly once by
- * {@link ClientCreatedVO} (create) or {@link ClientSecretVO} (reset) and is not retrievable afterwards
+ * {@link ClientRegistrationVO} (create) or {@link ClientSecretVO} (reset) and is not retrievable afterwards
  * because only its hash is persisted.</p>
  *
  * @param id                          internal client id (the {@code oauth2_registered_client.id} PK,
  *                                    not the OAuth2 {@code client_id})
  * @param clientId                    public OAuth2 {@code client_id}
  * @param clientName                  display name
+ * @param legalLinks                  documents this application publishes, in display order; the
+ *                                    login page links to them but never hosts the text
  * @param clientAuthenticationMethods authenticated by secret ({@code client_secret_*}) or {@code none}
  * @param authorizationGrantTypes     grant types the client may use
  * @param redirectUris                registered redirect URIs
@@ -31,6 +33,7 @@ public record ClientVO(
         String id,
         String clientId,
         String clientName,
+        List<LegalLinkVO> legalLinks,
         List<String> clientAuthenticationMethods,
         List<String> authorizationGrantTypes,
         List<String> redirectUris,
