@@ -107,6 +107,16 @@ public class VerificationServiceImpl implements VerificationService {
                 : AuthIdentifierUtil.normalizePhone(dto.getTarget());
 
         boolean registered = isTargetRegistered(target, channel);
+        // Login with an unknown target answers instead of pretending to send: the silent success
+        // left the user waiting for an SMS that never came, then locked them out after five bad
+        // attempts. Only "no account" is revealed — a suspended or password-only account still
+        // takes the silent path below, so this cannot probe account status. No per-target cooldown
+        // is recorded here: that limiter is keyed by target alone (not by scene), so it would block
+        // the registration the user is being sent to; the captcha and the per-IP bucket still bound
+        // how fast anyone can probe.
+        if (dto.getScene() == VerifyScene.LOGIN && !registered) {
+            throw new BizException(BaseResponseCode.VERIFY_TARGET_NOT_REGISTERED);
+        }
         // Decide whether a code may actually be sent, without telling the caller why not:
         //  - LOGIN: the account must exist, be ACTIVE, and not be a password-only SYSTEM/TEST one.
         //  - REGISTER: the phone/email must still be free (no point spending an SMS on a taken one).

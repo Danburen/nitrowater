@@ -1,6 +1,5 @@
 package cn.nitrowater.account.config;
 
-import cn.nitrowater.account.service.ClientLegalLinkService;
 import cn.nitrowater.account.service.security.SessionInvalidationListener;
 import cn.nitrowater.lib.utils.StringUtil;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -390,24 +389,19 @@ public class AuthorizationServerConfig {
      * refresh_token). This is what makes the Authorization Server issue a refresh token: it
      * deliberately withholds one from public clients, so the BFF is the supported way to get
      * server-side silent refresh (no iframe).</p>
+     *
+     * <p>Legal links are deliberately not seeded: a link only belongs on the login page if the
+     * application actually publishes the document. The admin console is the single place that
+     * registers them, so nothing reappears after an operator removes it.</p>
      */
     @Bean
     public ApplicationRunner registeredClientSeeder(
             RegisteredClientRepository registeredClientRepository,
-            ClientLegalLinkService clientLegalLinks,
             @Value("${app.oidc.bff-client-secret}") String bffClientSecret,
             @Value("${app.oidc.bff-redirect-uris}") String bffRedirectUris,
-            @Value("${app.oidc.bff-post-logout-redirect-uris}") String bffPostLogoutRedirectUris,
-            @Value("${app.sso.default-redirect:http://localhost:5173}") String portalUrl) {
-        return args -> {
-            upsertClient(registeredClientRepository, BFF_CLIENT_ID,
-                    id -> nitrowaterBffClient(id, bffClientSecret, bffRedirectUris, bffPostLogoutRedirectUris));
-            // The first-party portal publishes these two documents under /legal/<key>. Existing
-            // rows keep their position; the seeder only reconciles the URL (and adds a missing
-            // row), so extra documents added in the console survive a restart.
-            clientLegalLinks.ensure(BFF_CLIENT_ID, "用户协议", legalUrl(portalUrl, "terms"));
-            clientLegalLinks.ensure(BFF_CLIENT_ID, "隐私政策", legalUrl(portalUrl, "privacy"));
-        };
+            @Value("${app.oidc.bff-post-logout-redirect-uris}") String bffPostLogoutRedirectUris) {
+        return args -> upsertClient(registeredClientRepository, BFF_CLIENT_ID,
+                id -> nitrowaterBffClient(id, bffClientSecret, bffRedirectUris, bffPostLogoutRedirectUris));
     }
 
     /**
@@ -452,15 +446,6 @@ public class AuthorizationServerConfig {
             builder.postLogoutRedirectUri(uri);
         }
         return builder.build();
-    }
-
-    /** @return {@code <portal>/legal/<key>}, tolerating a trailing slash on the portal URL */
-    private static String legalUrl(String portalUrl, String key) {
-        String base = portalUrl == null ? "" : portalUrl.strip();
-        while (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        return base + "/legal/" + key;
     }
 
     /** Parses a comma separated list, ignoring blanks. */

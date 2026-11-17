@@ -92,38 +92,6 @@ public class ClientLegalLinkService {
         links.deleteByClientId(clientId);
     }
 
-    /**
-     * Inserts a link if the application has none with that title, and keeps its URL in sync.
-     *
-     * <p>Used by the first-party client seeder: {@code 用户协议} / {@code 隐私政策} follow the
-     * configured portal URL on every start, while extra documents an administrator added through
-     * the console are left untouched.</p>
-     *
-     * @param clientId OAuth2 {@code client_id}
-     * @param title    link label
-     * @param url      absolute URL of the document
-     */
-    @Transactional
-    public void ensure(String clientId, String title, String url) {
-        if (StringUtil.isBlank(clientId) || StringUtil.isBlank(title) || StringUtil.isBlank(url)) {
-            return;
-        }
-        String trimmedTitle = title.strip();
-        String trimmedUrl = url.strip();
-        List<ClientLegalLink> existing = links.findByClientIdOrderBySortOrderAscIdAsc(clientId);
-        for (ClientLegalLink link : existing) {
-            if (trimmedTitle.equals(link.getTitle())) {
-                if (!trimmedUrl.equals(link.getUrl())) {
-                    link.setUrl(trimmedUrl);
-                    links.save(link);
-                }
-                return;
-            }
-        }
-        int order = existing.stream().mapToInt(ClientLegalLink::getSortOrder).max().orElse(-1) + 1;
-        save(clientId, trimmedTitle, trimmedUrl, order);
-    }
-
     private void save(String clientId, String title, String url, int sortOrder) {
         ClientLegalLink link = new ClientLegalLink();
         link.setClientId(clientId);

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElButton, ElCheckbox, ElIcon, ElInput } from 'element-plus'
 import { ArrowDown, Iphone, Lock, Message, User } from '@element-plus/icons-vue'
 
@@ -20,6 +21,13 @@ const username = ref('')
 const phone = ref('')
 const smsCode = ref('')
 const password = ref('')
+
+// Handoff from the login page ("no account for this phone"): carry the number over so it does not
+// have to be retyped. Anything that is not a mainland mobile number is ignored rather than
+// pre-filled blindly.
+const handoffPhone = useRoute().query.phone
+const initialPhone = typeof handoffPhone === 'string' ? handoffPhone.trim() : ''
+if (/^1[3-9]\d{9}$/.test(initialPhone)) phone.value = initialPhone
 
 const showOptional = ref(false)
 const errorMessage = ref('')

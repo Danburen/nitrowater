@@ -39,6 +39,8 @@ public enum BaseResponseCode implements ResponseCode {
     EMAIL_ALREADY_USED("general.verification.already_exists"),
     PHONE_NUMBER_ALREADY_USED("general.verification.already_exists"),
     VERIFY_CODE_INVALID("verify.code.invalid"),
+    /** No account is bound to the phone / email a login code was requested for. */
+    VERIFY_TARGET_NOT_REGISTERED("auth.target.not_registered"),
 
     USER_ALREADY_EXISTS("user.verify.already_exists"),
     USER_NOT_FOUND("user.not_found"),

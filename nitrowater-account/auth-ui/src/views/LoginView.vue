@@ -68,6 +68,8 @@ const codeNotice = ref('')
 const sendingCode = ref(false)
 const codeSubmitting = ref(false)
 const showCodeCaptcha = ref(false)
+/** Phone handed to the register page after the server said no account exists for it. */
+const codeNeedRegister = ref('')
 /** Target the last code was sent to; changing the identifier invalidates the input + cookie. */
 const codeSentTo = ref('')
 const {
@@ -112,6 +114,7 @@ watch(codeIdentifier, () => {
     loginCode.value = ''
     codeNotice.value = ''
     codeError.value = ''
+    codeNeedRegister.value = ''
   }
   if (target && channelOf(target)) {
     restoreCodeCooldown(codeScope())
@@ -146,6 +149,7 @@ async function sendCodeWithCaptcha(captcha: string) {
   sendingCode.value = true
   codeError.value = ''
   codeNotice.value = ''
+  codeNeedRegister.value = ''
   try {
     await sendLoginCode(target, channel, captcha)
     codeSentTo.value = target
@@ -153,6 +157,12 @@ async function sendCodeWithCaptcha(captcha: string) {
     startCodeCooldown(60, codeScope())
   } catch (error) {
     codeError.value = messageOf(error)
+    // The server only reports "no account" for this target; carry the number over to registration.
+    // Email registrations do not exist (the account center binds an email later), so no link there.
+    codeNeedRegister.value =
+      channel === 'sms' && error instanceof ApiError && error.code === 'auth.target.not_registered'
+        ? target
+        : ''
     syncCodeCooldown(error, codeScope())
   } finally {
     sendingCode.value = false
@@ -358,6 +368,13 @@ onMounted(() => {
         role="alert"
       >
         {{ codeError }}
+        <RouterLink
+          v-if="codeNeedRegister"
+          :to="{ path: '/register', query: { phone: codeNeedRegister } }"
+          class="auth-link ml-1"
+        >
+          前往注册
+        </RouterLink>
       </div>
 
       <div>
@@ -427,19 +444,14 @@ onMounted(() => {
     <!--
       Passive notice, not a checkbox: the account already accepted the documents at registration.
       The links are the ones this application registered (client_legal_link); the SSO renders them
-      in order and never hosts or fetches the texts.
+      in order and never hosts or fetches the texts. Nothing registered means nothing to show —
+      a sentence that names no document and links nowhere is worse than no notice at all.
     -->
     <p
       v-if="hasLegalLinks"
       class="mt-4 text-center text-[11px] leading-5 text-faint"
     >
       继续即表示你已阅读并同意<LegalDocList :links="legalLinks" />。
-    </p>
-    <p
-      v-else
-      class="mt-4 text-center text-[11px] leading-5 text-faint"
-    >
-      继续即表示你已阅读并同意本服务的使用条款与隐私政策。
     </p>
 
     <CaptchaDialog
