@@ -33,7 +33,7 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app
 `docker-compose.app.yml` / `docker-compose.account.yml` 使用外部网络 `nitrowater-net`，需要先创建。
 Piston 只连 `nitrowater-runner-net`（app compose 内创建），server 同时连两个网络。
 
-`mysql` 容器**不挂 initdb 脚本**：首次部署要在 infra 起来之后，按 `deploy/README.md` §6
+`mysql` 容器**不挂 initdb 脚本**：首次部署要在 infra 起来之后，按 `deploy/docs/bootstrap.md` §5
 手工建 `nitrowater_{account,biz,resource}` 三个库和业务账号，再起 account / app（顺序反了会 `Access denied`）。
 表结构由 Flyway 首次启动从基线重放。
 
@@ -45,7 +45,7 @@ Piston 只连 `nitrowater-runner-net`（app compose 内创建），server 同时
 | `NITROWATER_KEK` | account | 32 字节 AES KEK 的 Base64，缺失即启动失败 |
 | `DEVICE_SALT` | account | 设备指纹盐 |
 | `BFF_CLIENT_SECRET` | account / bff | OIDC 机密客户端密钥，yml 无默认值 |
-| `DB_USERNAME` / `DB_PASSWORD` | 全部 | 业务连库账号，手工创建（`deploy/README.md` §6）；compose 无默认值，缺失即启动失败 |
+| `DB_USERNAME` / `DB_PASSWORD` | 全部 | 业务连库账号，手工创建（`deploy/docs/bootstrap.md` §5）；compose 无默认值，缺失即启动失败 |
 | `SPRING_DATASOURCE_URL` | 全部 | 含 `connectionTimeZone=UTC&preserveInstants=true` |
 | `RESOURCE_INTERNAL_TOKEN` | resource / server | `/internal/**` 共享密钥 |
 | `RESOURCE_DATA_DIR` | resource | 资源字节落盘的宿主机目录（bind mount 到 `/data/resource`），`local` 后端必填 |
@@ -60,13 +60,8 @@ Piston 只连 `nitrowater-runner-net`（app compose 内创建），server 同时
 
 ## 3. issuer 与网络
 
-`JWT_ISSUER` 是最容易配错的一项：
-
-- 必须是一个 **URL**（OIDC Discovery 要求 issuer 与 `metadata.issuer` 完全一致）。
-- 浏览器、BFF、server、resource 必须看到**同一个字符串**；容器内写 `http://account:8090` 而浏览器写 `https://auth.example.com` 会导致 issuer 不匹配。
-- 生产建议统一为公网域名（如 `https://auth.nitrowater.cn`），并让容器能解析该域名（内部 DNS 或 hosts）。
-
-BFF 启动时会拉 account 的 discovery；account 未就绪时 BFF 会启动失败，因此 compose 里需要依赖排序或重试。
+`JWT_ISSUER` 必须是公网 URL，且浏览器与所有服务看到同一个字符串（生产建议 `https://auth.example.com`）。
+BFF 启动时会拉 account 的 discovery，account 未就绪时 BFF 会启动失败。
 
 ## 4. 资源与容量
 
