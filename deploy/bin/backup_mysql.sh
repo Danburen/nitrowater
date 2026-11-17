@@ -14,7 +14,7 @@
 #   crontab -e  ->  0 3 * * * /opt/nitrowater/deploy/bin/backup_mysql.sh >/dev/null 2>&1
 #
 # deploy.yml calls this before replacing containers; a non-zero exit aborts the deploy.
-# Exit codes: 0 = dump written and verified; 1 = no fresh backup was produced.
+# Exit codes: 0 = dump written (or nothing to back up yet); 1 = no fresh backup.
 # ============================================================
 set -euo pipefail
 
@@ -99,6 +99,15 @@ fi
 
 size="$(wc -c < "$TMP_FILE" | tr -d '[:space:]')"
 schemas="$(gzip -dc "$TMP_FILE" | grep -c '^CREATE DATABASE' || true)"
+tables="$(gzip -dc "$TMP_FILE" | grep -c '^CREATE TABLE' || true)"
+
+# First deploy: the schemas exist but Flyway has not run yet, so there is nothing to save.
+if [ "${tables:-0}" -eq 0 ] && [ "${schemas:-0}" -eq "${#DATABASES[@]}" ]; then
+    rm -f "$TMP_FILE"
+    log "skip: schemas are empty, nothing to back up yet"
+    exit 0
+fi
+
 if [ "$size" -lt 4096 ] || [ "${schemas:-0}" -lt "${#DATABASES[@]}" ]; then
     rm -f "$TMP_FILE"
     log "FAILED: incomplete dump (${size} bytes, ${schemas:-0}/${#DATABASES[@]} schemas)"
