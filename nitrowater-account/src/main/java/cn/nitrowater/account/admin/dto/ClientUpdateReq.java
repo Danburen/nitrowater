@@ -21,10 +21,9 @@ import java.util.List;
  * @param redirectUris                redirect URIs (required by the authorization_code grant)
  * @param postLogoutRedirectUris      RP-initiated logout back-channels
  * @param scopes                      requestable scopes (e.g. {@code openid}, {@code profile})
- * @param requireProofKey             PKCE; defaults to true for public clients, false otherwise
- * @param requireAuthorizationConsent whether the consent screen is shown; defaults to false
- * @param accessTokenTtlMinutes       access-token lifetime in minutes; defaults to 15
- * @param refreshTokenTtlDays         refresh-token lifetime in days; defaults to 30
+ *
+ * <p>See {@link ClientCreateReq}: PKCE, consent and token lifetimes are derived/fixed and are not
+ * accepted from the caller.</p>
  */
 public record ClientUpdateReq(
         @NotBlank(message = "client name is required")
@@ -47,13 +46,5 @@ public record ClientUpdateReq(
         List<String> postLogoutRedirectUris,
 
         @NotEmpty(message = "at least one scope is required")
-        List<@NotBlank String> scopes,
-
-        Boolean requireProofKey,
-
-        Boolean requireAuthorizationConsent,
-
-        Integer accessTokenTtlMinutes,
-
-        Integer refreshTokenTtlDays) {
+        List<@NotBlank String> scopes) {
 }

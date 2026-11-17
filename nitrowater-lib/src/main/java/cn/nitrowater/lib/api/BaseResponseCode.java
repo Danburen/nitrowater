@@ -168,6 +168,8 @@ public enum BaseResponseCode implements ResponseCode {
     CLIENT_ALREADY_EXISTS("admin.client.already_exists"),
     CLIENT_ALREADY_EXISTS_WITH_ARGS("admin.client.already_exists.args"),
     CAN_NOT_DELETE_BUILTIN_CLIENT("admin.client.built_in_protected"),
+    /** The first-party client is owned by the deployment configuration, not by the console. */
+    CLIENT_MANAGED_BY_CONFIG("admin.client.managed_by_config"),
     CLIENT_NOT_CONFIDENTIAL("admin.client.not_confidential"),
     CLIENT_LEGAL_LINK_DUPLICATE_TITLE("admin.client.legal_link.duplicate_title"),
 

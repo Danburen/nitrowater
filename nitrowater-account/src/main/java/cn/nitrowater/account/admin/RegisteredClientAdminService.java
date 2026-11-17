@@ -165,8 +165,7 @@ public class RegisteredClientAdminService {
         }
         applySettings(builder, authMethods,
                 req.authorizationGrantTypes(), req.redirectUris(), req.postLogoutRedirectUris(),
-                req.scopes(), req.requireProofKey(), req.requireAuthorizationConsent(),
-                req.accessTokenTtlMinutes(), req.refreshTokenTtlDays(), confidential);
+                req.scopes(), confidential);
 
         RegisteredClient client = builder.build();
         registeredClientRepository.save(client);
@@ -183,6 +182,13 @@ public class RegisteredClientAdminService {
     @Transactional
     public ClientRegistrationVO updateClient(String id, ClientUpdateReq req) {
         RegisteredClient existing = requireClient(id);
+        if (AuthorizationServerConfig.BFF_CLIENT_ID.equals(existing.getClientId())) {
+            // Rebuilt from configuration on every start; the legal links are the only part the
+            // seeder does not own, so everything else is left exactly as the seeder wrote it.
+            clientLegalLinks.replace(existing.getClientId(), inputsOf(req.legalLinks()));
+            return new ClientRegistrationVO(
+                    toVO(existing, clientLegalLinks.findByClientId(existing.getClientId())), null);
+        }
         Set<String> authMethods = normalized(req.clientAuthenticationMethods());
         boolean confidential = isConfidential(authMethods);
         boolean mintSecret = confidential && existing.getClientSecret() == null;
@@ -201,8 +207,7 @@ public class RegisteredClientAdminService {
         }
         applySettings(builder, authMethods,
                 req.authorizationGrantTypes(), req.redirectUris(), req.postLogoutRedirectUris(),
-                req.scopes(), req.requireProofKey(), req.requireAuthorizationConsent(),
-                req.accessTokenTtlMinutes(), req.refreshTokenTtlDays(), confidential);
+                req.scopes(), confidential);
 
         RegisteredClient updated = builder.build();
         registeredClientRepository.save(updated);
@@ -215,6 +220,11 @@ public class RegisteredClientAdminService {
     @Transactional
     public ClientSecretVO resetSecret(String id) {
         RegisteredClient existing = requireClient(id);
+        if (AuthorizationServerConfig.BFF_CLIENT_ID.equals(existing.getClientId())) {
+            // The secret comes from BFF_CLIENT_SECRET; rotating it here would only break the BFF
+            // until the next start puts the configured one back.
+            throw new BizException(BaseResponseCode.CLIENT_MANAGED_BY_CONFIG, existing.getClientId());
+        }
         if (!isConfidential(authMethodsOf(existing))) {
             throw new BizException(BaseResponseCode.CLIENT_NOT_CONFIDENTIAL, existing.getClientId());
         }
@@ -254,12 +264,17 @@ public class RegisteredClientAdminService {
         return client;
     }
 
-    /** Applies the shared collection + settings fields onto a builder. */
+    /**
+     * Applies the shared collection fields plus the derived auth settings onto a builder.
+     *
+     * <p>Nothing here is operator-configurable: PKCE is mandatory for public clients (their only
+     * protection) and off for confidential ones, no consent page is shown, and the token lifetimes
+     * are the constants below. The seeded first-party client would overwrite anything else on the
+     * next start, so exposing these as inputs only produced settings that silently reverted.</p>
+     */
     private static void applySettings(RegisteredClient.Builder builder, Set<String> authMethods,
             List<String> grantTypes, List<String> redirectUris, List<String> postLogoutRedirectUris,
-            List<String> scopes, Boolean requireProofKey, Boolean requireAuthorizationConsent,
-            Integer accessTokenTtlMinutes, Integer refreshTokenTtlDays,
-            boolean confidential) {
+            List<String> scopes, boolean confidential) {
         for (String method : authMethods) {
             builder.clientAuthenticationMethod(new ClientAuthenticationMethod(method));
         }
@@ -275,18 +290,13 @@ public class RegisteredClientAdminService {
         for (String scope : normalized(scopes)) {
             builder.scope(scope);
         }
-        // PKCE defaults to on for public clients (where it is the only protection) and off for
-        // confidential clients (authenticated by secret), mirroring the seeder's BFF client.
-        boolean proofKey = requireProofKey != null ? requireProofKey : !confidential;
-        boolean consent = Boolean.TRUE.equals(requireAuthorizationConsent);
-        ClientSettings settings = ClientSettings.builder()
-                .requireProofKey(proofKey)
-                .requireAuthorizationConsent(consent)
-                .build();
-        builder.clientSettings(settings);
+        builder.clientSettings(ClientSettings.builder()
+                .requireProofKey(!confidential)
+                .requireAuthorizationConsent(false)
+                .build());
         builder.tokenSettings(TokenSettings.builder()
-                .accessTokenTimeToLive(minutesOrDefault(accessTokenTtlMinutes, DEFAULT_ACCESS_TOKEN_TTL))
-                .refreshTokenTimeToLive(daysOrDefault(refreshTokenTtlDays, DEFAULT_REFRESH_TOKEN_TTL))
+                .accessTokenTimeToLive(DEFAULT_ACCESS_TOKEN_TTL)
+                .refreshTokenTimeToLive(DEFAULT_REFRESH_TOKEN_TTL)
                 .reuseRefreshTokens(false)
                 .build());
     }
@@ -351,14 +361,6 @@ public class RegisteredClientAdminService {
             }
         }
         return result;
-    }
-
-    private static Duration minutesOrDefault(Integer minutes, Duration fallback) {
-        return (minutes == null || minutes <= 0) ? fallback : Duration.ofMinutes(minutes);
-    }
-
-    private static Duration daysOrDefault(Integer days, Duration fallback) {
-        return (days == null || days <= 0) ? fallback : Duration.ofDays(days);
     }
 
     /** URL-safe Base64 of {@value #SECRET_BYTES} random bytes, without padding. */

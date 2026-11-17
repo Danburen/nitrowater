@@ -66,6 +66,7 @@ export interface ClientVO {
   redirectUris: string[]
   postLogoutRedirectUris: string[]
   scopes: string[]
+  /** Derived server-side (public clients get PKCE); shown read-only in the console. */
   requireProofKey: boolean
   requireAuthorizationConsent: boolean
   accessTokenTtlMinutes: number
@@ -97,10 +98,6 @@ export interface ClientForm {
   redirectUris: string[]
   postLogoutRedirectUris: string[]
   scopes: string[]
-  requireProofKey: boolean
-  requireAuthorizationConsent: boolean
-  accessTokenTtlMinutes: number
-  refreshTokenTtlDays: number
 }
 
 export interface RoleForm {

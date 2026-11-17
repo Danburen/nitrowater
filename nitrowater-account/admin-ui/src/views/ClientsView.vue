@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import { adminApi, type ClientForm, type ClientVO } from '@/api/admin'
 import AdminFilterCard from '@/components/AdminFilterCard.vue'
@@ -26,13 +26,12 @@ interface FormState {
   redirectUrisText: string
   postLogoutRedirectUrisText: string
   scopes: string[]
-  requireProofKey: boolean
-  requireAuthorizationConsent: boolean
-  accessTokenTtlMinutes: number
-  refreshTokenTtlDays: number
 }
 
 const form = ref<FormState>(blankForm())
+
+/** The seeded first-party client is rebuilt on every start, so its auth settings are read-only. */
+const seeded = computed(() => editing.value?.protectedClient === true)
 
 /** One-time secret reveal. */
 const secretVisible = ref(false)
@@ -61,10 +60,6 @@ function blankForm(): FormState {
     redirectUrisText: '',
     postLogoutRedirectUrisText: '',
     scopes: ['openid', 'profile'],
-    requireProofKey: false,
-    requireAuthorizationConsent: false,
-    accessTokenTtlMinutes: 15,
-    refreshTokenTtlDays: 30,
   }
 }
 
@@ -139,10 +134,6 @@ function openEdit(row: ClientVO) {
     redirectUrisText: arrayToLines(row.redirectUris),
     postLogoutRedirectUrisText: arrayToLines(row.postLogoutRedirectUris),
     scopes: [...row.scopes],
-    requireProofKey: row.requireProofKey,
-    requireAuthorizationConsent: row.requireAuthorizationConsent,
-    accessTokenTtlMinutes: row.accessTokenTtlMinutes,
-    refreshTokenTtlDays: row.refreshTokenTtlDays,
   }
   dialogVisible.value = true
 }
@@ -159,10 +150,6 @@ function buildPayload(): ClientForm {
     redirectUris: linesToArray(form.value.redirectUrisText),
     postLogoutRedirectUris: linesToArray(form.value.postLogoutRedirectUrisText),
     scopes: [...form.value.scopes],
-    requireProofKey: form.value.requireProofKey,
-    requireAuthorizationConsent: form.value.requireAuthorizationConsent,
-    accessTokenTtlMinutes: form.value.accessTokenTtlMinutes,
-    refreshTokenTtlDays: form.value.refreshTokenTtlDays,
   }
 }
 
@@ -176,10 +163,6 @@ function toUpdatePayload(full: ClientForm): Omit<ClientForm, 'clientId'> {
     redirectUris: full.redirectUris,
     postLogoutRedirectUris: full.postLogoutRedirectUris,
     scopes: full.scopes,
-    requireProofKey: full.requireProofKey,
-    requireAuthorizationConsent: full.requireAuthorizationConsent,
-    accessTokenTtlMinutes: full.accessTokenTtlMinutes,
-    refreshTokenTtlDays: full.refreshTokenTtlDays,
   }
 }
 
@@ -430,7 +413,7 @@ onMounted(load)
             <el-button
               link
               type="warning"
-              :disabled="!row.confidential"
+              :disabled="!row.confidential || row.protectedClient"
               @click="resetSecret(row)"
             >
               重置密钥
@@ -478,6 +461,7 @@ onMounted(load)
         <el-form-item label="名称">
           <el-input
             v-model="form.clientName"
+            :disabled="seeded"
             placeholder="应用显示名"
           />
         </el-form-item>
@@ -489,6 +473,7 @@ onMounted(load)
             v-model="form.clientAuthenticationMethods"
             multiple
             class="w-full"
+            :disabled="seeded"
             placeholder="选择认证方式"
           >
             <el-option
@@ -504,6 +489,7 @@ onMounted(load)
             v-model="form.authorizationGrantTypes"
             multiple
             class="w-full"
+            :disabled="seeded"
             placeholder="选择授权类型"
           >
             <el-option
@@ -519,6 +505,7 @@ onMounted(load)
             v-model="form.redirectUrisText"
             type="textarea"
             :rows="3"
+            :disabled="seeded"
             placeholder="一行一个，如 https://example.com/login/oauth2/code/nitrowater"
           />
         </el-form-item>
@@ -527,6 +514,7 @@ onMounted(load)
             v-model="form.postLogoutRedirectUrisText"
             type="textarea"
             :rows="2"
+            :disabled="seeded"
             placeholder="一行一个（RP-initiated logout）"
           />
         </el-form-item>
@@ -538,6 +526,7 @@ onMounted(load)
             allow-create
             default-first-option
             class="w-full"
+            :disabled="seeded"
             placeholder="如 openid / profile，可自定义"
           >
             <el-option
@@ -549,25 +538,16 @@ onMounted(load)
           </el-select>
         </el-form-item>
         <el-form-item label="PKCE">
-          <el-switch v-model="form.requireProofKey" />
-          <span class="ml-2 text-xs text-faint">{{ isPublicOnly(form.clientAuthenticationMethods) ? '公开客户端建议开启' : '机密客户端可选' }}</span>
+          <span class="text-sm text-dim">{{ (editing ? editing.requireProofKey : isPublicOnly(form.clientAuthenticationMethods)) ? '开启' : '不要求' }}</span>
         </el-form-item>
         <el-form-item label="授权同意页">
-          <el-switch v-model="form.requireAuthorizationConsent" />
+          <span class="text-sm text-dim">{{ editing?.requireAuthorizationConsent ? '显示' : '不显示' }}</span>
         </el-form-item>
-        <el-form-item label="AT 有效期(分)">
-          <el-input-number
-            v-model="form.accessTokenTtlMinutes"
-            :min="1"
-            :max="1440"
-          />
+        <el-form-item label="AT 有效期">
+          <span class="text-sm text-dim">{{ editing?.accessTokenTtlMinutes ?? 15 }} 分钟</span>
         </el-form-item>
-        <el-form-item label="RT 有效期(天)">
-          <el-input-number
-            v-model="form.refreshTokenTtlDays"
-            :min="1"
-            :max="365"
-          />
+        <el-form-item label="RT 有效期">
+          <span class="text-sm text-dim">{{ editing?.refreshTokenTtlDays ?? 30 }} 天</span>
         </el-form-item>
       </el-form>
       <template #footer>
