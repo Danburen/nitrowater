@@ -122,7 +122,10 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: ${JWT_ISSUER:http://localhost:8090}
-          jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
+          # JWKS 可以走内网（如容器网络内 http://account:8090/oauth2/jwks）：issuer 是"签发者标识"，
+          # 必须保持公网值供 iss 校验；而取公钥这一跳没有任何理由穿公网/边缘（VPC 内访问自身
+          # 公网 EIP 往往没有回环）。不设 JWT_JWK_SET_URI 时沿用 issuer，行为不变。
+          jwk-set-uri: ${JWT_JWK_SET_URI:${JWT_ISSUER:http://localhost:8090}/oauth2/jwks}
   config:
     import:
       - optional:file:./bin/dev/common.yml

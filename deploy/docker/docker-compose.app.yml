@@ -109,6 +109,8 @@ services:
         max-file: "3"
     environment:
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
+      # JWKS 走容器网络，不穿公网/边缘；issuer 仍是公网值（只用于 iss 校验）。
+      JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:-http://account:8090/oauth2/jwks}
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_resource?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
@@ -132,6 +134,12 @@ services:
       RESOURCE_PLUGIN_MAX_SIZE: ${RESOURCE_PLUGIN_MAX_SIZE:-67108864}
       RESOURCE_CACHE_MARGIN: ${RESOURCE_CACHE_MARGIN:-60}
       RESOURCE_JWT_AUDIENCES: ${RESOURCE_JWT_AUDIENCES:-nitrowater-resource}
+    # 服务端互调必须解析到内网：JWT_ISSUER 指向公网 EIP，而 VPC 内访问自己的公网 IP
+    # 没有回环（连接被 RST），拉 JWKS 会失败，随后所有 /api/** 都被判 401。
+    # host-gateway = 容器看到的宿主机地址，nginx-proxy 在那上面发布 443；不可达时用
+    # OIDC_ISSUER_HOST 指定内网 IP（例：172.18.0.10，即 nginx-proxy 容器地址）。
+    extra_hosts:
+      - "sso.nitrowater.cn:${OIDC_ISSUER_HOST:-host-gateway}"
     mem_limit: 512m
     restart: unless-stopped
     networks:
@@ -154,6 +162,8 @@ services:
         max-file: "3"
     environment:
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8090}
+      # JWKS 走容器网络，不穿公网/边缘；issuer 仍是公网值（只用于 iss 校验）。
+      JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:-http://account:8090/oauth2/jwks}
       # 浏览器跨域白名单（Bearer-only，不带 Cookie）。生产写真实站点域名。
       CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:*,http://127.0.0.1:*,https://nitrowater.cn,https://*.nitrowater.cn}
       SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/nitrowater_biz?createDatabaseIfNotExist=true&useSSL=false&connectionTimeZone=UTC&preserveInstants=true&forceConnectionTimeZoneToSession=true&characterEncoding=utf8&allowPublicKeyRetrieval=true"
@@ -196,6 +206,9 @@ services:
       - ${CONTENT_ROOT:-../content}/docs:${AI_DOCS_ROOT:-/etc/nitrowater/docs}:ro
     depends_on:
       - qdrant
+    # 服务端互调必须解析到内网（见 resource 服务的说明）：JWT 校验要从 issuer 拉 JWKS。
+    extra_hosts:
+      - "sso.nitrowater.cn:${OIDC_ISSUER_HOST:-host-gateway}"
     mem_limit: 768m
     restart: unless-stopped
     networks:
@@ -220,6 +233,8 @@ services:
           i=$$((i+1))
           if [ "$$i" -gt 100 ]; then
             echo "issuer unreachable after 5m: $$JWT_ISSUER" >&2
+            echo "  hint: resolve it to the internal edge (extra_hosts / OIDC_ISSUER_HOST in this file);" >&2
+            echo "        a VPC-internal container cannot reach this host's own public IP." >&2
             exit 1
           fi
           echo "waiting for $$JWT_ISSUER ..."
@@ -264,6 +279,11 @@ services:
       - server
       - resource
       - docs
+    # 最关键的一处：回调里换令牌（/oauth2/token）、RP-Initiated Logout 的撤销、
+    # 刷新令牌全走 JWT_ISSUER 的域名。若容器把它解析成公网 EIP，VPC 内没有回环会
+    # 直接被 RST → 新登录一律 /login?error，老会话在 AT 过期后被 BffTokenService 销毁。
+    extra_hosts:
+      - "sso.nitrowater.cn:${OIDC_ISSUER_HOST:-host-gateway}"
     mem_limit: 512m
     restart: unless-stopped
     networks:

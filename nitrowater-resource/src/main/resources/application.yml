@@ -49,7 +49,8 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: ${JWT_ISSUER:http://localhost:8090}
-          jwk-set-uri: ${JWT_ISSUER:http://localhost:8090}/oauth2/jwks
+          # 同 server：issuer 保持公网值做 iss 校验，JWKS 走内网（不设则沿用 issuer）。
+          jwk-set-uri: ${JWT_JWK_SET_URI:${JWT_ISSUER:http://localhost:8090}/oauth2/jwks}
 
 # -------- JWT 校验（audience 收紧；Spring 默认不校验 aud）--------
 # 注意：AS 的 app.oidc.access-token-audiences 必须包含 nitrowater-resource（account 已默认同时签
