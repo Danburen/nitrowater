@@ -162,7 +162,8 @@ PASSWORD="$(read_password)"
 # Printable ASCII only (no space): the digest is over the password's bytes, and the tool that
 # computes it sees whatever the console/pipe hands over (a Windows console may be GBK while the
 # service hashes UTF-8). Restricting the alphabet removes that class of mismatch entirely.
-[[ "$PASSWORD" =~ ^[!-~]+$ ]] ||
+leftover="$(printf '%s' "$PASSWORD" | LC_ALL=C tr -d '!-~' | LC_ALL=C wc -c)"
+[ "$leftover" -eq 0 ] ||
     die "password must be printable ASCII (letters, digits, punctuation; no spaces or non-ASCII)"
 
 # BCrypt cost 10 to match Spring's default: a cost-5 digest (htpasswd's default)
