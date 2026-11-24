@@ -68,7 +68,6 @@ npm run dev        # http://localhost:5173 → /api /bff /oauth2 /login /logout 
 | bff（门户 / SPA / 代理） | 8080 | http://localhost:8080 |
 | server（业务 API + 沙箱运行器） | 8081 | `/api/**`（经 BFF 访问） |
 | resource（资源/插件 jar） | 8093 | `/api/resource/**`（经 BFF 访问） |
-| docs（插件文档 nginx） | 8085 | `/plugin/**`（经 BFF 访问） |
 | Vite dev（可选） | 5173 | http://localhost:5173 |
 
 ## dev/ — 数据、密钥与同步（不参与日常启动）

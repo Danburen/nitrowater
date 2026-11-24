@@ -72,7 +72,7 @@ const POST_LOGIN_KEY = 'nitrowater:post-login'
  * e.g. logging in from the code-runner after an earlier visit to {@code /admin} would land on the
  * (unauthorized) admin console instead of coming back to the tool.</p>
  *
- * @param returnTo in-app path to navigate to after login (e.g. {@code /tools/code-runner}); defaults to
+ * @param returnTo in-app path to navigate to after login (e.g. {@code /runner}); defaults to
  *                 the current in-app location
  */
 export function login(returnTo?: string): void {

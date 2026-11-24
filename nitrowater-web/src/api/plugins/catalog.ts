@@ -6,8 +6,8 @@
  *   from `/api/public/plugins`, so it can be maintained from the admin console without a redeploy;
  * - its downloads are jars on the unified resource service
  *   (`/api/public/resources?app=…&group=<key>`, see {@link fetchPluginResources});
- * - its documentation is a VitePress sub-site published in the plugin-docs image (independent repo,
- *   `nitrowater-plugin-docs`) and served same-origin at `/plugin/<key>/` through the BFF.
+ * - its documentation is an external URL maintained in the `docsUrl` field and opened directly;
+ *   this SPA no longer hosts or proxies a docs site.
  */
 import { readJson } from '../envelope'
 import type { Page } from '../types'

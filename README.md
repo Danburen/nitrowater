@@ -15,23 +15,24 @@
 
 English | [简体中文](docs/readme/zh.md)
 
-**One platform for Minecraft server owners** — a server toolbox, a plugin centre and an AI assistant, behind a self-hosted SSO / OIDC identity centre. The browser never holds a token: the BFF keeps the credentials and proxies every API call.
+**One platform for Minecraft server owners** — a plugin centre, an AI assistant and a login-gated code runner, behind a self-hosted SSO / OIDC identity centre. Browser-local tools ship as a separate static package. The browser never holds a token: the BFF keeps the credentials and proxies every API call.
 
-- 💪 **One account, one door** — sign in once for the portal, the toolbox, the plugin centre and the chat.
+- 💪 **One account, one door** — sign in once for the portal, the code runner, the plugin centre and the chat.
 - 🔐 **Tokens stay on the server** — confidential OIDC client plus an HttpOnly session; `/api/**` is proxied by the BFF with a bearer token.
-- 🧰 **Eleven browser tools** — MOTD, `server.properties`, `server-icon`, start scripts, archives, tree views, Java→TypeScript, MP4→GIF, Markdown→Word and a code runner.
+- 🧰 **Split tooling** — `nitrowater-tools/` is an independently deployable browser-local toolbox; `/runner` on this site is the online, login-only code runner.
 - 🤖 **NitroBot** — retrieval over your own indexed documentation, web search, sandboxed code execution and long-term memory.
 - 🧱 **Boring infrastructure** — Gradle multi-module backend, Vue 3 SPA, Flyway-owned schemas, Docker Compose deploy.
 
 ## 🧭 What's NitroWater
 
-Running a Minecraft server means juggling a dozen unrelated sites — MOTD, `server.properties`, icons, start scripts, plugins, documentation. NitroWater pulls that daily work into one same-origin platform with one account.
+Running a Minecraft server means juggling a dozen unrelated sites — plugins, documentation, code snippets and server configuration. NitroWater keeps the account-bound work on one same-origin platform and ships browser-local tools as a standalone image.
 
 ### Module map
 
 | Module | Tech | Role |
 |---|---|---|
-| `nitrowater-web` | Vue 3, TypeScript, Vite, Tailwind | Portal, toolbox, plugin centre, chat, admin console |
+| `nitrowater-web` | Vue 3, TypeScript, Vite, Tailwind | Portal, code runner, plugin centre, chat, admin console |
+| `nitrowater-tools` | Vue 3, Vite, nginx | Standalone browser-local toolbox image |
 | `nitrowater-bff` | Spring Boot, Spring Security OAuth2 client | Login, session, `/api/**` proxy, serves the SPA |
 | `nitrowater-account` | Spring Authorization Server, Vue 3 workspace | SSO / OIDC identity centre |
 | `nitrowater-server` | Spring Boot, Spring AI, JPA + Flyway | Plugin centre, AI agent, code runner |
@@ -47,22 +48,21 @@ The browser only talks to the BFF — access and refresh tokens never leave the 
 - Self-hosted authorization server: authorization code + PKCE, refresh tokens, RP-initiated logout, JWKS and userinfo.
 - Login, registration, CAPTCHA and account switches, with `SUPER_ADMIN` / `ADMIN` / `USER` roles carried in the JWT.
 
-### Server toolbox
+### Offline tools and code runner
 
-Eleven tools, most of them running entirely in the browser (WebAssembly / workers), so files never leave the machine:
-
-- **MOTD editor** — `&` / `§` colour codes, live two-line preview, export as legacy, `server.properties` or JSON.
-- **`server.properties` generator** — grouped form, presets, import of an existing file, unknown keys preserved, live validation.
-- **`server-icon` generator** and **start scripts** for the usual JVM flags.
-- **Archives and trees** — ZIP create/extract, directory tree, ListTree chart rendering.
-- **Converters** — Java→TypeScript, MP4→GIF, Markdown→Word.
-- **Code runner** — JavaScript, TypeScript, Python and Lua in a worker sandbox, with the server-side Piston sandbox for judging.
+- **Offline toolbox** lives in the standalone `nitrowater-tools/` package and is published as a static
+  image. MOTD, `server.properties`, server icons, start scripts, archives, trees, Java→TypeScript,
+  MP4→GIF and Markdown→Word all run in the browser, so files never leave the machine. The portal
+  links to it with the build-time `VITE_OFFLINE_TOOLS_URL` placeholder.
+- **Code runner** stays on this site at `/runner` and requires login. It reuses the server-side Piston
+  sandbox for Java / C / C++ / Python / JS / TS / Lua; the agent's "open in runner" action hands off
+  its seed to this page.
 
 ### Plugin centre
 
-- Browse the catalogue with versions, metadata and documentation.
-- Author documentation is a set of VitePress sites built into one image (`nitrowater-plugin-docs`),
-  served same-origin through the BFF at `/plugin/**` (one site per plugin at `/plugin/<id>/`).
+- Browse the catalogue with versions, metadata and a single-page intro/readme.
+- Documentation links are maintained manually in the plugin record (`docsUrl`) and open as direct
+  external links; this site no longer builds or hosts a docs container.
 - JARs and assets are stored by the resource service on local disk (Tencent COS remains a config-only swap), uploaded through admin-only endpoints behind the BFF.
 
 ### NitroBot
@@ -202,7 +202,7 @@ bash deploy/bin/check-env.sh                       # must report 0 FAIL
 First deployment is a manual runbook (DNS, TLS, secrets, first admin): [`deploy/docs/bootstrap.md`](deploy/docs/bootstrap.md).
 Day-2 releases go through the `release` / `deploy` workflows (pull an already-built image, back up MySQL,
 `up -d`, verify); rollback re-runs `deploy` with `ref` set to the commit that produced the images.
-Backups, rollback, the plugin-docs image and Piston runtimes live in [`deploy/README.md`](deploy/README.md).
+Backups, rollback, the offline-tools image and Piston runtimes live in [`deploy/README.md`](deploy/README.md).
 
 ## 📚 Documentation
 

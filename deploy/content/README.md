@@ -220,7 +220,7 @@ GET /api/admin/ai/index/documents?status=STALE&page=0&size=50
 
 ### 与 nitrowater-plugin-docs 的边界
 
-`velochatx/` 下的 markdown 是**副本**，权威源是 `nitrowater-plugin-docs` 仓库（它同时产出站点镜像）。
+`velochatx/` 下的 markdown 是**副本**，权威源是 `nitrowater-plugin-docs` 仓库（只作为语料来源，本站不再产出或托管站点镜像）。
 改那边的文档时，同步到这里再发布；`nitrowater/` 语料只属于本仓库。
 
 ## 提交约定

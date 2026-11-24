@@ -3,7 +3,7 @@
 # One SSH session does the whole sequence (nothing of it is duplicated in docs):
 #   ship deploy/   tar + scp, merged into DEPLOY_ROOT (.env / keys/ / content/ / backups stay)
 #   gate           deploy/bin/check-env.sh
-#   pull           the four images of <tag> — all of them, before any container is touched
+#   pull           the four backend images of <tag> — all of them, before any container is touched
 #   backup         deploy/bin/backup_mysql.sh (the only pre-Flyway recovery point)
 #   apply          account -> app, `up -d --no-build` (infra is deployed by hand, see deploy/README.md)
 #   restart        every nitrowater-* container gets `unless-stopped` (host reboots daily)
@@ -18,6 +18,9 @@
 # Release when the commit has new code (it builds, then deploys the identical sha).
 # deploy/ always comes from this commit, so a `latest` that predates it logs a
 # warning instead of silently mixing an old image with new config.
+#
+# The separate `tools` image pushed by build.yml is intentionally NOT pulled or
+# deployed here: it is a static site for external services on its own origin.
 
 name: Deploy
 
@@ -485,7 +488,7 @@ jobs:
             fi
             for c in nitrowater-mysql nitrowater-redis \
                      nitrowater-account nitrowater-resource nitrowater-server nitrowater-bff \
-                     nitrowater-docs nitrowater-qdrant nitrowater-piston \
+                     nitrowater-qdrant nitrowater-piston \
                      nitrowater-nginx-proxy nitrowater-acme; do
               docker inspect "$c" >/dev/null 2>&1 || continue
               docker update --restart unless-stopped "$c" >/dev/null

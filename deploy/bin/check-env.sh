@@ -650,35 +650,7 @@ if [ "$LOCAL" -eq 0 ]; then
     esac
 fi
 
-# ---------- 8. 文档站镜像 ----------
-# 文档站内容（各插件站）来自独立仓库 nitrowater-plugin-docs 的镜像。它和 app 其余
-# 服务在同一个 compose 单元里，所以 ref 写错会在 `docker compose pull` 时把整次发布拖垮 ——
-# 在这里提前说话，别等到 pull 阶段。
-DOCS_IMAGE_REPO="${DOCS_IMAGE_REPO:-}"
-DOCS_IMAGE_TAG="${DOCS_IMAGE_TAG:-latest}"
-case "$DOCS_IMAGE_REPO" in
-    '')
-        warn 'DOCS_IMAGE_REPO' '未配置：会回落到占位值 your-org/nitrowater-plugin-docs（app 单元 pull 会失败）'
-        ;;
-    */*)
-        if is_placeholder "$DOCS_IMAGE_REPO"; then
-            warn 'DOCS_IMAGE_REPO' "仍是模板占位值：$DOCS_IMAGE_REPO"
-        else
-            pass 'DOCS_IMAGE_REPO' "$DOCS_IMAGE_REPO"
-        fi
-        ;;
-    *)
-        fail 'DOCS_IMAGE_REPO' "需要 owner/repo 形式（如 danburen/nitrowater-plugin-docs）：$DOCS_IMAGE_REPO"
-        ;;
-esac
-case "$DOCS_IMAGE_TAG" in
-    '')     fail 'DOCS_IMAGE_TAG' '为空（留空会拼出 …/repo: 这种非法 ref）' ;;
-    latest) info 'DOCS_IMAGE_TAG' 'latest：能跑，但没有回滚点；建议写死版本号（v1.2.3）' ;;
-    *[!A-Za-z0-9._-]*) fail 'DOCS_IMAGE_TAG' "含非法字符：$DOCS_IMAGE_TAG" ;;
-    *)      pass 'DOCS_IMAGE_TAG' "$DOCS_IMAGE_TAG" ;;
-esac
-
-# ---------- 9. 本地端口 ----------
+# ---------- 8. 本地端口 ----------
 if [ "$LOCAL" -eq 1 ]; then
     if command -v nc >/dev/null 2>&1; then
         for entry in MySQL:3306 Redis:6379 Qdrant:6333; do

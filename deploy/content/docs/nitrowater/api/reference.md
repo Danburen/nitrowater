@@ -9,7 +9,6 @@
 | `/api/admin/**` | 管理员 | 管理台接口 |
 | `/internal/**` | 内部 token | 服务间调用，BFF 与网关默认拒绝 |
 | `/actuator/**` | 拒绝 | 不对外暴露 |
-| `/plugin/**` | 匿名 | 插件文档站（docs nginx，当前只有 `velochatx`） |
 | `/bff/**` | 按接口 | BFF 自身接口（如 `/bff/me`） |
 
 浏览器侧只调用同源 `/api/**`；写请求需要携带 `X-XSRF-TOKEN`。

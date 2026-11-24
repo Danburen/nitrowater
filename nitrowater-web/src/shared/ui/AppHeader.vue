@@ -2,6 +2,7 @@
 import { computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../../auth/useAuth'
+import { offlineToolsUrl } from '../../config/links'
 import ThemeToggle from './ThemeToggle.vue'
 import UserMenu from './UserMenu.vue'
 
@@ -18,11 +19,13 @@ interface NavItem {
   id?: string
   /** Route to navigate to. */
   to?: string
+  /** External destination (offline tools site). */
+  href?: string
 }
 
 const nav = computed<NavItem[]>(() => {
   const items: NavItem[] = [
-    { to: '/tools', label: '工具箱' },
+    { href: offlineToolsUrl, label: '离线工具箱' },
     { to: '/plugins', label: '插件中心' },
     { to: '/chat', label: 'NitroBot' },
     // 文档 / 服务器 入口暂缓：托管的文档后续再独立分开，入口统一走「插件中心」；服务器列表功能未开发。
@@ -36,8 +39,12 @@ const nav = computed<NavItem[]>(() => {
   return items
 })
 
-/** Navigate to a route item, or scroll to a home section (navigating home first). */
+/** Open an external destination, navigate to a route, or scroll to a home section. */
 async function onNav(item: NavItem): Promise<void> {
+  if (item.href) {
+    window.open(item.href, '_blank', 'noopener,noreferrer')
+    return
+  }
   if (item.to) {
     if (route.path !== item.to) await router.push(item.to)
     return
@@ -72,15 +79,19 @@ async function onNav(item: NavItem): Promise<void> {
       </router-link>
 
       <nav class="hidden gap-[26px] text-sm text-dim md:flex">
-        <button
+        <component
+          :is="item.href ? 'a' : 'button'"
           v-for="item in nav"
           :key="item.label"
-          type="button"
+          :href="item.href"
+          :target="item.href ? '_blank' : undefined"
+          :rel="item.href ? 'noopener noreferrer' : undefined"
+          :type="item.href ? undefined : 'button'"
           class="cursor-pointer transition hover:text-ink"
-          @click="onNav(item)"
+          @click.prevent="onNav(item)"
         >
           {{ item.label }}
-        </button>
+        </component>
       </nav>
 
       <div class="flex shrink-0 items-center gap-2.5">

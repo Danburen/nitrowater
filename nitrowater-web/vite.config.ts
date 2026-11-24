@@ -18,9 +18,8 @@ export default defineConfig({
     Components({ resolvers: [ElementPlusResolver()], dts: 'src/components.d.ts' }),
   ],
   optimizeDeps: {
-    // Pre-bundle the tools' heavy deps at server start. Otherwise the dev optimizer may re-run
-    // mid-navigation and invalidate an in-flight lazy import → "Failed to fetch dynamically
-    // imported module" on the first visit to a tool (e.g. /tools/code-runner).
+    // Pre-bundle the runner's heavy deps at server start. Otherwise the dev optimizer may re-run
+    // mid-navigation and invalidate an in-flight lazy import on the first visit to /runner.
     include: [
       '@codemirror/state',
       '@codemirror/view',
@@ -29,35 +28,22 @@ export default defineConfig({
       '@codemirror/autocomplete',
       '@codemirror/lang-python',
       '@codemirror/lang-javascript',
-      // Only the Lua mode is used; the package has no root export, so we must name the subpath.
+      // Only the Lua / C-like modes are used; these packages have no root export.
       '@codemirror/legacy-modes/mode/lua',
+      '@codemirror/legacy-modes/mode/clike',
       '@codemirror/theme-one-dark',
-      'echarts',
-      'd3',
-      'html2canvas',
-      'jszip',
-      'libarchive.js',
-      'file-saver',
       'element-plus',
       '@element-plus/icons-vue',
-      'docx',
       'marked',
     ],
-    // @ffmpeg/ffmpeg creates its Worker via `new Worker(new URL('./worker.js', import.meta.url))`.
-    // Pre-bundling rewrites that URL and breaks worker resolution in dev, so keep it as-is.
-    exclude: ['@ffmpeg/ffmpeg'],
   },
   build: {
     rollupOptions: {
       output: {
-        // Split the heavy tool-only deps into their own vendor chunks. They are reached
-        // through interaction-level dynamic imports (L2), so userland stays out of the entry.
+        // The runner is lazy-loaded, so keep CodeMirror out of the entry chunk.
         manualChunks(id) {
           const path = id.replace(/\\/g, '/')
           if (!path.includes('/node_modules/')) return undefined
-          if (/\/node_modules\/(echarts|zrender)\//.test(path)) return 'vendor-echarts'
-          if (/\/node_modules\/(d3|d3-[\w-]+)\//.test(path)) return 'vendor-d3'
-          if (/\/node_modules\/html2canvas\//.test(path)) return 'vendor-html2canvas'
           if (/\/node_modules\/(@codemirror|@lezer|codemirror)\//.test(path)) return 'vendor-codemirror'
           return undefined
         },
@@ -77,10 +63,6 @@ export default defineConfig({
       '/oauth2': { target: 'http://localhost:8080' },
       '/login': { target: 'http://localhost:8080' },
       '/logout': { target: 'http://localhost:8080' },
-      // Plugin docs are served by the BFF under the /plugin/ namespace (portal at /plugin/, one
-      // site per plugin at /plugin/<id>/); proxy so both resolve in dev too. (In the built SPA the
-      // BFF serves them directly from the docs image.)
-      '/plugin': { target: 'http://localhost:8080' },
     },
   },
 })

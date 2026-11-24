@@ -67,7 +67,7 @@ tasks.named('test') {
 }
 
 // Same working directory as the jar launchers (repo root) so the relative AI docs dir
-// (deploy/plugin-docs/...) resolves consistently under bootRun and `java -jar`.
+// (deploy/content/docs/...) resolves consistently under bootRun and `java -jar`.
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
 }

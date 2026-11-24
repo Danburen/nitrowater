@@ -118,14 +118,10 @@ bin/test/.codegraph/
 # Demo cache.
 demo/__pycache__/
 
-# Plugin docs are independently built artifacts: production serves them from the
-# nitrowater-plugin-docs image, and local dev mounts that repo's dist (DOCS_SITE_DIR) - nothing
-# from them belongs in this repo.
 # LOCAL storage backend (nitrowater-resource, app.resource.backend=local) writes uploaded objects to
 # bin/dev/resource-storage/ at runtime - generated dev data, ignored above.
-# Docs are never build inputs for the jar: NitroWater is a markdown-only corpus (ai/docs), and
-# published sites are deploy artifacts handled dynamically. Anything under static/docs is a stale
-# local build - never commit it. See deploy/plugin-docs/ + bin/dev/sync-docs.ps1.
+# Docs are never build inputs for the jar: plugin docs are external links, and NitroWater docs are a
+# markdown-only corpus (ai/docs). Anything under static/docs is a stale local build - never commit it.
 /nitrowater-server/src/main/resources/static/docs/
 
 # Decoupled deploy content: the documentation corpora are versioned data (not build inputs), so
@@ -143,3 +139,6 @@ demo/__pycache__/
 !/deploy/content/docs/
 !/deploy/content/docs/.gitkeep
 !/deploy/content/docs/**
+
+node_modules/
+nitrowater-tools/dist/

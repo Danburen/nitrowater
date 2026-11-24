@@ -151,8 +151,6 @@ app:
   # 登出后 AS 回跳的绝对地址；必须是 account 端 BFF_POST_LOGOUT_REDIRECT_URIS 中的一项。
   # 若从请求 Host 推导，127.0.0.1 / 换端口 / 内网 IP 都会匹配失败（AS 返回 400 空白页，且不销毁 SSO 会话）。
   post-logout-redirect-uri: ${POST_LOGOUT_REDIRECT_URI:http://localhost:5173}
-  plugin-docs:
-    upstream: ${PLUGIN_DOCS_UPSTREAM:http://localhost:8085}
 
 logging:
   level:

@@ -10,10 +10,10 @@ import ToastHost from './shared/ui/ToastHost.vue'
 const route = useRoute()
 const router = useRouter()
 const { session, consumePostLogin } = useAuth()
-/** The tools / admin / plugins areas and the full-bleed chat shell render their own chrome. */
+/** The admin / plugins areas and the full-bleed chat shell render their own chrome. */
 const showHeader = computed(() => {
   const layout = route.meta.layout
-  return layout !== 'tools' && layout !== 'admin' && layout !== 'plugins' && layout !== 'chat'
+  return layout !== 'admin' && layout !== 'plugins' && layout !== 'chat'
 })
 
 // Resume the page the user intended before logging in (e.g. from a gated tools page).

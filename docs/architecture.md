@@ -12,8 +12,8 @@ NitroWater 是一个面向 **Minecraft 服务器主与插件生态**的多模块
 
 - **统一身份**：自建 SSO / OIDC 身份中心，支持登录、注册、验证码、RBAC、管理控制台。
 - **BFF Token Handler**：浏览器不保存 access/refresh token，只持有 HttpOnly 会话；BFF 负责续期和代理。
-- **业务平台**：门户、服务器工具箱、插件中心、资源服务、代码运行器。
-- **文档站**：VeloChatX 的 VitePress 双语文档站，经 nginx 与 BFF 同源挂载。
+- **业务平台**：门户、插件中心、资源服务、需登录的代码运行器；浏览器本地工具拆到独立静态站点。
+- **插件文档**：本站只存外部 `docsUrl` 并直接跳转，不再构建 / 托管文档站。
 - **AI Agent**：唯一的问答路线——模型按需调用工具（检索、技能、联网、代码沙箱），带工具预算、轨迹、配额和 SSE 步骤卡片。
 - **工程化**：Gradle 多模块、Flyway 三库隔离、Docker compose、一键启停/播种/同步脚本、单元测试与前端构建验证。
 
@@ -41,12 +41,12 @@ NitroWater 的解决方式是把这些能力收敛到一个同源平台：**一�
 | 统一身份 | SSO / OIDC 身份中心 | 授权码登录、refresh、RP-initiated logout、JWKS、userinfo；托管登录/注册/验证码；account 管理控制台 |
 | 权限 | RBAC 与审计 | `SUPER_ADMIN` / `ADMIN` / `USER`；JWT 带 `uid`、角色、设备指纹；账号审计；字段加密 |
 | BFF | Token Handler | 浏览器只有 HttpOnly `BFFSESSION`；AT/RT 存服务端；自动续期；统一 401 JSON；发布可失效旧会话 |
-| 门户 | 复合前端 | Vue 3 + TypeScript + Vite + Tailwind；门户、工具箱、插件中心、文档入口、NitroBot、管理端 |
-| 工具箱 | 11 个在线工具 | MOTD、server.properties、server-icon、启动脚本；代码运行器、插件 ZIP、插件树、ListTree、Java→TS、MP4→GIF、Markdown→Word |
-| 插件中心 | 插件元数据与分发 | 插件元数据、管理端 CRUD、JAR 下载、文档入口 |
-| 代码运行器 | 浏览器 + 服务端双模式 | 匿名走浏览器 WASM；登录用户走 Piston；Redis 分钟/日配额；进程内排队；输出截断 |
+| 门户 | 复合前端 | Vue 3 + TypeScript + Vite + Tailwind；门户、插件中心、外部文档入口、NitroBot、管理端、需登录的 `/runner` |
+| 离线工具箱 | 独立静态站点 | `nitrowater-tools/` 单独构建为静态镜像，由外部服务部署；MOTD、server.properties、server-icon、启动脚本、插件 ZIP、插件树、ListTree、Java→TS、MP4→GIF、Markdown→Word 全在浏览器本地完成 |
+| 插件中心 | 插件元数据与分发 | 插件元数据、管理端 CRUD、JAR 下载、外部文档链接 |
+| 代码运行器 | 登录后可用 | `/runner` 独立页面，仅登录用户访问；server 直连 Piston；Redis 分钟/日配额；进程内排队；输出截断 |
 | 资源服务 | 可插拔文件存储 | 本地磁盘（默认）、腾讯 COS；统一上传/下载入口；仅管理员可上传；读取分公开（匿名）与认证两条出口；可见性/owner；管理端文件管理；孤儿回收；插件 JAR 托管 |
-| 文档站 | VeloChatX VitePress | 9 篇中文 + 9 篇英文 + README；由独立仓库 `nitrowater-plugin-docs` 构建成镜像（`/plugin/velochatx/`）；nginx :8085；BFF `/plugin/**` 同源代理 |
+| 插件文档 | 外部托管 | 详情页直接打开数据库维护的完整 `docsUrl`；本站不再构建 / 拉取 / 托管文档镜像，BFF 无任何 `/plugin/**` 路由 |
 | AI Agent | 工具调用问答 | 多语料索引、`searchDocs`/`loadSkill`/`webSearch`/`runCode`；工具预算、AgentTrace、技能覆盖、引用 `[n]`、SSE 步骤卡片、会话落库 |
 | AI 运营 | 配额与管理 | 登录校验、每分钟限流、每日 token 计量；运行时开关；`/admin/ai/{settings,usage,catalog}` |
 | 工程化 | 构建与运维 | Gradle 多模块、Flyway 三库隔离、Docker compose、一键启停/播种/同步脚本、日志与测试 |
@@ -56,8 +56,8 @@ NitroWater 的解决方式是把这些能力收敛到一个同源平台：**一�
 - **登录**：浏览器 → BFF → account OIDC → 回调 → BFF 会话 → 受保护 API。
 - **文档问答**：提问 → 检索 VeloChatX/NitroWater 文档 → 带引用回答 → SSE 流式展示。
 - **Agent 任务**：提问 → 模型决定是否检索/联网/跑代码 → 工具结果回灌 → 最终回答 + 工具轨迹。
-- **文档发布**：VeloChatX 源仓 → VitePress 构建 → `nitrowater-plugin-docs` 镜像 → nginx → BFF `/plugin/**`。
-- **代码运行**：前端代码块 → 运行器 → 服务端 Piston（登录）或浏览器 WASM（匿名）→ 结果回显。
+- **插件文档**：管理端录入外部完整 URL → 详情页直接跳转；本站不再托管内容。
+- **代码运行**：Agent 代码块「在 runner 打开」→ 未登录先登录并落到 `/runner` → 登录后由请求带种子进入运行器 → 服务端 Piston → 结果回显。
 - **资源管理**：上传 → 预签名 → 读/下载 → 可见性/owner 校验 → 管理端软删/回收。
 
 ---
@@ -75,7 +75,6 @@ BFF :8080
   ├─ /oauth2/**, /login      OIDC 管线，委托 account :8090
   ├─ /api/**                 代理到 server :8081，注入 Bearer AT
   ├─ /api/resource/**        代理到 resource :8093
-  ├─ /plugin/**              文档静态代理，转发 docs nginx :8085
   └─ /actuator/**, /internal/**  denyAll
 ```
 
@@ -85,7 +84,7 @@ Redis 6379        session、验证码、限流、缓存
 local disk        resource 的资源目录（宿主机 bind mount，无独立服务）
 Qdrant 6334       文档向量索引
 Piston 2000       代码沙箱（容器内网）
-docs nginx 8085   VeloChatX 文档站
+外部 tools origin  nitrowater-tools 静态镜像独立部署
 ```
 
 ### 3.2 模块职责
@@ -95,10 +94,11 @@ docs nginx 8085   VeloChatX 文档站
 | `nitrowater-lib` | — | 通用工具与值类型 |
 | `nitrowater-core` | — | 共享实体/仓储/认证服务/安全工具；纯库，不独立启动 |
 | `nitrowater-account` | 8090 | SSO/OIDC Provider、登录/注册/验证码、托管登录页、管理控制台、RBAC |
-| `nitrowater-bff` | 8080 | BFF Token Handler、会话、自动续期、API/文档/SSE 代理、登出 |
+| `nitrowater-bff` | 8080 | BFF Token Handler、会话、自动续期、API/SSE 代理、登出 |
 | `nitrowater-server` | 8081 | 业务 API、插件中心、代码运行器、AI Agent、管理接口 |
 | `nitrowater-resource` | 8093 | 文件/插件 JAR 存储、预签名、可见性/owner、管理端文件管理 |
-| `nitrowater-web` | 5173(dev) | Vue 门户、工具箱、插件中心、文档入口、NitroBot、管理端 |
+| `nitrowater-web` | 5173(dev) | Vue 门户、插件中心、外部文档入口、NitroBot、管理端、需登录的 `/runner` |
+| `nitrowater-tools` | 5174(dev) | 独立离线工具站点与静态镜像源码 |
 | `deploy/` + `bin/` | — | Docker compose、nginx、密钥、启停/播种/同步脚本 |
 
 ### 3.3 请求怎么流
@@ -106,7 +106,7 @@ docs nginx 8085   VeloChatX 文档站
 1. 浏览器访问 BFF；静态资源由 BFF 托管 SPA。
 2. 未登录时走 `/oauth2/**`，由 account 完成登录，BFF 回调后建立服务端会话。
 3. 业务请求走 `/api/**`；BFF 注入 Bearer AT，转发到 server；资源请求转发到 resource。
-4. 插件文档走 `/plugin/**`，由 BFF 转发到 docs nginx。
+4. 插件文档由详情页直接打开外部 `docsUrl`；本站不代理也不托管文档。
 5. `/actuator/**`、`/internal/**` 默认拒绝，避免内部端点静默暴露。
 
 ---
@@ -178,22 +178,22 @@ question
 ### 4.4 文档发布
 
 ```text
-nitrowater-plugin-docs 源仓（每个插件一个 VitePress 站点）
-  -> CI: VitePress build -> 镜像 ghcr.io/<owner>/nitrowater-plugin-docs:<tag>
-  -> 服务器 docker compose pull（DOCS_IMAGE_TAG）
-  -> docs nginx :8085（路由/缓存由 deploy/docker/docs-nginx.conf 决定）
-  -> BFF /plugin/**
-  -> 浏览器
+插件表单中的 docsUrl（完整外部 URL）
+  -> 插件详情页直接跳转外部文档站
+  -> 本站不再构建 / 拉取 / 托管 docs 镜像，BFF 也不再代理 /plugin/**
+
+离线工具箱：nitrowater-tools/ 静态站点镜像 -> 外部服务独立部署
 ```
 
-- 文档站与检索语料是两条链路：站点面向人，classpath 语料面向 `searchDocs` 工具。
+- 外部文档站与检索语料是两条链路：站点面向人，classpath 语料面向 `searchDocs` 工具。
 - 语料当前精选 5 篇，源站有 18 篇；这是有意的“先保证质量，再扩覆盖”。
-- 本地开发直接在文档仓库里 `DOCS_BASE_PREFIX=/plugin npm run build`，dev 容器挂载那份 `dist`；生产只换镜像 tag。
+- 插件文档的 URL 由管理端在 `docsUrl` 手工维护；换站点只需改数据库记录，无需重新构建本站镜像。
 
 ### 4.5 代码运行与资源
 
-- 匿名用户：浏览器 WASM 运行，不占服务端资源。
-- 登录用户：server 直连 Piston；Redis 做分钟/日配额；`SandboxGate` 做单用户串行、全局并发、有界队列。
+- `/runner` 仅登录用户可访问；Agent 代码块可通过一次性种子把代码带进运行器。
+- server 直连 Piston；Redis 做分钟/日配额；`SandboxGate` 做单用户串行、全局并发、有界队列。
+- 浏览器本地工具已拆到 `nitrowater-tools`，不走服务端沙箱。
 - 资源服务：上传先落 PENDING，预签名直传；读/下载校验可见性与 owner；孤儿回收清理未完成上传。
 - 插件 JAR 由 resource 托管；插件中心按最新文件下载。
 
@@ -204,7 +204,7 @@ nitrowater-plugin-docs 源仓（每个插件一个 VitePress 站点）
 1. **BFF 而不是 SPA 直连 OIDC**：浏览器不持 token，续期、登出、失效都在服务端完成。
 2. **三库隔离**：account / biz / resource 各自 Flyway 管理，跨库只用 `uuid`，不建物理 FK。
 3. **Servlet/WebMVC**：项目明确冻结响应式栈，降低团队与部署复杂度。
-4. **文档双链路**：VitePress 面向人，classpath markdown 面向 Agent 检索；两者都从同一源仓产出。
+4. **文档外置 + 检索语料内嵌**：面向人的文档由插件 `docsUrl` 指向外部站点；classpath markdown 单独服务 Agent 检索。
 5. **检索先 grounded 再智能**：站内问题必须先 `searchDocs` 并带引用；无证据时说明局限，而不是自由发挥。
 6. **Agent 工具有预算**：检索、联网、代码执行都受限，避免无限循环和成本失控。
 7. **配额分层**：请求分钟限流 + 每日 token 计量 + 沙箱独立配额，分别保护不同资源。
@@ -247,7 +247,6 @@ nitrowater-plugin-docs 源仓（每个插件一个 VitePress 站点）
 | `/api/ai/conversations` | 会话与消息 |
 | `/api/sandbox/run` | 服务端代码运行 |
 | `/api/admin/**` | 管理端接口（ADMIN） |
-| `/plugin/**` | 插件文档站同源代理 |
 
 ---
 
@@ -275,7 +274,7 @@ nitrowater-plugin-docs 源仓（每个插件一个 VitePress 站点）
 1. 先读 `README.md`、`AGENTS.md`、`.ai/PROJECT.md`、`.ai/context/current.md`。
 2. 改认证/BFF：从 `nitrowater-account` 的 `AuthorizationServerConfig` 与 `nitrowater-bff` 的 `SecurityConfig` / 代理控制器进入。
 3. 改 AI/Agent：从 `nitrowater-server/src/main/java/cn/nitrowater/server/service/ai` 进入（工具在 `service/ai/tool`、提示词在 `PromptBuilder`、SSE 在 `web/AiAgentController`）；前端从 `nitrowater-web/src/features/ai` 进入。
-4. 改文档/站点：源仓 `nitrowater-plugin-docs` 构建成镜像，URL 前缀 `/plugin/**`。
+4. 改文档/站点：插件文档 URL 在数据库 `docsUrl` 维护；离线工具站在 `nitrowater-tools/`，完全自包含、无构建参数；门户侧用 `VITE_OFFLINE_TOOLS_URL` 以 `_blank` 外链打开它，跳转后两边独立。
 5. 遵守项目约定：Servlet/WebMVC、`/api/**` 数据命名空间、Flyway 迁移冻结、枚举整数编码、时间列 `TIMESTAMP(3)`、Redis `nitrowater:*`、无 subagent。
 
 > 如果后续 Agent 无法访问仓库，以上第 1-6 节已经提供了自包含的项目摘要；第 9 节仅用于能拿到代码时的导航。

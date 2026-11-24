@@ -20,9 +20,8 @@ import java.io.IOException;
  *       new deploy is picked up immediately.</li>
  * </ul>
  *
- * <p>{@code /plugin/**} is NOT handled here: each plugin's documentation is a statically-built
- * VitePress site served by a dedicated docs container (see {@code deploy/docker/docs-nginx.conf})
- * and the BFF only forwards to it — see {@link cn.nitrowater.bff.web.PluginDocsProxyController}.</p>
+ * <p>Plugin documentation is hosted externally and reached directly via the plugin's
+ * {@code docsUrl}; this service no longer bundles a docs site or proxies one.</p>
  *
  * <p>Boot's default static mappings are disabled in {@code application.yml}
  * ({@code spring.web.resources.add-mappings: false}) so these handlers are authoritative.</p>

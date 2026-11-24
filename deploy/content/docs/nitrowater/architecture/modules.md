@@ -33,7 +33,7 @@ cn.nitrowater.account
 cn.nitrowater.bff
 ├── config   # OAuth2ClientConfig / SecurityConfig / WebConfig
 ├── security # 登出处理器、会话处理
-└── web      # ApiProxyController / AiStreamProxyController / PluginDocsProxyController / LegacyDocsRedirectController / SessionController
+└── web      # ApiProxyController / AiStreamProxyController / SessionController / LegalDocumentController
 ```
 
 - 不直连业务库；只持有会话与代理。

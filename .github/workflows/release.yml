@@ -1,12 +1,12 @@
 # Release: build + deploy in one run, both pinned to the same commit sha.
 #
-#   build  -> build.yml   (probe, checks, then 4 images to GHCR)
+#   build  -> build.yml   (probe, checks, then 5 images to GHCR: 4 backend + tools)
 #   deploy -> deploy.yml  (preflight, then pull + backup + up -d on the host)
 #   deploy.yml also enforces restart=unless-stopped, so a host reboot brings the stack back.
 #
 # The deploy uses build's `sha` output, not the `tag` input: sha tags are what the
 # commit actually produced, while `tag` is a moving name (latest / v1.2.3) that a later
-# build can repoint. When the probe finds all four images already pushed for this sha,
+# build can repoint. When the probe finds all five images already pushed for this sha,
 # build.yml skips checks + bake, the called workflow still reports success, and this
 # run becomes "deploy the existing images" — the intended no-op fast path.
 #

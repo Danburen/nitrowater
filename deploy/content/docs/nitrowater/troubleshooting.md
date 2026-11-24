@@ -44,7 +44,7 @@
 | 回答总是「文档中没有找到」 | 索引为空 / 语料目录没挂上 | `GET /api/admin/ai/index` 看 corpus 与文档数；`POST /api/admin/ai/reindex` 重建；检查 `AI_DOCS_ROOT` 挂载 |
 | 启动日志有 embedding 失败但服务正常 | 这是设计：索引失败不阻塞启动 | 补 key 或修 base-url 后重建索引 |
 | 引用没有链接 | 该 corpus 的 `public-base-url` 为空（NitroWater 文档就是这样） | 属预期：纯 markdown 语料只给标题/章节/路径 |
-| VeloChatX 引用链接 404 | docs 容器未起 / `public-base-url` 与站点路径不一致 | 引用前缀是 `/plugin/velochatx/`；先确认 `nitrowater-docs` 在服务（生产看镜像 tag，dev 在文档仓库 `DOCS_BASE_PREFIX=/plugin npm run build`） |
+| VeloChatX 引用链接 404 | docsUrl 仍指向已下线的 `/plugin/velochatx/` | 本站不再托管文档站；在插件表单填写外部文档 URL |
 | 文档首段内容异常 / 标题丢失 | markdown 带 UTF-8 BOM 或 front matter 未剥离 | 语料写 UTF-8 **无 BOM**；`DocChunkBuilder` 会剥 front matter |
 | SSE 一次性出现，不是逐字 | 中间层缓冲了 `text/event-stream` | 检查 BFF `AiStreamProxyController` 与反向代理的 buffering |
 | 工具调用被提前截断 | `runCode` 限额被误设为 3 | 必须 ≥4，让工具能返回 `retry_exhausted`（`ToolLimitBindingTest` 守着） |

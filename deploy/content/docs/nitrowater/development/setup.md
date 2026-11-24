@@ -86,7 +86,7 @@ Invoke-RestMethod -Method POST -Uri 'http://localhost:8081/api/admin/ai/reindex'
 ```
 
 - 语料是 UTF-8 **无 BOM**，front matter 会被索引器剥掉；NitroWater 引用只带标题/章节/相对路径，不带 URL。
-- VeloChatX 插件文档是唯一仍有静态站的语料：外部仓库 `nitrowater-plugin-docs` 构建 → 生产用镜像（`DOCS_IMAGE_TAG`），dev 用 `DOCS_BASE_PREFIX=/plugin npm run build` 后由 docs 容器挂载那份 `dist`（base `/plugin/velochatx/`），**不进 jar**。
+- 插件文档已改为外部链接：在插件表单维护 `docsUrl`；本站不启动 docs 容器，BFF 也不再代理文档。
 
 ## 6. 开发约定
 
@@ -114,7 +114,6 @@ Get-Process java | Select-Object Id,StartTime
 | 门户（BFF） | `http://localhost:8080` |
 | SSO | `http://localhost:8090` |
 | Vite dev | `http://localhost:5173` |
-| 插件文档 | `http://localhost:8080/plugin/velochatx/`（门户 `http://localhost:8080/plugin/`） |
 | AI 管理台 | `http://localhost:8080/admin/ai` |
 
 更多脚本细节见 `bin/README.md`。

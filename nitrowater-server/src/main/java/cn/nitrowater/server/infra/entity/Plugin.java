@@ -15,8 +15,9 @@ import java.time.Instant;
  * A plugin-center entry — the metadata shown on {@code /plugins}.
  *
  * <p>The jar itself is not stored here: {@link #pluginKey} logically links to the resource service
- * ({@code resource.group_key}) and to the docs directory {@code /plugin/<key>/} served by the BFF.
- * No physical FK (cross-service reference by key, see {@code AGENTS.md}).</p>
+ * ({@code resource.group_key}). Documentation is an externally hosted URL stored in
+ * {@link #docsUrl}; this service no longer hosts docs content. No physical FK (cross-service
+ * reference by key, see {@code AGENTS.md}).</p>
  */
 @Getter
 @Setter
@@ -30,8 +31,8 @@ public class Plugin {
     private Long id;
 
     /**
-     * Stable key (immutable). Matches {@code resource.group_key} and the docs path {@code /plugin/<key>/};
-     * column is {@code plugin_key} because {@code key} is a MySQL reserved word.
+     * Stable key (immutable). Matches {@code resource.group_key}; column is {@code plugin_key}
+     * because {@code key} is a MySQL reserved word.
      */
     @Column(name = "plugin_key", nullable = false, length = 64)
     private String pluginKey;
@@ -53,7 +54,7 @@ public class Plugin {
     @Column(name = "tags", columnDefinition = "json")
     private String tags;
 
-    /** Full documentation site (default {@code /plugin/<key>/docs/}, same-origin navigation). */
+    /** Externally hosted documentation URL; {@code null} hides the docs tab/link on the front-end. */
     @Column(name = "docs_url", length = 500)
     private String docsUrl;
 

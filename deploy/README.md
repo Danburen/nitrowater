@@ -7,16 +7,19 @@
 
 ```
 公网 nginx（TLS）
-  ├── <WEB_DOMAIN>  → 127.0.0.1:8080  bff     SPA + /api/** + /plugin/**
+  ├── <WEB_DOMAIN>  → 127.0.0.1:8080  bff     SPA + /api/**
   └── <AUTH_DOMAIN> → 127.0.0.1:8090  account 登录 / OIDC / 管理端
-容器内不发布：server 8081 · resource 8093 · docs 80 · mysql · redis · piston · qdrant
+容器内不发布：server 8081 · resource 8093 · mysql · redis · piston · qdrant
+
+离线工具箱与插件文档均不在本单元部署：工具箱是独立静态镜像（nitrowater-tools），
+插件文档链接由插件记录的 docsUrl 直接指向外部站点。
 ```
 
 | 单元 | compose | 内容 | 谁部署 |
 |---|---|---|---|
 | infra | `deploy/docker/docker-compose.infra.yml` | mysql / redis（`edge` profile 带 nginx + 自动证书） | **人工** |
 | account | `deploy/docker/docker-compose.account.yml` | SSO / OIDC，可独立发布 | `deploy.yml` |
-| app | `deploy/docker/docker-compose.app.yml` | qdrant / piston / docs / resource / server / bff | `deploy.yml` |
+| app | `deploy/docker/docker-compose.app.yml` | qdrant / piston / resource / server / bff | `deploy.yml` |
 
 三份共享 `nitrowater-net`，启动顺序 `infra → account → app`。
 
@@ -61,7 +64,6 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.inf
 | 应用异常，数据没问题 | `deploy.yml` 填 `ref=<上一个 sha>`，`tag` 留空 |
 | 只回身份服务 | `ACCOUNT_IMAGE_TAG=<sha> … up -d --no-build` |
 | 迁移把数据改坏 | 停 app/account → 恢复发版前的 dump → 回上一个 sha |
-| 文档站 | `DOCS_IMAGE_TAG=<上一个短 sha> … up -d docs` |
 | 关公网入口 | `docker compose -f deploy/docker/docker-compose.infra.yml --profile edge stop nginx-proxy acme-companion` |
 
 回滚不要用 `release`（会重建镜像）。
@@ -110,18 +112,15 @@ docker run --rm -v nitrowater-qdrant:/qdrant/storage -v "$PWD":/backup alpine \
 
 全部是 `.sh`：Windows 用 Git Bash 或 WSL。
 
-## 文档站（独立仓库镜像）
+## 离线工具箱 / 插件文档
 
-`.env` 配置 `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG`，部署时随 app 单元一起 `pull` + `up -d`。
-
-```bash
-# 只更新文档站（业务服务不动）
-DOCS_IMAGE_TAG=<短 sha> docker compose --env-file deploy/docker/.env \
-  -f deploy/docker/docker-compose.app.yml up -d --no-build docs
-curl -fsS http://127.0.0.1:8085/healthz      # ok
-```
-
-改完把 tag 写回 `.env`。URL 只有 `/plugin/<id>/`，`/plugin/` 本身 404。
+- 离线工具箱在仓库内 `nitrowater-tools/` 独立构建。CI 会随发版推送
+  `ghcr.io/<owner>/<repo>/tools:<tag>`；外部服务自行拉取该镜像部署，本站 compose 不启动它。
+  手工构建：`docker build -f nitrowater-tools/Dockerfile -t nitrowater-tools:local .`（无任何构建参数）。
+  工具站不回连门户；反向入口在门户侧，用 `VITE_OFFLINE_TOOLS_URL`（GitHub 仓库变量，默认
+  `https://tools.example.com`）以 `_blank` 打开，跳转后两边完全独立。
+- 插件文档不再由本站托管。管理端在插件表单里手工填写 `docsUrl`（完整外部 URL），
+  插件详情页直接跳转；BFF 不再有 `/plugin/**` 代理或 `/docs/velochatx/**` 重定向。
 
 ## Piston 加语言
 

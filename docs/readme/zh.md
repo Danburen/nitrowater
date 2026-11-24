@@ -15,23 +15,24 @@
 
 [English](../../README.md) | 简体中文
 
-**面向 Minecraft 服主的一站式平台**：开服工具箱、插件中心、AI 助手，背后是一套自托管的 SSO / OIDC 身份中心。浏览器永远拿不到 token —— BFF 在服务端保管凭据并代理所有 API。
+**面向 Minecraft 服主的一站式平台**：插件中心、AI 助手与需登录的在线代码运行器，背后是一套自托管的 SSO / OIDC 身份中心；浏览器本地工具则作为独立静态包发布。浏览器永远拿不到 token —— BFF 在服务端保管凭据并代理所有 API。
 
-- 💪 **一个账号，一个入口** —— 门户、工具箱、插件中心、对话只需登录一次。
+- 💪 **一个账号，一个入口** —— 门户、代码运行器、插件中心、对话只需登录一次。
 - 🔐 **令牌留在服务端** —— confidential OIDC 客户端 + HttpOnly 会话，`/api/**` 由 BFF 带 Bearer token 转发。
-- 🧰 **11 个在线工具** —— MOTD、`server.properties`、`server-icon`、启动脚本、压缩包、目录树、Java→TypeScript、MP4→GIF、Markdown→Word、代码运行器。
+- 🧰 **工具拆分** —— `nitrowater-tools/` 是可独立部署的浏览器本地工具箱；本站 `/runner` 是需登录的在线代码运行器。
 - 🤖 **NitroBot** —— 基于自有文档的检索问答、联网搜索、沙箱内执行代码，并带长期记忆。
 - 🧱 **朴素可靠的基础设施** —— Gradle 多模块后端、Vue 3 单页前端、Flyway 管理 schema、Docker Compose 部署。
 
 ## 🧭 NitroWater 是什么
 
-开一台 Minecraft 服务器，日常要在十几个互不相关的站点之间来回横跳 —— MOTD、`server.properties`、图标、启动脚本、插件、文档。NitroWater 把这些日常收拢成一个同源平台，共用一个账号。
+开一台 Minecraft 服务器，日常要在插件、文档、代码片段与服务器配置之间来回横跳。NitroWater 把账号相关的服务收拢成一个同源平台，浏览器本地工具则做成独立镜像。
 
 ### 模块
 
 | 模块 | 技术 | 职责 |
 |---|---|---|
-| `nitrowater-web` | Vue 3、TypeScript、Vite、Tailwind | 门户、工具箱、插件中心、对话、管理台 |
+| `nitrowater-web` | Vue 3、TypeScript、Vite、Tailwind | 门户、代码运行器、插件中心、对话、管理台 |
+| `nitrowater-tools` | Vue 3、Vite、nginx | 独立的浏览器本地工具箱静态镜像 |
 | `nitrowater-bff` | Spring Boot、Spring Security OAuth2 client | 登录、会话、`/api/**` 代理、托管 SPA |
 | `nitrowater-account` | Spring Authorization Server、Vue 3 workspace | SSO / OIDC 身份中心 |
 | `nitrowater-server` | Spring Boot、Spring AI、JPA + Flyway | 插件中心、AI Agent、代码运行器 |
@@ -47,21 +48,15 @@
 - 自托管授权服务器：authorization code + PKCE、refresh token、RP-initiated logout、JWKS 与 userinfo。
 - 登录、注册、验证码与多账号切换，角色 `SUPER_ADMIN` / `ADMIN` / `USER` 随 JWT 下发。
 
-### 开服工具箱
+### 离线工具箱与代码运行器
 
-11 个工具，绝大多数完全跑在浏览器里（WebAssembly / Worker），文件不离开本机：
-
-- **MOTD 编辑器** —— 支持 `&` / `§` 颜色代码，双行实时预览，可导出 legacy、`server.properties` 或 JSON。
-- **`server.properties` 生成器** —— 分组表单、预设、导入现有文件、保留未知键、实时校验。
-- **`server-icon` 生成器**与**启动脚本**生成（含常用 JVM 参数）。
-- **压缩包与目录树** —— ZIP 打包/解包、目录树、ListTree 图表渲染。
-- **转换器** —— Java→TypeScript、MP4→GIF、Markdown→Word。
-- **代码运行器** —— JavaScript、TypeScript、Python、Lua 在 Worker 沙箱中执行，服务端另有 Piston 沙箱负责评测。
+- **离线工具箱**在独立的 `nitrowater-tools/` 包中，构建为静态镜像。MOTD、`server.properties`、服务器图标、启动脚本、压缩包、目录树、Java→TypeScript、MP4→GIF、Markdown→Word 全部在浏览器本地完成，文件不离开本机；门户通过构建期占位变量 `VITE_OFFLINE_TOOLS_URL` 指向它。
+- **代码运行器**留在本站 `/runner`，需登录，复用服务端 Piston 沙箱运行 Java / C / C++ / Python / JS / TS / Lua；Agent 的「在代码运行器中打开」会把代码种子带过去。
 
 ### 插件中心
 
-- 按目录浏览插件，带版本、元数据与文档。
-- 作者文档是多个 VitePress 站点，构建进一个镜像（`nitrowater-plugin-docs`），经 BFF 的 `/plugin/**` 同源提供（每个插件一个 `/plugin/<id>/`，没有门户页）。
+- 按目录浏览插件，带版本、元数据与单页介绍。
+- 文档地址由管理端手工填写在插件记录的 `docsUrl` 中，详情页直接跳转外部链接；本站不再构建或托管文档镜像。
 - JAR 与附件由资源服务存在本地磁盘（腾讯 COS 保留为纯配置切换），上传走 BFF 背后的管理员专属端点。
 
 ### NitroBot

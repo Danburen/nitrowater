@@ -543,12 +543,12 @@ onMounted(() => {
             />
           </el-form-item>
           <el-form-item
-            label="文档站 URL"
+            label="文档站 URL（外部）"
             class="sm:col-span-2"
           >
             <el-input
               v-model="form.docsUrl"
-              placeholder="/plugin/velochatx/"
+              placeholder="https://docs.example.com/velochatx/"
             />
           </el-form-item>
           <el-form-item label="首页 URL（可空）">

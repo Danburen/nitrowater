@@ -277,7 +277,7 @@ app:
       retry-backoff-ms: ${AI_WEB_SEARCH_RETRY_BACKOFF_MS:300}
       timeout-ms: ${AI_WEB_SEARCH_TIMEOUT_MS:20000}
   # -------- 代码沙箱（Piston）--------
-  # 业务服务直连 Piston（不设独立模块）；仅登录用户可用（匿名只跑浏览器本地 WASM）。
+  # 业务服务直连 Piston（不设独立模块）；仅登录用户可用，入口是 /runner 与 Agent runCode。
   # 执行采用「单用户串行 + 全局并发 + 有界排队」：超过队列上限或等待超时才返回 429。
   sandbox:
     base-url: ${PISTON_BASE_URL:http://localhost:2000}

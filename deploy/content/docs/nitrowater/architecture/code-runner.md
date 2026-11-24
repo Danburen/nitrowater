@@ -1,13 +1,12 @@
 # 代码运行与 Piston 沙箱
 
-平台提供两条代码运行通道：匿名用户的浏览器 WASM 运行器，以及登录用户的后端 Piston 沙箱。NitroBot 的 `runCode` 工具与 HTTP 入口共享同一套配额与并发闸门。
+代码运行器是登录后才可用的独立页面（`/runner`），执行统一走后端 Piston 沙箱。NitroBot 的 `runCode` 工具与 HTTP 入口共享同一套配额与并发闸门；浏览器本地工具已拆到独立站点，不再包含代码运行。
 
-## 1. 两条通道
+## 1. 通道
 
 | 通道 | 使用者 | 执行位置 | 入口 |
 |---|---|---|---|
-| 浏览器 WASM | 匿名 | 浏览器内 | 工具箱「代码运行」页面 |
-| 后端沙箱 | 登录用户 | Piston 容器 | `POST /api/sandbox/run`、Agent `runCode` |
+| 后端沙箱 | 登录用户 | Piston 容器 | `/runner` 页面、Agent 代码块「在 runner 打开」、`POST /api/sandbox/run`、Agent `runCode` |
 
 ## 2. 执行链路
 

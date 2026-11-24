@@ -127,7 +127,7 @@ docker compose --env-file deploy/docker/.env -f deploy/docker/docker-compose.app
 
 验收：`nitrowater-bff` healthy；`curl http://127.0.0.1:8080/api/public/ping` 返回 `pong`。
 
-## 7. Piston 语言包 + 文档站
+## 7. Piston 语言包
 
 ```bash
 bash deploy/bin/install-piston-runtimes.sh       # 默认装 6 个包
@@ -135,19 +135,8 @@ bash deploy/bin/install-piston-runtimes.sh       # 默认装 6 个包
 
 已装的语言会 `skip`，装完自动重启 piston。以后加语言 / 升级见 [`../README.md`](../README.md#piston-加语言)。
 
-文档站镜像在 `deploy/docker/.env` 配置：
-
-```bash
-DOCS_IMAGE_REPO=<你的 GitHub owner>/nitrowater-plugin-docs
-DOCS_IMAGE_TAG=latest
-```
-
-验收：
-
-```bash
-curl -fsS http://127.0.0.1:8085/healthz                                      # ok
-curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8085/plugin/velochatx/   # 200
-```
+插件文档不再随本站部署：在插件表单中填写外部 `docsUrl`，详情页直接跳转。
+离线工具箱是独立静态镜像（`nitrowater-tools/Dockerfile`），由外部服务自行部署。
 
 ## 8. 公网入口
 
@@ -200,7 +189,7 @@ bash deploy/bin/backup_mysql.sh
 - [ ] `deploy/` 已上传；`.env` 无占位值，`check-env` 0 FAIL
 - [ ] mysql / redis healthy；三个库 + 业务账号存在
 - [ ] account discovery 可达；bff healthy；`/api/public/ping` 返回 pong
-- [ ] Piston 语言包已装；文档站 `/healthz` 与 `/plugin/<id>/` 可访问
+- [ ] Piston 语言包已装；插件 `docsUrl` 已在管理端填为完整外部 URL
 - [ ] HTTPS 生效；`/actuator/health` 非 200；上传 5 MB 不是 413
 - [ ] 首个 `SUPER_ADMIN` 已授权并重新登录
 - [ ] MySQL 基线备份完成；KEK 已记录
@@ -216,4 +205,4 @@ bash deploy/bin/backup_mysql.sh
 | `manifest unknown` / `denied` | 镜像 tag / 仓库路径不对；private 包先 `docker login ghcr.io` |
 | 登录后跳 `localhost:5173` / `invalid redirect_uri` | 7 个地址改成浏览器看到的公网地址 |
 | 点「运行」才 500 | Piston 语言包没装，跑 `install-piston-runtimes.sh` |
-| `/plugin/*` 404 | `DOCS_IMAGE_REPO` / `DOCS_IMAGE_TAG` 不对，或镜像不是用 `/plugin` 前缀构建 |
+| 插件「文档」链接 404 | 库中 `docsUrl` 为空或填错；本站不再托管文档，需在插件表单填写完整外部 URL |

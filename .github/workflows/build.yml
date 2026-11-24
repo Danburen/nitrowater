@@ -1,5 +1,5 @@
-# Build: run the checks, then build and push the four application images to GHCR.
-# Does not deploy.
+# Build: run the checks, then build and push five images to GHCR — the four backend
+# services plus the standalone `tools` static site. Does not deploy anything.
 #
 # Image tags: <tag> (input, default latest) and <sha>. Roll back by deploying a
 # previous sha with deploy.yml. Images are built by `docker buildx bake`
@@ -7,7 +7,11 @@
 # deploy/ is not an image: deploy.yml ships it over SSH from the same commit.
 # Tests run in this workflow only — the Dockerfile builds with `-x test`.
 #
-# Short-circuit: `probe` checks first whether all four <sha> tags already exist. If
+# The `tools` image is consumed by EXTERNAL services on a separate origin; deploy.yml
+# only pulls the four backend images into the app compose unit. Cross-site links come
+# from build-time VITE_* variables, overridable with repo variables of the same name.
+#
+# Short-circuit: `probe` checks first whether all five <sha> tags already exist. If
 # they do, every verify job and the bake are skipped and the run ends in seconds
 # (only `alias` still runs, to point a requested <tag> at that sha). Rebuilding the
 # same commit would not give the same digest anyway (COPY layers keep file mtimes),
@@ -86,7 +90,7 @@ jobs:
           echo "resolved: $repo/*:$tag (sha $GITHUB_SHA)"
 
   # ---------------------------------------------------------------------------
-  # probe: are all four <sha> images already in GHCR? If yes, skip everything.
+  # probe: are all five <sha> images already in GHCR? If yes, skip everything.
   # ---------------------------------------------------------------------------
   probe:
     name: probe (images for sha)
@@ -111,7 +115,7 @@ jobs:
         run: |
           set -u
           missing=0
-          for svc in account resource server bff; do
+          for svc in account resource server bff tools; do
             ref="ghcr.io/$REPO/$svc:$SHA"
             if docker manifest inspect "$ref" >/dev/null 2>&1; then
               echo "hit   $ref"
@@ -122,14 +126,14 @@ jobs:
           done
           if [ "$missing" -eq 0 ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo '::notice::all four images already exist for this sha — checks and bake skipped'
+            echo '::notice::all five images already exist for this sha — checks and bake skipped'
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
   # ---------------------------------------------------------------------------
   # alias: images already exist for this sha, but a human-readable tag was asked
-  # for. Point that tag at the existing manifest — 4 registry calls, no rebuild.
+  # for. Point that tag at the existing manifest — 5 registry calls, no rebuild.
   # (Without this, `release -f tag=v1.2.3` on an already-built commit would skip
   # the bake and silently never create v1.2.3.)
   # ---------------------------------------------------------------------------
@@ -154,14 +158,14 @@ jobs:
           SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           set -eu
-          for svc in account resource server bff; do
+          for svc in account resource server bff tools; do
             docker buildx imagetools create \
               -t "ghcr.io/$REPO/$svc:$TAG" "ghcr.io/$REPO/$svc:$SHA"
             echo "aliased $svc:$TAG -> $svc:$SHA"
           done
 
   # ---------------------------------------------------------------------------
-  # verify: cheap gates. All four run in parallel and must pass before the build.
+  # verify: cheap gates. All five run in parallel and must pass before the build.
   # ---------------------------------------------------------------------------
   backend:
     name: backend (java 25)
@@ -214,6 +218,30 @@ jobs:
 
       # `build` also type-checks (vue-tsc -b). It duplicates the web-ui Docker
       # stage on purpose: bundling errors surface here in seconds, not mid-build.
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+
+  ui-tools:
+    name: ui-tools (standalone offline tools)
+    runs-on: ubuntu-latest
+    needs: [probe]
+    if: needs.probe.outputs.exists != 'true'
+    defaults:
+      run:
+        working-directory: nitrowater-tools
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Same patch as nitrowater-tools/Dockerfile.
+          node-version: '24.22.3'
+          cache: npm
+          cache-dependency-path: nitrowater-tools/package-lock.json
+
+      # Identical to the tools Docker stage: lint first, then build (which also
+      # runs vue-tsc -b), so type/bundle errors never reach the image build.
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
@@ -288,12 +316,12 @@ jobs:
           Write-Host 'all .ps1 parsed clean'
 
   # ---------------------------------------------------------------------------
-  # build: one bake invocation -> 4 images, Gradle runs once
+  # build: one bake invocation -> 5 images, Gradle runs once
   # ---------------------------------------------------------------------------
   build:
-    name: bake (push 4 images)
-    needs: [resolve, probe, backend, ui-web, ui-account, guard]
-    # Skipped when probe found all four <sha> images (nothing to build).
+    name: bake (push 5 images)
+    needs: [resolve, probe, backend, ui-web, ui-tools, ui-account, guard]
+    # Skipped when probe found all five <sha> images (nothing to build).
     if: needs.probe.outputs.exists != 'true'
     runs-on: ubuntu-latest
     env:
@@ -301,6 +329,10 @@ jobs:
       REPO: ${{ needs.resolve.outputs.repo }}
       TAG: ${{ needs.resolve.outputs.tag }}
       SHA: ${{ needs.resolve.outputs.sha }}
+      # Bake reads this as a variable and passes it as the portal's Vite build arg.
+      # A repo variable overrides the placeholder when the real origin is known.
+      # The tools image takes no build args — it never links back to the portal.
+      VITE_OFFLINE_TOOLS_URL: ${{ vars.VITE_OFFLINE_TOOLS_URL || 'https://tools.example.com' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -329,7 +361,7 @@ jobs:
             echo "### images: \`${TAG}\`"
             echo "| service | ref | digest |"
             echo "|---|---|---|"
-            for svc in account resource server bff; do
+            for svc in account resource server bff tools; do
               ref="${REGISTRY}/${REPO}/${svc}:${TAG}"
               digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo n/a)"
               echo "| ${svc} | \`${ref}\` | \`${digest}\` |"

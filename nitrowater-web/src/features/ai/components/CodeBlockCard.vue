@@ -77,9 +77,6 @@ const terminalEl = ref<HTMLElement | null>(null)
 const router = useRouter()
 const { session, login } = useAuth()
 
-/** Languages the runner executes on the server; they are only selectable when signed in. */
-const SERVER_LANGUAGES: ReadonlySet<string> = new Set(['java', 'c', 'cpp'])
-
 const target = computed<SandboxTarget | null>(() => TARGETS[props.language.trim().toLowerCase()] ?? null)
 const languageLabel = computed(() => target.value?.label ?? (props.language || 'text'))
 
@@ -293,12 +290,12 @@ async function openInRunner(): Promise<void> {
       return
     }
   }
-  if (SERVER_LANGUAGES.has(sandbox.id) && session.value?.authenticated !== true) {
-    // Server-side languages are only listed for signed-in users; sign in, then the seed is consumed.
-    login('/tools/code-runner')
+  // The runner is a signed-in standalone page: log in first, then the seed is consumed there.
+  if (session.value?.authenticated !== true) {
+    login('/runner')
     return
   }
-  void router.push('/tools/code-runner')
+  void router.push('/runner')
 }
 
 async function copy(): Promise<void> {

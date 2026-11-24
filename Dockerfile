@@ -51,6 +51,9 @@ RUN pnpm --filter auth-ui build
 # stage, so the bff image is self-contained — no host-side `npm run build`, no bind mount.
 FROM node:24.22.3-alpine AS web-ui
 WORKDIR /build/nitrowater-web
+# Cross-site links are build-time placeholders; CI can point the portal at the deployed tools origin.
+ARG VITE_OFFLINE_TOOLS_URL=https://tools.example.com
+ENV VITE_OFFLINE_TOOLS_URL=$VITE_OFFLINE_TOOLS_URL
 COPY nitrowater-web/package.json nitrowater-web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY nitrowater-web/ ./

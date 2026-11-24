@@ -9,8 +9,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * Registers the per-user quota interceptors for sandbox runs and assistant chat.
  *
- * <p>There is no documentation static handler anymore: NitroWater docs are a markdown-only corpus
- * and the VeloChatX site is served by the plugin-docs container behind {@code /plugin/**}.</p>
+ * <p>There is no documentation static handler: NitroWater docs are a markdown-only corpus and
+ * plugin documentation is reached through each plugin's external {@code docsUrl}.</p>
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {

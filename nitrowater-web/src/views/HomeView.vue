@@ -7,18 +7,16 @@
  * the title and the three ways in — no scrolling needed to find them. Everything below is optional
  * reading, one band per subject.
  *
- * The tool band is derived from the tool catalog, so the entrance copy never drifts from the real
- * tool list. Artwork is local SVG (src/assets/home/*.svg) standing in for real screenshots: it
- * renders offline, weighs a few KB and uses the same palette as the page.
+ * The tools band links to the separately deployed offline-tools site (configured via env);
+ * this portal only hosts login-bound features. Artwork is local SVG (src/assets/home/*.svg)
+ * standing in for real screenshots: it renders offline, weighs a few KB and uses the same palette.
  */
 import { onMounted, onUnmounted, ref } from 'vue'
 import { fetchLegalIndex, type LegalDocument } from '../api/legal'
-import { readyTools } from '../features/tools/catalog'
+import { offlineToolsUrl } from '../config/links'
 import toolboxShot from '../assets/home/toolbox-shot.svg'
 import nitrobotShot from '../assets/home/nitrobot-shot.svg'
 import pluginsShot from '../assets/home/plugins-shot.svg'
-
-const toolCount = readyTools.length
 
 /*
  * "Scroll for more" hint.
@@ -116,13 +114,24 @@ onUnmounted(() => {
   if (frame) cancelAnimationFrame(frame)
 })
 
+interface Entry {
+  key: string
+  /** Internal route (mutually exclusive with `href`). */
+  to?: string
+  /** External destination (mutually exclusive with `to`). */
+  href?: string
+  title: string
+  sub: string
+  icon: string
+}
+
 /** Three ways into the site, rendered on the opening screen. */
-const entries = [
+const entries: Entry[] = [
   {
     key: 'tools',
-    to: '/tools',
-    title: '工具箱',
-    sub: `${toolCount} 个工具 · 全部本地运行`,
+    href: offlineToolsUrl,
+    title: '离线工具箱',
+    sub: '浏览器本地 · 无需登录',
     icon: 'M4 7.5h16M5 7.5l.9 11a2 2 0 0 0 2 1.9h8.2a2 2 0 0 0 2-1.9l.9-11M9.5 7.5V5.5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v2',
   },
   {
@@ -139,7 +148,7 @@ const entries = [
     sub: '说明 · 版本 · 下载',
     icon: 'M12 3.2l7.8 4.4v8.8L12 20.8l-7.8-4.4V7.6zM12 12v8.8M12 12L4.2 7.6M12 12l7.8-4.4',
   },
-] as const
+]
 
 interface FeatureRow {
   key: string
@@ -147,7 +156,10 @@ interface FeatureRow {
   desc: string
   /** Second paragraph: the "why it matters" line, in a quieter colour. */
   detail: string
-  to: string
+  /** Internal route (mutually exclusive with `href`). */
+  to?: string
+  /** External destination (mutually exclusive with `to`). */
+  href?: string
   cta: string
   image: string
   alt: string
@@ -158,11 +170,11 @@ interface FeatureRow {
 const features: FeatureRow[] = [
   {
     key: 'tools',
-    title: '工具箱',
-    desc: `${toolCount} 个开服小工具：MOTD 配色预览、server.properties 生成与校验、64×64 服务器图标裁切、启动脚本生成，另有代码运行、压缩解压、结构可视化与格式转换。`,
-    detail: '开箱即用',
-    to: '/tools',
-    cta: '进入工具箱',
+    title: '离线工具箱',
+    desc: 'MOTD 配色预览、server.properties 生成与校验、64×64 服务器图标裁切、启动脚本生成，以及压缩解压、结构可视化与格式转换。',
+    detail: '独立站点，文件与数据全部留在本机。',
+    href: offlineToolsUrl,
+    cta: '前往工具箱',
     image: toolboxShot,
     alt: '工具箱界面示意',
     reverse: false,
@@ -235,9 +247,13 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
           </p>
 
           <div class="mx-auto mt-10 grid w-full max-w-[760px] gap-3 text-left sm:grid-cols-3">
-            <router-link
+            <component
+              :is="entry.href ? 'a' : 'router-link'"
               v-for="entry in entries"
               :key="entry.key"
+              :href="entry.href"
+              :target="entry.href ? '_blank' : undefined"
+              rel="noopener noreferrer"
               :to="entry.to"
               class="group flex items-center gap-3 rounded-[14px] border border-line bg-card px-4 py-3.5 transition hover:-translate-y-0.5 hover:border-line-strong"
             >
@@ -259,7 +275,7 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
                 <span class="block text-[13.5px] font-medium text-ink">{{ entry.title }}</span>
                 <span class="block truncate text-[12px] text-faint">{{ entry.sub }}</span>
               </span>
-            </router-link>
+            </component>
           </div>
 
           <!--
@@ -369,7 +385,11 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
             >
               {{ row.detail }}
             </p>
-            <router-link
+            <component
+              :is="row.href ? 'a' : 'router-link'"
+              :href="row.href"
+              :target="row.href ? '_blank' : undefined"
+              rel="noopener noreferrer"
               :to="row.to"
               class="group mt-6 inline-flex items-center gap-1.5 text-[14px] font-medium text-accent transition hover:text-accent-strong"
             >
@@ -378,7 +398,7 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
                 class="transition-transform group-hover:translate-x-0.5"
                 aria-hidden="true"
               >→</span>
-            </router-link>
+            </component>
           </div>
 
           <div class="flex-1">

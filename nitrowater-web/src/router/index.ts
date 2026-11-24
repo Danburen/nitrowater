@@ -4,8 +4,8 @@ import HomeView from '../views/HomeView.vue'
 // The SPA no longer handles OIDC callbacks: login/logout are full-page redirects through the
 // BFF, so the only routes are the app pages themselves.
 //
-// The `/tools` area is a nested layout (ToolsLayout) that renders its own wtools-style sidebar
-// shell; `meta.layout = 'tools'` tells App.vue to hide the global header there.
+// The code runner is a standalone signed-in page at `/runner`; offline browser tools now live in
+// their own deployable app, so this SPA no longer owns a `/tools` area.
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -27,6 +27,8 @@ const router = createRouter({
         { path: ':key', name: 'plugin-detail', component: () => import('../features/plugins/PluginDetailView.vue') },
       ],
     },
+    // Standalone code runner: login is enforced inside the view (full-page BFF SSO redirect).
+    { path: '/runner', name: 'runner', component: () => import('../features/runner/RunnerView.vue') },
     { path: '/about', name: 'about', component: () => import('../views/AboutView.vue') },
     // Public legal texts (privacy policy / terms), rendered on the portal origin. The SSO pages
     // render the same files at /legal/* on the account origin.
@@ -49,25 +51,6 @@ const router = createRouter({
       { path: 'ai/index', name: 'admin-ai-index', component: () => import('../features/admin/ai/AdminAiIndexPage.vue') },
       { path: 'ai/skills', name: 'admin-ai-skills', component: () => import('../features/admin/ai/AdminAiSkillsPage.vue') },
       { path: 'ai/tools', name: 'admin-ai-tools', component: () => import('../features/admin/ai/AdminAiToolsPage.vue') },
-      ],
-    },
-    {
-      path: '/tools',
-      component: () => import('../features/tools/ToolsLayout.vue'),
-      meta: { layout: 'tools' },
-      children: [
-        { path: '', name: 'tools', component: () => import('../features/tools/ToolsView.vue') },
-        { path: 'motd', name: 'tool-motd', component: () => import('../features/tools/motd/MotdTool.vue') },
-        { path: 'server-properties', name: 'tool-server-properties', component: () => import('../features/tools/server-properties/ServerPropertiesTool.vue') },
-        { path: 'server-icon', name: 'tool-server-icon', component: () => import('../features/tools/server-icon/ServerIconTool.vue') },
-        { path: 'start-script', name: 'tool-start-script', component: () => import('../features/tools/start-script/StartScriptTool.vue') },
-        { path: 'java-to-ts', name: 'tool-java-to-ts', component: () => import('../features/tools/java-to-ts/JavaToTsTool.vue') },
-        { path: 'zip', name: 'tool-zip', component: () => import('../features/tools/zip/ZipTool.vue') },
-        { path: 'tree', name: 'tool-tree', component: () => import('../features/tools/tree/TreeTool.vue') },
-        { path: 'list-tree', name: 'tool-list-tree', component: () => import('../features/tools/list-tree/ListTreeTool.vue') },
-        { path: 'code-runner', name: 'tool-code-runner', component: () => import('../features/tools/code-runner/CodeRunnerTool.vue') },
-        { path: 'video-to-gif', name: 'tool-video-to-gif', component: () => import('../features/tools/video-to-gif/VideoToGifTool.vue') },
-        { path: 'markdown-to-word', name: 'tool-markdown-to-word', component: () => import('../features/tools/markdown-to-word/MarkdownToWordTool.vue') },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

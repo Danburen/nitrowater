@@ -393,12 +393,14 @@ function fmtDate(iso: string | null): string {
               >
             </label>
             <label class="flex flex-col gap-1 sm:col-span-2">
-              <span class="text-[12px] text-dim">文档站 URL</span>
+              <span class="text-[12px] text-dim">文档站 URL（外部完整地址）</span>
               <input
                 v-model="form.docsUrl"
                 class="input"
-                placeholder="/plugin/velochatx/"
+                type="url"
+                placeholder="https://docs.example.com/velochatx/"
               >
+              <span class="text-[11px] text-faint">本站不再托管插件文档，请填写外部文档站地址；留空则详情页不显示「文档」入口。</span>
             </label>
             <label class="flex flex-col gap-1">
               <span class="text-[12px] text-dim">官网 URL（可空）</span>
