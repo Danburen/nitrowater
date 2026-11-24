@@ -62,6 +62,20 @@ export const ResponseCode = {
   InternalForbidden: 'internal_forbidden',
   /** The storage backend failed. */
   StorageError: 'storage_error',
+  /** VeloChatX remote-instance protocol violation (400). */
+  InstanceBadProtocol: 'instance_bad_protocol',
+  /** VeloChatX instance api-key missing, malformed or unknown (401). */
+  InstanceUnauthorized: 'instance_unauthorized',
+  /** VeloChatX instance api-key lacks the required scope (403). */
+  InstanceForbidden: 'instance_forbidden',
+  /** VeloChatX api-key already owns the maximum number of instances (403). */
+  InstanceLimitExceeded: 'instance_limit_exceeded',
+  /** VeloChatX instance id already has a live command stream (409). */
+  InstanceConflict: 'instance_conflict',
+  /** VeloChatX instance exceeded its report rate (429). */
+  InstanceRateLimited: 'instance_rate_limited',
+  /** VeloChatX target instance has no live command stream (503). */
+  InstanceOffline: 'instance_offline',
 } as const
 
 /** Union of every known response code. */
