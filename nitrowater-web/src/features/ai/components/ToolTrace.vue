@@ -7,6 +7,7 @@
  * list of chips would only duplicate it. Skills have no card of their own, so they keep this row.</p>
  */
 import { computed, ref } from 'vue'
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 
 const props = defineProps<{ skills: string[] }>()
 
@@ -23,20 +24,12 @@ const summary = computed(() => `技能 · ${props.skills.length} 个`)
       :aria-expanded="open"
       @click="open = !open"
     >
-      <svg
-        class="size-3 transition-transform"
+      <SvgIcon
+        name="chevron-right"
+        :size="12"
+        class="transition-transform"
         :class="open ? 'rotate-90' : ''"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2.2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <polyline
-          points="9 18 15 12 9 6"
-        />
-      </svg>
+      />
       {{ summary }}
     </button>
 

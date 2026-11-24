@@ -23,6 +23,7 @@ import {
   type PluginDetail,
   type PluginResource,
 } from '../../api/plugins'
+import PathIcon from '../../shared/ui/PathIcon.vue'
 
 /** Lazy: the editor (and `md-editor-v3`) must never enter the public bundle. */
 const PluginEditorDrawer = defineAsyncComponent(() => import('./PluginEditorDrawer.vue'))
@@ -142,17 +143,10 @@ function fmtDate(iso: string | null): string {
         <header class="pb-6">
           <div class="flex items-center gap-3">
             <span class="grid size-[44px] shrink-0 place-items-center rounded-[12px] border border-accent/25 bg-gradient-to-br from-accent/15 to-accent-2/15 text-accent">
-              <svg
-                class="size-6"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path :d="plugin.icon ?? ''" />
-              </svg>
+              <PathIcon
+                :path="plugin.icon ?? ''"
+                :size="24"
+              />
             </span>
             <div class="min-w-0">
               <h1 class="text-[24px] font-bold tracking-tight">

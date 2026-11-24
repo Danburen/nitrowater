@@ -51,12 +51,17 @@ The browser only talks to the BFF — access and refresh tokens never leave the 
 ### Offline tools and code runner
 
 - **Offline toolbox** lives in the standalone `nitrowater-tools/` package and is published as a static
-  image. MOTD, `server.properties`, server icons, start scripts, archives, trees, Java→TypeScript,
-  MP4→GIF and Markdown→Word all run in the browser, so files never leave the machine. The portal
-  links to it with the build-time `VITE_OFFLINE_TOOLS_URL` placeholder.
-- **Code runner** stays on this site at `/runner` and requires login. It reuses the server-side Piston
-  sandbox for Java / C / C++ / Python / JS / TS / Lua; the agent's "open in runner" action hands off
-  its seed to this page.
+  image. MOTD, `server.properties`, server icons, start scripts, the **local code runner**, archives,
+  trees, Java→TypeScript, MP4→GIF and Markdown→Word all run in the browser, so files never leave the
+  machine. The portal links to it with the build-time `VITE_OFFLINE_TOOLS_URL` placeholder.
+- **Local code runner** (`/tools/code-runner` on the tools site) is anonymous: Python, JavaScript,
+  TypeScript and Lua execute in-page via Pyodide, the native engine, the TS compiler and wasmoon.
+  Code and stdin are never uploaded; runtimes are lazy-loaded from a CDN on first use and cached.
+- **Cloud code runner** stays on this site at `/runner` and requires login. It reuses the server-side
+  Piston sandbox for Java / C / C++ and the other backend-only languages; the agent's "open in runner"
+  action hands off its seed to this page. The distinction is execution location, not "online vs
+  offline": if the code still runs with the network off it is local; if it must be POSTed to a
+  backend it is cloud.
 
 ### Plugin centre
 

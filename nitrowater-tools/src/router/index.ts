@@ -40,6 +40,11 @@ const router = createRouter({
       component: () => import('../features/tools/java-to-ts/JavaToTsTool.vue'),
     },
     {
+      path: '/tools/code-runner',
+      name: 'code-runner',
+      component: () => import('../features/tools/code-runner/LocalCodeRunnerTool.vue'),
+    },
+    {
       path: '/tools/video-to-gif',
       name: 'video-to-gif',
       component: () => import('../features/tools/video-to-gif/VideoToGifTool.vue'),

@@ -10,6 +10,8 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../../auth/useAuth'
+import PathIcon from './PathIcon.vue'
+import SvgIcon from './SvgIcon.vue'
 import ThemeToggle from './ThemeToggle.vue'
 
 interface NavItem {
@@ -128,17 +130,10 @@ function active(to: string): boolean {
           :aria-expanded="!collapsed"
           @click="toggleCollapse"
         >
-          <svg
-            class="size-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path :d="collapsed ? 'M9 5l7 7-7 7' : 'M15 5l-7 7 7 7'" />
-          </svg>
+          <PathIcon
+            :path="collapsed ? 'M9 5l7 7-7 7' : 'M15 5l-7 7 7 7'"
+            :size="16"
+          />
         </button>
       </div>
 
@@ -158,17 +153,10 @@ function active(to: string): boolean {
           :class="[active(overview.to) ? 'bg-accent/10 font-medium text-accent' : 'text-dim hover:bg-soft hover:text-ink', collapsed ? 'justify-center px-2' : '']"
           :title="collapsed ? overview.label : undefined"
         >
-          <svg
-            class="size-4 shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path :d="overview.icon || 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'" />
-          </svg>
+          <PathIcon
+            :path="overview.icon || 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z'"
+            :size="16"
+          />
           <span
             v-if="!collapsed"
             class="truncate"
@@ -202,17 +190,10 @@ function active(to: string): boolean {
             :class="[active(item.to) ? 'bg-accent/10 font-medium text-accent' : 'text-dim hover:bg-soft hover:text-ink', collapsed ? 'justify-center px-2' : '']"
             :title="collapsed ? item.label : undefined"
           >
-            <svg
-              class="size-4 shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path :d="item.icon || 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01'" />
-            </svg>
+            <PathIcon
+              :path="item.icon || 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01'"
+              :size="16"
+            />
             <span
               v-if="!collapsed"
               class="truncate"
@@ -237,17 +218,10 @@ function active(to: string): boolean {
             :disabled="loading"
             @click="login()"
           >
-            <svg
-              class="size-[18px]"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />
-            </svg>
+            <SvgIcon
+              name="user"
+              :size="18"
+            />
           </button>
           <button
             v-else
@@ -257,17 +231,10 @@ function active(to: string): boolean {
             aria-label="退出登录"
             @click="logout"
           >
-            <svg
-              class="size-[18px]"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-            </svg>
+            <SvgIcon
+              name="logout"
+              :size="18"
+            />
           </button>
         </template>
         <template v-else>

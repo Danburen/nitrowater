@@ -25,6 +25,7 @@ import type { SandboxRunOutcome } from '../../../api/sandbox'
 import { readJson } from '../../../api/envelope'
 import { useAuth } from '../../../auth/useAuth'
 import { writeRunnerSeed } from '../../../shared/codeRunnerSeed'
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 import { toast } from '../../../shared/ui/toast'
 
 interface SandboxTarget {
@@ -355,18 +356,10 @@ function clean(value: string | null): string {
           title="打开代码运行器：可编辑、可输入 stdin"
           @click="openInRunner"
         >
-          <svg
-            class="size-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M7 17 17 7M8 7h9v9" />
-          </svg>
+          <SvgIcon
+            name="external-link"
+            :size="12"
+          />
           打开运行器
         </button>
         <button

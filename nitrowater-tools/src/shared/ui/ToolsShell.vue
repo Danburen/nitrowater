@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Standalone tools-site shell (no auth / no BFF): desktop sidebar + mobile select + routed content.
+ * Standalone tools-site shell (no auth / no BFF): desktop sidebar + right-pane top bar + routed content.
  *
  * <p>Deliberately self-contained: no link back to the portal, no shared config. Once the portal
  * opens this site in a new tab, the two origins are completely independent.</p>
@@ -8,6 +8,9 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { ToolDef, ToolCategory } from '../../features/tools/catalog'
+import GitHubIconButton from './GitHubIconButton.vue'
+import PublicIcon from './PublicIcon.vue'
+import SvgIcon from './SvgIcon.vue'
 import ThemeToggle from './ThemeToggle.vue'
 
 const props = defineProps<{ tools: ToolDef[] }>()
@@ -42,41 +45,22 @@ function active(to: string): boolean {
 </script>
 
 <template>
-  <div class="flex h-[100dvh] flex-col overflow-hidden bg-bg text-ink md:flex-row">
-    <!-- Mobile top bar -->
-    <div class="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 md:hidden">
-      <select
-        class="select max-w-[190px] py-1.5 text-[13px]"
-        :value="route.path"
-        aria-label="选择导航"
-        @change="go(($event.target as HTMLSelectElement).value)"
-      >
-        <option value="/tools">
-          全部工具
-        </option>
-        <option
-          v-for="tool in tools"
-          :key="tool.key"
-          :value="tool.to"
-        >
-          {{ tool.title }}
-        </option>
-      </select>
-      <span class="ml-auto">
-        <ThemeToggle />
-      </span>
-    </div>
-
-    <!-- Desktop sidebar -->
+  <div class="flex h-[100dvh] overflow-hidden bg-bg text-ink">
+    <!-- Desktop sidebar: brand + navigation. Collapsed state keeps only the logo (click to expand). -->
     <aside
       class="hidden shrink-0 flex-col border-r border-line bg-soft/40 transition-[width] duration-200 ease-out md:flex"
       :class="collapsed ? 'w-14' : 'w-[210px]'"
     >
-      <div
-        class="flex h-[52px] shrink-0 items-center border-b border-line"
+      <button
+        type="button"
+        class="flex h-[52px] shrink-0 cursor-pointer items-center border-b border-line transition hover:bg-soft"
         :class="collapsed ? 'justify-center px-2' : 'gap-2 px-3'"
+        :title="collapsed ? '展开导航' : '收起导航'"
+        :aria-label="collapsed ? '展开导航' : '收起导航'"
+        :aria-expanded="!collapsed"
+        @click="toggleCollapse"
       >
-        <div class="flex min-w-0 items-center gap-1.5 px-1 py-1">
+        <div class="flex min-w-0 items-center gap-1.5">
           <img
             src="/favicon.svg"
             alt=""
@@ -85,30 +69,15 @@ function active(to: string): boolean {
           <span
             v-if="!collapsed"
             class="truncate text-sm font-semibold text-ink"
-          >离线工具箱</span>
+          >NitroWater</span>
         </div>
-        <button
-          type="button"
-          class="grid shrink-0 place-items-center rounded-[9px] text-dim transition hover:bg-soft hover:text-ink"
-          :class="collapsed ? 'size-9' : 'ml-auto size-8'"
-          :title="collapsed ? '展开导航' : '收起导航'"
-          :aria-label="collapsed ? '展开导航' : '收起导航'"
-          :aria-expanded="!collapsed"
-          @click="toggleCollapse"
-        >
-          <svg
-            class="size-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path :d="collapsed ? 'M9 5l7 7-7 7' : 'M15 5l-7 7 7 7'" />
-          </svg>
-        </button>
-      </div>
+        <PublicIcon
+          v-if="!collapsed"
+          name="chevron-left"
+          :size="16"
+          class="ml-auto text-dim"
+        />
+      </button>
 
       <nav class="min-h-0 flex-1 overflow-y-auto p-2">
         <router-link
@@ -117,17 +86,10 @@ function active(to: string): boolean {
           :class="[active('/tools') ? 'bg-accent/10 font-medium text-accent' : 'text-dim hover:bg-soft hover:text-ink', collapsed ? 'justify-center px-2' : '']"
           :title="collapsed ? '全部工具' : undefined"
         >
-          <svg
-            class="size-4 shrink-0"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" />
-          </svg>
+          <SvgIcon
+            name="grid"
+            :size="16"
+          />
           <span
             v-if="!collapsed"
             class="truncate"
@@ -152,17 +114,10 @@ function active(to: string): boolean {
             :class="[active(tool.to) ? 'bg-accent/10 font-medium text-accent' : 'text-dim hover:bg-soft hover:text-ink', collapsed ? 'justify-center px-2' : '']"
             :title="collapsed ? tool.title : undefined"
           >
-            <svg
-              class="size-4 shrink-0"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path :d="tool.icon" />
-            </svg>
+            <PublicIcon
+              :name="tool.icon"
+              :size="16"
+            />
             <span
               v-if="!collapsed"
               class="truncate"
@@ -170,21 +125,51 @@ function active(to: string): boolean {
           </router-link>
         </template>
       </nav>
-
-      <div
-        class="flex shrink-0 items-center gap-2 border-t border-line p-2"
-        :class="collapsed ? 'flex-col' : ''"
-      >
-        <ThemeToggle />
-        <span
-          v-if="!collapsed"
-          class="min-w-0 flex-1 truncate text-right text-[11.5px] text-faint"
-        >本地运行 · 不上传文件</span>
-      </div>
     </aside>
 
-    <main class="min-h-0 flex-1 overflow-hidden">
-      <router-view />
-    </main>
+    <!-- Right pane: its own top bar (not spanning the sidebar) and the routed content. -->
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header class="flex h-[52px] shrink-0 items-center gap-2 border-b border-line px-3">
+        <!-- Tool views teleport their title + info here; the catalogue shows a fallback label. -->
+        <div
+          id="tools-topbar-title"
+          class="flex min-w-0 flex-1 items-center gap-1.5"
+        >
+          <span
+            v-if="route.path === '/tools'"
+            class="truncate text-sm text-dim"
+          >全部工具</span>
+        </div>
+        <span class="flex shrink-0 items-center gap-2">
+          <GitHubIconButton />
+          <ThemeToggle />
+        </span>
+      </header>
+
+      <!-- Mobile tool picker: a slim strip below the top bar. -->
+      <div class="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 md:hidden">
+        <select
+          class="select max-w-[190px] py-1.5 text-[13px]"
+          :value="route.path"
+          aria-label="选择导航"
+          @change="go(($event.target as HTMLSelectElement).value)"
+        >
+          <option value="/tools">
+            全部工具
+          </option>
+          <option
+            v-for="tool in tools"
+            :key="tool.key"
+            :value="tool.to"
+          >
+            {{ tool.title }}
+          </option>
+        </select>
+      </div>
+
+      <main class="min-h-0 flex-1 overflow-hidden">
+        <router-view />
+      </main>
+    </div>
   </div>
 </template>

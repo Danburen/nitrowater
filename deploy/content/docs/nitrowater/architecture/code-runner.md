@@ -1,6 +1,8 @@
 # 代码运行与 Piston 沙箱
 
-代码运行器是登录后才可用的独立页面（`/runner`），执行统一走后端 Piston 沙箱。NitroBot 的 `runCode` 工具与 HTTP 入口共享同一套配额与并发闸门；浏览器本地工具已拆到独立站点，不再包含代码运行。
+主站的代码运行器是登录后才可用的独立页面（`/runner`），执行统一走后端 Piston 沙箱。NitroBot 的 `runCode` 工具与 HTTP 入口共享同一套配额与并发闸门。
+
+浏览器本地运行器在独立的 `nitrowater-tools` 站点（`/tools/code-runner`），只支持 Python / JavaScript / TypeScript / Lua，代码与 stdin 不出浏览器、无需登录。两者按**执行位置**区分，而不是按「在线 / 离线」区分：同一个页面都要先从服务器加载，判断标准是代码断网后还能不能在浏览器里跑出来——能就是本地，必须 POST 给后端就是云端。Java / C / C++ 等服务端语言只保留在本文描述的 Piston 沙箱里。
 
 ## 1. 通道
 

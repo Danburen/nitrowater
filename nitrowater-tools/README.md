@@ -1,8 +1,18 @@
 # NitroWater 离线工具箱
 
-本目录是**独立的静态站点包**：从主站抽离出的浏览器本地工具（MOTD、server.properties、server-icon、启动脚本、压缩/解压、树可视化、Java DTO 转换、MP4 转 GIF、Markdown 转 Word）。不与 BFF / OIDC 通信，文件与文本只在用户浏览器里处理。
+本目录是**独立的静态站点包**：从主站抽离出的浏览器本地工具（MOTD、server.properties、server-icon、启动脚本、本地代码运行器、压缩/解压、树可视化、Java DTO 转换、MP4 转 GIF、Markdown 转 Word）。不与 BFF / OIDC 通信，文件与文本只在用户浏览器里处理。
 
-在线代码运行器不在这里——它仍属于主站的登录功能（`/runner`）。
+## 两种代码运行器
+
+| | 本地代码运行器（本站 `/tools/code-runner`） | 云端运行器（主站 `/runner`） |
+|---|---|---|
+| 执行位置 | 用户浏览器（原生 JS / Pyodide / wasmoon） | 服务端 Piston 沙箱 |
+| 代码是否上传 | 否，代码与 stdin 不出浏览器 | 是，POST 到 `/api/sandbox/run` |
+| 登录 | 无需 | 必须登录，且有配额 |
+| 语言 | Python / JavaScript / TypeScript / Lua | Java / C / C++ 及服务端支持的全语言 |
+| 网络 | 首次加载运行时后即可离线执行 | 全程依赖网络 |
+
+判断标准：**同一份代码断网后还能不能在浏览器里跑出来**。能，就是本地；必须发给后端，就是云端。因此本站只保留前四种轻量语言，服务端语言只留在主站。运行时（Pyodide、TS 编译器、wasmoon）首次从 CDN 懒加载并缓存到浏览器，无需任何后端。
 
 ## 本地开发
 

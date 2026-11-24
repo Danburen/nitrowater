@@ -16,6 +16,8 @@
  */
 import { computed, ref } from 'vue'
 import type { LiveStep } from '../types'
+import PathIcon from '../../../shared/ui/PathIcon.vue'
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 
 const props = defineProps<{
   steps: readonly LiveStep[]
@@ -244,20 +246,11 @@ function toggle(row: StepRow): void {
           class="live-step-icon"
           aria-hidden="true"
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.7"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path
-              v-for="(d, index) in icon(row.head)"
-              :key="index"
-              :d="d"
-            />
-          </svg>
+          <PathIcon
+            :path="icon(row.head)"
+            :size="13"
+            :stroke-width="1.7"
+          />
         </span>
 
         <span class="live-step-body">
@@ -280,61 +273,32 @@ function toggle(row: StepRow): void {
           :title="isOpen(row) ? '收起明细' : '展开明细'"
           @click="toggle(row)"
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <SvgIcon
+            name="chevron-down"
+            :size="12"
+          />
         </button>
 
         <span
           class="live-step-state"
           aria-hidden="true"
         >
-          <svg
+          <SvgIcon
             v-if="row.state === 'running'"
+            name="spinner"
+            :size="14"
             class="live-spin"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.2"
-            stroke-linecap="round"
-          >
-            <path d="M21 12a9 9 0 1 1-6.2-8.6" />
-          </svg>
-          <svg
+          />
+          <SvgIcon
             v-else-if="row.state === 'failed'"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-          >
-            <circle
-              cx="12"
-              cy="12"
-              r="9"
-            />
-            <path d="M12 7.5v5.5" />
-            <path d="M12 16.5h.01" />
-          </svg>
-          <svg
+            name="error"
+            :size="14"
+          />
+          <SvgIcon
             v-else
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
+            name="check"
+            :size="14"
+          />
         </span>
       </div>
 

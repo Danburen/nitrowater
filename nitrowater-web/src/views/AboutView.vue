@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { creditGroups } from '../shared/data/credits'
 import { fetchLegalIndex, type LegalDocument } from '../api/legal'
+import SvgIcon from '../shared/ui/SvgIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -208,17 +209,11 @@ onMounted(() => {
               <span class="min-w-0 flex-1">
                 <span class="flex items-center gap-1.5 font-medium text-ink">
                   {{ item.name }}
-                  <svg
-                    class="size-3.5 shrink-0 text-faint transition group-hover:text-accent"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M7 17 17 7M8 7h9v9" />
-                  </svg>
+                  <SvgIcon
+                    name="external-link"
+                    :size="14"
+                    class="shrink-0 text-faint transition group-hover:text-accent"
+                  />
                 </span>
                 <span class="mt-1 block text-[13px] leading-relaxed text-dim">{{ item.desc }}</span>
               </span>

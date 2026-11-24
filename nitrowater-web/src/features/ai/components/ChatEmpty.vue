@@ -9,6 +9,7 @@
  */
 import { computed } from 'vue'
 import suggestions from '../suggestions.json'
+import PathIcon from '../../../shared/ui/PathIcon.vue'
 
 defineProps<{ authenticated: boolean }>()
 
@@ -97,21 +98,12 @@ const cards = computed(drawCards)
         class="flex flex-col items-start gap-1 rounded-[14px] border border-line bg-card px-4 py-3.5 text-left transition hover:-translate-y-px hover:border-accent/50 hover:shadow-md"
         @click="emit('pick', card.prompt)"
       >
-        <svg
-          class="mb-1 size-4 text-accent"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.7"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            v-for="(path, index) in card.paths"
-            :key="index"
-            :d="path"
-          />
-        </svg>
+        <PathIcon
+          :path="card.paths"
+          :size="16"
+          :stroke-width="1.7"
+          class="mb-1 text-accent"
+        />
         <span class="text-[13.5px] font-semibold text-ink">{{ card.title }}</span>
         <span class="text-[12px] leading-snug text-faint">{{ card.desc }}</span>
       </button>

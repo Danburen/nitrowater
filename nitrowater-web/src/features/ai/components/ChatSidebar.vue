@@ -5,6 +5,7 @@
  * <p>The transcript itself lives in the browser (see {@code useConversations}); this panel is the
  * only place that offers navigation, so the chat column can stay a clean single-purpose surface.</p>
  */
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 import ThemeToggle from '../../../shared/ui/ThemeToggle.vue'
 import type { Conversation } from '../composables/useConversations'
 
@@ -53,29 +54,10 @@ const emit = defineEmits<{
         aria-label="收起侧边栏"
         @click="emit('toggle')"
       >
-        <svg
-          class="size-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <rect
-            x="3"
-            y="3"
-            width="18"
-            height="18"
-            rx="3"
-          />
-          <line
-            x1="9"
-            y1="3"
-            x2="9"
-            y2="21"
-          />
-        </svg>
+        <SvgIcon
+          name="sidebar"
+          :size="16"
+        />
       </button>
       <button
         type="button"
@@ -84,28 +66,10 @@ const emit = defineEmits<{
         aria-label="关闭侧边栏"
         @click="emit('close')"
       >
-        <svg
-          class="size-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <line
-            x1="18"
-            y1="6"
-            x2="6"
-            y2="18"
-          />
-          <line
-            x1="6"
-            y1="6"
-            x2="18"
-            y2="18"
-          />
-        </svg>
+        <SvgIcon
+          name="close"
+          :size="16"
+        />
       </button>
     </div>
 
@@ -114,28 +78,10 @@ const emit = defineEmits<{
       class="mx-3 mb-2 flex h-9 shrink-0 items-center gap-2 rounded-[10px] border border-dashed border-line px-3 text-[13px] text-dim transition hover:border-accent/50 hover:bg-accent/10 hover:text-accent"
       @click="emit('new-chat')"
     >
-      <svg
-        class="size-4"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.9"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <line
-          x1="12"
-          y1="5"
-          x2="12"
-          y2="19"
-        />
-        <line
-          x1="5"
-          y1="12"
-          x2="19"
-          y2="12"
-        />
-      </svg>
+      <SvgIcon
+        name="plus"
+        :size="16"
+      />
       新建对话
     </button>
 
@@ -172,28 +118,10 @@ const emit = defineEmits<{
           aria-label="删除对话"
           @click.stop="emit('remove', conversation.id)"
         >
-          <svg
-            class="size-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.9"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <line
-              x1="18"
-              y1="6"
-              x2="6"
-              y2="18"
-            />
-            <line
-              x1="6"
-              y1="6"
-              x2="18"
-              y2="18"
-            />
-          </svg>
+          <SvgIcon
+            name="close"
+            :size="14"
+          />
         </button>
       </div>
     </div>
@@ -205,18 +133,10 @@ const emit = defineEmits<{
           to="/"
           class="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-[9px] border border-line bg-soft text-[12px] text-dim transition hover:border-line-strong hover:text-ink"
         >
-          <svg
-            class="size-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.9"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M19 12H5" />
-            <polyline points="12 19 5 12 12 5" />
-          </svg>
+          <SvgIcon
+            name="arrow-left"
+            :size="14"
+          />
           返回站点
         </RouterLink>
       </div>
@@ -233,24 +153,10 @@ const emit = defineEmits<{
           aria-label="退出登录"
           @click="emit('logout')"
         >
-          <svg
-            class="size-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line
-              x1="21"
-              y1="12"
-              x2="9"
-              y2="12"
-            />
-          </svg>
+          <SvgIcon
+            name="logout"
+            :size="16"
+          />
         </button>
       </div>
       <p

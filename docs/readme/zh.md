@@ -50,8 +50,9 @@
 
 ### 离线工具箱与代码运行器
 
-- **离线工具箱**在独立的 `nitrowater-tools/` 包中，构建为静态镜像。MOTD、`server.properties`、服务器图标、启动脚本、压缩包、目录树、Java→TypeScript、MP4→GIF、Markdown→Word 全部在浏览器本地完成，文件不离开本机；门户通过构建期占位变量 `VITE_OFFLINE_TOOLS_URL` 指向它。
-- **代码运行器**留在本站 `/runner`，需登录，复用服务端 Piston 沙箱运行 Java / C / C++ / Python / JS / TS / Lua；Agent 的「在代码运行器中打开」会把代码种子带过去。
+- **离线工具箱**在独立的 `nitrowater-tools/` 包中，构建为静态镜像。MOTD、`server.properties`、服务器图标、启动脚本、**本地代码运行器**、压缩包、目录树、Java→TypeScript、MP4→GIF、Markdown→Word 全部在浏览器本地完成，文件不离开本机；门户通过构建期占位变量 `VITE_OFFLINE_TOOLS_URL` 指向它。
+- **本地代码运行器**（工具站 `/tools/code-runner`）匿名可用，Python / JavaScript / TypeScript / Lua 由 Pyodide、原生引擎、TS 编译器与 wasmoon 在浏览器内执行，代码与 stdin 不上传；运行时首次从 CDN 懒加载后缓存。
+- **云端代码运行器**（本站 `/runner`）需登录，复用服务端 Piston 沙箱运行 Java / C / C++ 等服务端语言；Agent 的「在代码运行器中打开」会把代码种子带过去。两者按执行位置区分：断网后还能在浏览器里跑出来的算本地，必须 POST 给后端的算云端。
 
 ### 插件中心
 

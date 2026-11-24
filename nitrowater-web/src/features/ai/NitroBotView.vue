@@ -45,6 +45,7 @@ import GlobalQuotaNotice from './components/GlobalQuotaNotice.vue'
 import QuotaNotice from './components/QuotaNotice.vue'
 import SystemCardView from './components/SystemCard.vue'
 import ChatTimeline from './components/ChatTimeline.vue'
+import SvgIcon from '../../shared/ui/SvgIcon.vue'
 
 const route = useRoute()
 const { session, loading: authLoading, login, logout } = useAuth()
@@ -950,34 +951,10 @@ function newId(): string {
           aria-label="展开侧边栏"
           @click="sidebarCollapsed = false"
         >
-          <svg
-            class="size-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.9"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <line
-              x1="3"
-              y1="6"
-              x2="21"
-              y2="6"
-            />
-            <line
-              x1="3"
-              y1="12"
-              x2="21"
-              y2="12"
-            />
-            <line
-              x1="3"
-              y1="18"
-              x2="21"
-              y2="18"
-            />
-          </svg>
+          <SvgIcon
+            name="menu"
+            :size="16"
+          />
         </button>
         <button
           type="button"
@@ -986,34 +963,10 @@ function newId(): string {
           aria-label="打开对话列表"
           @click="sidebarOpen = true"
         >
-          <svg
-            class="size-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.9"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <line
-              x1="3"
-              y1="6"
-              x2="21"
-              y2="6"
-            />
-            <line
-              x1="3"
-              y1="12"
-              x2="21"
-              y2="12"
-            />
-            <line
-              x1="3"
-              y1="18"
-              x2="21"
-              y2="18"
-            />
-          </svg>
+          <SvgIcon
+            name="menu"
+            :size="16"
+          />
         </button>
 
         <h1 class="min-w-0 flex-1 truncate text-center text-[13.5px] font-semibold text-dim">
@@ -1126,17 +1079,10 @@ function newId(): string {
           class="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-[12px] font-medium text-dim shadow-lg transition hover:text-ink"
           @click="jumpToBottom"
         >
-          <svg
-            class="size-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <SvgIcon
+            name="chevron-down"
+            :size="14"
+          />
           回到底部
         </button>
       </div>

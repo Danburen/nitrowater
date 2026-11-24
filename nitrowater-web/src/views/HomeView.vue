@@ -17,6 +17,8 @@ import { offlineToolsUrl } from '../config/links'
 import toolboxShot from '../assets/home/toolbox-shot.svg'
 import nitrobotShot from '../assets/home/nitrobot-shot.svg'
 import pluginsShot from '../assets/home/plugins-shot.svg'
+import PathIcon from '../shared/ui/PathIcon.vue'
+import SvgIcon from '../shared/ui/SvgIcon.vue'
 
 /*
  * "Scroll for more" hint.
@@ -125,7 +127,7 @@ interface Entry {
   icon: string
 }
 
-/** Three ways into the site, rendered on the opening screen. */
+/** Four ways into the site, rendered on the opening screen. */
 const entries: Entry[] = [
   {
     key: 'tools',
@@ -147,6 +149,13 @@ const entries: Entry[] = [
     title: '插件中心',
     sub: '说明 · 版本 · 下载',
     icon: 'M12 3.2l7.8 4.4v8.8L12 20.8l-7.8-4.4V7.6zM12 12v8.8M12 12L4.2 7.6M12 12l7.8-4.4',
+  },
+  {
+    key: 'runner',
+    to: '/runner',
+    title: '云端代码运行',
+    sub: '登录后使用 · 服务端沙箱',
+    icon: 'M8.5 7.5L4 12l4.5 4.5M15.5 7.5L20 12l-4.5 4.5M13.5 4l-3 16',
   },
 ]
 
@@ -246,7 +255,7 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
             本站宗旨是为每位 Minecraft 腐竹提供更好的开服和运维服务，一起进步。
           </p>
 
-          <div class="mx-auto mt-10 grid w-full max-w-[760px] gap-3 text-left sm:grid-cols-3">
+          <div class="mx-auto mt-10 grid w-full max-w-[980px] gap-3 text-left sm:grid-cols-2 lg:grid-cols-4">
             <component
               :is="entry.href ? 'a' : 'router-link'"
               v-for="entry in entries"
@@ -255,21 +264,13 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
               :target="entry.href ? '_blank' : undefined"
               rel="noopener noreferrer"
               :to="entry.to"
-              class="group flex items-center gap-3 rounded-[14px] border border-line bg-card px-4 py-3.5 transition hover:-translate-y-0.5 hover:border-line-strong"
+              class="group flex cursor-pointer items-center gap-3 rounded-[14px] border border-line bg-card px-4 py-3.5 transition hover:-translate-y-0.5 hover:border-line-strong"
             >
               <span class="grid size-9 shrink-0 place-items-center rounded-[10px] border border-accent/25 bg-accent/10 text-accent">
-                <svg
-                  class="size-[18px]"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path :d="entry.icon" />
-                </svg>
+                <PathIcon
+                  :path="entry.icon"
+                  :size="18"
+                />
               </span>
               <span class="min-w-0">
                 <span class="block text-[13.5px] font-medium text-ink">{{ entry.title }}</span>
@@ -292,14 +293,10 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
               title="在 GitHub 上查看本项目"
               class="inline-flex items-center gap-1.5 transition hover:text-ink"
             >
-              <svg
-                class="size-[15px]"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.1c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.69 5.41-5.25 5.69.41.36.78 1.06.78 2.14v3.17c0 .3.21.67.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z" />
-              </svg>
+              <SvgIcon
+                name="github"
+                :size="15"
+              />
               GitHub 源码
             </a>
 
@@ -310,28 +307,10 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
               title="提交 issue 或改进建议"
               class="inline-flex items-center gap-1.5 transition hover:text-ink"
             >
-              <svg
-                class="size-[15px]"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="18"
-                  cy="6"
-                  r="2.6"
-                />
-                <circle
-                  cx="6"
-                  cy="18"
-                  r="2.6"
-                />
-                <path d="M6 9v6M18 9v2.4a3 3 0 0 1-3 3h-3.6" />
-              </svg>
+              <SvgIcon
+                name="git-pull-request"
+                :size="15"
+              />
               参与贡献
             </a>
           </div>
@@ -346,18 +325,11 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
           @blur="onHintBlur"
         >
           向下了解更多
-          <svg
-            class="size-4 animate-bounce motion-reduce:animate-none"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14M6 13l6 6 6-6" />
-          </svg>
+          <SvgIcon
+            name="arrow-down"
+            :size="16"
+            class="animate-bounce motion-reduce:animate-none"
+          />
         </button>
       </section>
 

@@ -10,6 +10,7 @@ import { defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../../auth/useAuth'
 import { fetchPlugins, SUBMIT_PLUGIN_URL, type PluginSummary } from '../../api/plugins'
+import PathIcon from '../../shared/ui/PathIcon.vue'
 
 /** Lazy: the editor (and `md-editor-v3`) must never enter the public bundle. */
 const PluginEditorDrawer = defineAsyncComponent(() => import('./PluginEditorDrawer.vue'))
@@ -98,17 +99,10 @@ async function onSaved(key: string): Promise<void> {
         >
           <div class="flex items-center gap-3">
             <span class="grid size-[38px] shrink-0 place-items-center rounded-[10px] border border-accent/25 bg-gradient-to-br from-accent/15 to-accent-2/15 text-accent">
-              <svg
-                class="size-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path :d="p.icon ?? ''" />
-              </svg>
+              <PathIcon
+                :path="p.icon ?? ''"
+                :size="20"
+              />
             </span>
             <div class="min-w-0">
               <h2 class="truncate text-[15px] font-semibold">

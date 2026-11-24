@@ -7,6 +7,7 @@ import { computed, ref } from 'vue'
 import { saveAs } from 'file-saver'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 import TextField from '../../../shared/ui/TextField.vue'
 import UiIcon from '../../../shared/ui/UiIcon.vue'
 import { ARCHIVE_EXTENSIONS, decompressArchive } from '../lib/archive/libarchive'
@@ -157,17 +158,11 @@ function downloadExtracted(file: ExtractedFile): void {
       class="panel flex flex-col gap-4"
     >
       <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[12px] border border-dashed border-line bg-bg/40 px-6 py-10 text-center transition hover:border-accent/50">
-        <svg
-          class="size-7 text-accent"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M12 16V4m0 0L8 8m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-        </svg>
+        <SvgIcon
+          name="upload"
+          :size="28"
+          class="text-accent"
+        />
         <span class="text-sm text-dim">拖拽或 <em class="not-italic text-accent">点击选择文件</em></span>
         <input
           type="file"
@@ -256,17 +251,11 @@ function downloadExtracted(file: ExtractedFile): void {
       class="panel flex flex-col gap-4"
     >
       <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[12px] border border-dashed border-line bg-bg/40 px-6 py-10 text-center transition hover:border-accent/50">
-        <svg
-          class="size-7 text-accent"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M12 4v12m0 0 4-4m-4 4-4-4M4 18h16" />
-        </svg>
+        <SvgIcon
+          name="download-line"
+          :size="28"
+          class="text-accent"
+        />
         <span class="text-sm text-dim">拖拽或 <em class="not-italic text-accent">点击选择压缩文件</em></span>
         <span class="font-mono text-xs text-faint">{{ accept }}</span>
         <input

@@ -12,7 +12,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../../auth/useAuth'
 
 const router = useRouter()
-const { session, accounts, addAccount, switchAccount, removeAccount, logout } = useAuth()
+const { session, accounts, addAccount, switchAccount, removeAccount, logout, isAdmin } = useAuth()
 
 const root = ref<HTMLDetailsElement | null>(null)
 const displayName = computed(() => session.value?.name || session.value?.username || '已登录')
@@ -137,6 +137,14 @@ async function onRemoveAccount(uid: string, active: boolean): Promise<void> {
           @click="router.push('/account')"
         >
           <span class="text-dim">◎</span> 用户中心
+        </button>
+        <button
+          v-if="isAdmin"
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-ink transition hover:bg-soft"
+          @click="router.push('/admin/resources')"
+        >
+          <span class="text-dim">⚙</span> 运维
         </button>
         <button
           type="button"

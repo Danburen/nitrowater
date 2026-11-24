@@ -9,6 +9,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { SLASH_COMMANDS, matchSlashCommands, opensSlashMenu, type SlashCommand } from '../slash'
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 import UiTooltip from '../../../shared/ui/UiTooltip.vue'
 
 const props = withDefaults(defineProps<{
@@ -188,19 +189,10 @@ defineExpose({ focus })
               :title="webSearch ? '本轮联网：开' : '本轮联网：关'"
               @click="emit('update:webSearch', !webSearch)"
             >
-              <svg
-                class="size-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
-              </svg>
+              <SvgIcon
+                name="globe"
+                :size="14"
+              />
               联网
             </button>
           </UiTooltip>
@@ -213,13 +205,10 @@ defineExpose({ focus })
             aria-label="停止生成"
             @click="emit('stop')"
           >
-            <svg
-              class="size-4"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
+            <SvgIcon
+              name="stop"
+              :size="16"
+            />
           </button>
           <button
             v-else
@@ -229,18 +218,10 @@ defineExpose({ focus })
             title="发送"
             aria-label="发送消息"
           >
-            <svg
-              class="size-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
-            </svg>
+            <SvgIcon
+              name="send"
+              :size="16"
+            />
           </button>
         </div>
       </div>      <p class="mt-1.5 text-center text-[11px] text-faint">

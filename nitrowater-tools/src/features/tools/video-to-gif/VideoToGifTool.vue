@@ -9,6 +9,7 @@ import { saveAs } from 'file-saver'
 import type { FFmpeg, LogEvent, ProgressEvent } from '@ffmpeg/ffmpeg'
 import { toast } from '../../../shared/ui/toast'
 import PageShell from '../../../shared/ui/PageShell.vue'
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 import type { FfmpegState } from './lib/ffmpeg/ffmpegManager'
 import { getFFmpeg, loadFFmpeg, resetFFmpeg } from './lib/ffmpeg/ffmpegManager'
 
@@ -377,17 +378,11 @@ function formatSize(bytes: number): string {
         <!-- 上传 -->
         <section class="panel flex flex-col gap-4">
           <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[12px] border border-dashed border-line bg-bg/40 px-6 py-8 text-center transition hover:border-accent/50">
-            <svg
-              class="size-7 text-accent"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM10 8.5l5 3.5-5 3.5z" />
-            </svg>
+            <SvgIcon
+              name="play-circle"
+              :size="28"
+              class="text-accent"
+            />
             <span class="text-sm text-dim">拖拽或 <em class="not-italic text-accent">点击选择视频文件</em></span>
             <span class="font-mono text-xs text-faint">支持 MP4 / WebM / MOV / AVI</span>
             <input

@@ -8,6 +8,7 @@
  */
 import { computed } from 'vue'
 import type { AiGlobalQuota } from '../../../api/ai'
+import SvgIcon from '../../../shared/ui/SvgIcon.vue'
 
 const props = defineProps<{
   quota: AiGlobalQuota | null
@@ -32,20 +33,11 @@ function formatTokens(value: number): string {
   >
     <div class="rounded-[14px] border border-danger/30 bg-danger/10 px-4 py-3">
       <div class="flex items-start gap-2.5">
-        <svg
-          class="mt-0.5 size-4 shrink-0 text-danger"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.9"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M12 9v4" />
-          <path d="M12 17h.01" />
-          <path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z" />
-        </svg>
+        <SvgIcon
+          name="alert-triangle"
+          :size="16"
+          class="mt-0.5 shrink-0 text-danger"
+        />
 
         <div class="min-w-0 flex-1">
           <p class="text-[13px] font-semibold text-ink">

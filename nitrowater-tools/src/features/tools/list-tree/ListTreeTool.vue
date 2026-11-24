@@ -21,6 +21,9 @@ import {
 } from '../lib/tree/listTree'
 import type { FlatNode, ListTreeNode } from '../lib/tree/listTree'
 import sampleText from '../lib/samples/list-chart.txt?raw'
+import TOGGLE_SVG from '../../../assets/icons/toggle.svg?raw'
+import FOLDER_CLOSED_SVG from '../../../assets/icons/folder-closed.svg?raw'
+import FOLDER_OPEN_SVG from '../../../assets/icons/folder-open.svg?raw'
 
 type D3Module = typeof import('d3')
 
@@ -54,11 +57,6 @@ async function ensureD3(): Promise<D3Module> {
     throw error
   }
 }
-
-// ─── SVG templates (theme-aware via CSS variables) ────────────────
-const TOGGLE_SVG = '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M3.5 1.5 L7.5 5 L3.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-const FOLDER_CLOSED_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3 L8 3 L10 5 L14 5 L14 13 L2 13 Z" fill="var(--color-accent)" fill-opacity="0.16" stroke="var(--color-accent)" stroke-width="1.2"/><path d="M2 3 L8 3 L10 5 L14 5 L14 13 L2 13 Z" fill="none" stroke="var(--color-accent)" stroke-width="1.2" opacity="0.5"/></svg>'
-const FOLDER_OPEN_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3 L8 3 L10 5 L14 5 L14 13 L2 13 Z" fill="var(--color-accent)" fill-opacity="0.16" stroke="var(--color-accent)" stroke-width="1.2" opacity="0.85"/><path d="M2 3 L8 3 L10 5 L14 5 L14 13 L2 13 Z" fill="none" stroke="var(--color-accent)" stroke-width="1.2"/></svg>'
 
 // ─── D3 rendering ─────────────────────────────────────────────────
 const INDENT_STEP = 24

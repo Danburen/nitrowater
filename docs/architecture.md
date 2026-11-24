@@ -42,9 +42,10 @@ NitroWater 的解决方式是把这些能力收敛到一个同源平台：**一�
 | 权限 | RBAC 与审计 | `SUPER_ADMIN` / `ADMIN` / `USER`；JWT 带 `uid`、角色、设备指纹；账号审计；字段加密 |
 | BFF | Token Handler | 浏览器只有 HttpOnly `BFFSESSION`；AT/RT 存服务端；自动续期；统一 401 JSON；发布可失效旧会话 |
 | 门户 | 复合前端 | Vue 3 + TypeScript + Vite + Tailwind；门户、插件中心、外部文档入口、NitroBot、管理端、需登录的 `/runner` |
-| 离线工具箱 | 独立静态站点 | `nitrowater-tools/` 单独构建为静态镜像，由外部服务部署；MOTD、server.properties、server-icon、启动脚本、插件 ZIP、插件树、ListTree、Java→TS、MP4→GIF、Markdown→Word 全在浏览器本地完成 |
+| 离线工具箱 | 独立静态站点 | `nitrowater-tools/` 单独构建为静态镜像，由外部服务部署；MOTD、server.properties、server-icon、启动脚本、本地代码运行器（Python/JS/TS/Lua）、插件 ZIP、插件树、ListTree、Java→TS、MP4→GIF、Markdown→Word 全在浏览器本地完成 |
 | 插件中心 | 插件元数据与分发 | 插件元数据、管理端 CRUD、JAR 下载、外部文档链接 |
-| 代码运行器 | 登录后可用 | `/runner` 独立页面，仅登录用户访问；server 直连 Piston；Redis 分钟/日配额；进程内排队；输出截断 |
+| 云端代码运行器 | 登录后可用 | 主站 `/runner` 独立页面，仅登录用户访问；server 直连 Piston；Redis 分钟/日配额；进程内排队；输出截断；Java/C/C++ 等服务端语言只在这里提供 |
+| 本地代码运行器 | 匿名可用 | 工具站 `/tools/code-runner`，代码与 stdin 不出浏览器；Pyodide/原生 JS/TS 编译器/wasmoon，运行时从 CDN 懒加载并缓存 |
 | 资源服务 | 可插拔文件存储 | 本地磁盘（默认）、腾讯 COS；统一上传/下载入口；仅管理员可上传；读取分公开（匿名）与认证两条出口；可见性/owner；管理端文件管理；孤儿回收；插件 JAR 托管 |
 | 插件文档 | 外部托管 | 详情页直接打开数据库维护的完整 `docsUrl`；本站不再构建 / 拉取 / 托管文档镜像，BFF 无任何 `/plugin/**` 路由 |
 | AI Agent | 工具调用问答 | 多语料索引、`searchDocs`/`loadSkill`/`webSearch`/`runCode`；工具预算、AgentTrace、技能覆盖、引用 `[n]`、SSE 步骤卡片、会话落库 |

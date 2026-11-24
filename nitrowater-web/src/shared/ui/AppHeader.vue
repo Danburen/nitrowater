@@ -8,7 +8,7 @@ import UserMenu from './UserMenu.vue'
 
 const route = useRoute()
 const router = useRouter()
-const { session, loading, login, logout, logoutStuck, isAdmin } = useAuth()
+const { session, loading, login, logout, logoutStuck } = useAuth()
 
 const isLoggedIn = computed(() => !!session.value?.authenticated)
 
@@ -28,14 +28,14 @@ const nav = computed<NavItem[]>(() => {
     { href: offlineToolsUrl, label: '离线工具箱' },
     { to: '/plugins', label: '插件中心' },
     { to: '/chat', label: 'NitroBot' },
+    { to: '/runner', label: '代码在线运行' },
     // 文档 / 服务器 入口暂缓：托管的文档后续再独立分开，入口统一走「插件中心」；服务器列表功能未开发。
     // { id: 'docs', label: '文档' },
     // { id: 'servers', label: '服务器' },
     { to: '/about', label: '关于' },
   ]
-  // Plugin metadata/artifacts are edited inline on the public pages; the console is now the
-  // operations view (resource table / orphan cleanup), so it gets a quieter entry.
-  if (isAdmin.value) items.push({ to: '/admin/resources', label: '运维' })
+  // The operations console is admin-only, so it lives in the account menu (UserMenu) instead of
+  // the public nav bar.
   return items
 })
 

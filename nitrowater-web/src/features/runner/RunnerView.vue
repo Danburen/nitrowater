@@ -26,7 +26,6 @@ import { apiFetch } from '../../auth/bff'
 import { readJson } from '../../api/envelope'
 import type { SandboxRunOutcome } from '../../api/sandbox'
 import { toast } from '../../shared/ui/toast'
-import PageShell from '../../shared/ui/PageShell.vue'
 import TextArea from '../../shared/ui/TextArea.vue'
 import CodeEditor from './CodeEditor.vue'
 import {
@@ -208,11 +207,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
 </script>
 
 <template>
-  <PageShell
-    fill
-    title="在线代码运行器"
-    desc="登录后使用服务端沙箱运行 Python / JavaScript / TypeScript / Lua / Java / C / C++。"
-  >
+  <!-- Standalone page: the global AppHeader is the only chrome; content fills the rest. -->
+  <div class="flex h-[calc(100svh_-_var(--app-header-h))] min-h-0 flex-col p-4 sm:p-6">
     <div
       v-if="!session?.authenticated"
       class="flex flex-1 items-center justify-center text-[13px] text-dim"
@@ -368,5 +364,5 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', flushMemoryCach
         <!-- eslint-enable vue/no-v-html -->
       </section>
     </div>
-  </PageShell>
+  </div>
 </template>
