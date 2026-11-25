@@ -26,14 +26,18 @@ sudo systemctl enable --now docker
 在**本地仓库根**执行：
 
 ```bash
-git archive --format=tar.gz HEAD deploy > /tmp/nitrowater-deploy.tgz
-scp /tmp/nitrowater-deploy.tgz <host>:/tmp/
+git archive --format=tar.gz HEAD deploy > ./nitrowater-deploy.tgz
+scp ./nitrowater-deploy.tgz <host>:/tmp/
 
 # 服务器上
 sudo mkdir -p /opt/nitrowater
-sudo tar -xzf /tmp/nitrowater-deploy.tgz -C /opt/nitrowater
-sudo chown -R "$USER": /opt/nitrowater/deploy && rm -f /tmp/nitrowater-deploy.tgz
+sudo chown "$USER": /opt/nitrowater
+tar -xzf /tmp/nitrowater-deploy.tgz -C /opt/nitrowater
+rm -f /tmp/nitrowater-deploy.tgz
 ```
+
+> 解包**不要**用 `sudo tar`：那样 `deploy/` 里的文件会归 root，后续 GitHub Actions 以 `deploy` 用户 SSH 进来时
+> 既删不掉旧文档、也覆盖不了这些文件（报 `权限不够`）。`$USER` 要与 Actions 的 `SSH_USER` 是同一个账号。
 
 Windows PowerShell：
 

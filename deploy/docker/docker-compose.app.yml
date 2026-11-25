@@ -106,8 +106,9 @@ services:
     # 没有回环（连接被 RST），拉 JWKS 会失败，随后所有 /api/** 都被判 401。
     # host-gateway = 容器看到的宿主机地址，nginx-proxy 在那上面发布 443；不可达时用
     # OIDC_ISSUER_HOST 指定内网 IP（例：172.18.0.10，即 nginx-proxy 容器地址）。
+    # 主机名取自 AUTH_DOMAIN：换主域名时只需改 .env，不要在这里留死域名。
     extra_hosts:
-      - "sso.nitrowater.cn:${OIDC_ISSUER_HOST:-host-gateway}"
+      - "${AUTH_DOMAIN:-sso.nitrowater.cn}:${OIDC_ISSUER_HOST:-host-gateway}"
     mem_limit: 512m
     restart: unless-stopped
     networks:
@@ -180,7 +181,7 @@ services:
       - qdrant
     # 服务端互调必须解析到内网（见 resource 服务的说明）：JWT 校验要从 issuer 拉 JWKS。
     extra_hosts:
-      - "sso.nitrowater.cn:${OIDC_ISSUER_HOST:-host-gateway}"
+      - "${AUTH_DOMAIN:-sso.nitrowater.cn}:${OIDC_ISSUER_HOST:-host-gateway}"
     mem_limit: 768m
     restart: unless-stopped
     networks:
@@ -253,7 +254,7 @@ services:
     # 刷新令牌全走 JWT_ISSUER 的域名。若容器把它解析成公网 EIP，VPC 内没有回环会
     # 直接被 RST → 新登录一律 /login?error，老会话在 AT 过期后被 BffTokenService 销毁。
     extra_hosts:
-      - "sso.nitrowater.cn:${OIDC_ISSUER_HOST:-host-gateway}"
+      - "${AUTH_DOMAIN:-sso.nitrowater.cn}:${OIDC_ISSUER_HOST:-host-gateway}"
     mem_limit: 512m
     restart: unless-stopped
     networks:
