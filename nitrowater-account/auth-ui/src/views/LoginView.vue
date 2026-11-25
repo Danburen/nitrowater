@@ -68,8 +68,8 @@ const codeNotice = ref('')
 const sendingCode = ref(false)
 const codeSubmitting = ref(false)
 const showCodeCaptcha = ref(false)
-/** Phone handed to the register page after the server said no account exists for it. */
-const codeNeedRegister = ref('')
+/** Identifier handed to the register page after the server said no account exists for it. */
+const codeNeedRegister = ref<{ target: string; channel: 'sms' | 'email' } | null>(null)
 /** Target the last code was sent to; changing the identifier invalidates the input + cookie. */
 const codeSentTo = ref('')
 const {
@@ -114,7 +114,7 @@ watch(codeIdentifier, () => {
     loginCode.value = ''
     codeNotice.value = ''
     codeError.value = ''
-    codeNeedRegister.value = ''
+    codeNeedRegister.value = null
   }
   if (target && channelOf(target)) {
     restoreCodeCooldown(codeScope())
@@ -149,7 +149,7 @@ async function sendCodeWithCaptcha(captcha: string) {
   sendingCode.value = true
   codeError.value = ''
   codeNotice.value = ''
-  codeNeedRegister.value = ''
+  codeNeedRegister.value = null
   try {
     await sendLoginCode(target, channel, captcha)
     codeSentTo.value = target
@@ -157,12 +157,12 @@ async function sendCodeWithCaptcha(captcha: string) {
     startCodeCooldown(60, codeScope())
   } catch (error) {
     codeError.value = messageOf(error)
-    // The server only reports "no account" for this target; carry the number over to registration.
-    // Email registrations do not exist (the account center binds an email later), so no link there.
+    // The server only reports "no account" for this target; carry the identifier over to the
+    // registration form so the user can sign up with the same phone or email.
     codeNeedRegister.value =
-      channel === 'sms' && error instanceof ApiError && error.code === 'auth.target.not_registered'
-        ? target
-        : ''
+      error instanceof ApiError && error.code === 'auth.target.not_registered'
+        ? { target, channel }
+        : null
     syncCodeCooldown(error, codeScope())
   } finally {
     sendingCode.value = false
@@ -370,7 +370,12 @@ onMounted(() => {
         {{ codeError }}
         <RouterLink
           v-if="codeNeedRegister"
-          :to="{ path: '/register', query: { phone: codeNeedRegister } }"
+          :to="{
+            path: '/register',
+            query: codeNeedRegister.channel === 'sms'
+              ? { phone: codeNeedRegister.target }
+              : { email: codeNeedRegister.target },
+          }"
           class="auth-link ml-1"
         >
           前往注册

@@ -53,34 +53,52 @@ public class RegisterServiceImpl implements RegisterService {
 
     @Transactional
     @Override
-    public User register(RegisterRequest body, String smsCodeKey) {
-        String phone = AuthIdentifierUtil.normalizePhone(body.getPhone());
+    public User register(RegisterRequest body, String codeKey) {
+        // Bean validation enforces exactly one identifier; keep a defensive branch for direct
+        // service calls so a bad payload can never create a half-registered account.
+        boolean byEmail = StringUtil.isNotBlank(body.getEmail());
+        String target = byEmail
+                ? AuthIdentifierUtil.normalizeEmail(body.getEmail())
+                : AuthIdentifierUtil.normalizePhone(body.getPhone());
+        VerifyChannel channel = byEmail ? VerifyChannel.EMAIL : VerifyChannel.SMS;
+
         EncryptionDataKey hmacKey = encryptedKeyService.getUserDatumHmacKey();
         String hmacSecret = hmacKey.getEncryptedKey();
+        String targetHash = HashUtil.toSha256HmacString(target, hmacSecret);
 
         userRepo.findByUsername(body.getUsername()).ifPresent(_ -> {
             throw new UserNameAlreadyExistException();
         });
 
-        // Uniqueness first: a taken phone should fail precisely, before a valid code is
-        // consumed. The derived unique index in the V1 baseline remains the final race-safe guard.
-        userDatumRepo.findByPhoneHash(HashUtil.toSha256HmacString(phone, hmacSecret)).ifPresent(
-                _ -> {
-                    throw new BizException(BaseResponseCode.PHONE_NUMBER_ALREADY_USED);
-                }
-        );
-        // Phone proof: compare normalized targets, then verify against the SMS-channel code only.
-        VerifyCodeDto phoneVerify = body.getVerify();
-        if (phoneVerify == null
-                || !phone.equals(AuthIdentifierUtil.normalizePhone(phoneVerify.getTarget()))) {
+        // Uniqueness first: a taken target should fail precisely, before a valid code is consumed.
+        // The unique indexes in the V1 baseline remain the final race-safe guard.
+        if (byEmail) {
+            userDatumRepo.findByEmailHash(targetHash).ifPresent(
+                    _ -> {
+                        throw new BizException(BaseResponseCode.EMAIL_ALREADY_USED);
+                    }
+            );
+        } else {
+            userDatumRepo.findByPhoneHash(targetHash).ifPresent(
+                    _ -> {
+                        throw new BizException(BaseResponseCode.PHONE_NUMBER_ALREADY_USED);
+                    }
+            );
+        }
+
+        // Proof: the cookie selected by the controller belongs to this channel and target.
+        VerifyCodeDto verify = body.getVerify();
+        String proofTarget = verify == null ? null : (byEmail
+                ? AuthIdentifierUtil.normalizeEmail(verify.getTarget())
+                : AuthIdentifierUtil.normalizePhone(verify.getTarget()));
+        if (verify == null || verify.getChannel() != channel || !target.equals(proofTarget)) {
             throw new AuthException(AuthCode.REAUTHORIZATION_REQUIRED);
         }
-        verificationService.verifyCode(
-                phone, VerifyScene.REGISTER, VerifyChannel.SMS, smsCodeKey, phoneVerify.getCode());
+        verificationService.verifyCode(target, VerifyScene.REGISTER, channel, codeKey, verify.getCode());
 
-        // Encrypt email, phone, password
+        // Encrypt the proven target and the optional password.
         EncryptionDataKey aesKey = encryptedKeyService.getAesKey();
-        String encryptedPhone = EncryptionHelper.encryptField(phone, aesKey);
+        String encryptedTarget = EncryptionHelper.encryptField(target, aesKey);
         String password = body.getPassword();
 
         // STEP 5: Set user
@@ -97,13 +115,17 @@ public class RegisterServiceImpl implements RegisterService {
         ud.setUser(user);
         ud.setUid(user.getUid());
         ud.setEncryptionKeyId(aesKey.getKeyId());
-        ud.setPhoneEncrypted(encryptedPhone);
-        ud.setPhoneHash(HashUtil.toSha256HmacString(phone, hmacSecret));
-        ud.setPhoneVerified(true);
-        // No mailbox is attached at registration; the user center binds one later, after proving
-        // ownership. That keeps a new row free of unverified contact claims and of the
-        // email-uniqueness race that a half-claimed address would otherwise reserve.
         ud.setEmailVerified(false);
+        ud.setPhoneVerified(false);
+        if (byEmail) {
+            ud.setEmailEncrypted(encryptedTarget);
+            ud.setEmailHash(targetHash);
+            ud.setEmailVerified(true);
+        } else {
+            ud.setPhoneEncrypted(encryptedTarget);
+            ud.setPhoneHash(targetHash);
+            ud.setPhoneVerified(true);
+        }
 
         // TODO(SSO): UserProfile/UserCounter/UserPreference/UserSetting bootstrap cut — business tables not migrated
         user.setUserDatum(ud);

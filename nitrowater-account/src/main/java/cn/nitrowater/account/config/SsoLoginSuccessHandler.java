@@ -1,6 +1,5 @@
 package cn.nitrowater.account.config;
 
-import cn.nitrowater.account.service.security.AccountSessionGuardFilter;
 import cn.nitrowater.account.service.security.PromptLoginFilter;
 import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
 import jakarta.servlet.ServletException;
@@ -12,7 +11,6 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationSu
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.time.Instant;
 
 /**
  * Post-login redirect for the SSO hosted form.
@@ -51,11 +49,9 @@ public class SsoLoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandle
             Authentication authentication) throws IOException, ServletException {
         clearAuthenticationAttributes(request);
         HttpSession session = request.getSession();
-        // OIDC `auth_time`: PromptLoginFilter / AccountSessionGuardFilter use it to enforce
-        // app.session.absolute, because SAS does not implement max_age/auth_time itself.
-        session.setAttribute(PromptLoginFilter.AUTH_AT_ATTRIBUTE, Instant.now());
-        // A later "revoke all sessions" rotates this value and both services reject the session.
-        session.setAttribute(AccountSessionGuardFilter.EPOCH_ATTRIBUTE, this.epochs.current());
+        // OIDC `auth_time` + revocation epoch. Shared with the JSON code-login path so a resumed
+        // prompt=login authorization is never mistaken for an expired session.
+        PromptLoginFilter.stamp(session, this.epochs);
         String target = redirectResolver.resolve(request, response);
         // If the saved request is an authorization URL carrying prompt=login/select_account, let
         // PromptLoginFilter know this is the one resumed pass that must not bounce back to /login.

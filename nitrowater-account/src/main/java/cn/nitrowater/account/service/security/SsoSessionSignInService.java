@@ -1,5 +1,6 @@
 package cn.nitrowater.account.service.security;
 
+import cn.nitrowater.core.infrastructure.session.SessionEpochStore;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,9 @@ import org.springframework.stereotype.Component;
  *   <li>create/rotate the HTTP session (session-fixation defence);</li>
  *   <li>persist the security context where the servlet chain reads it;</li>
  *   <li>register the session with the {@link SessionRegistry} so the expiry filter and
- *       credential-change invalidation can find it.</li>
+ *       credential-change invalidation can find it;</li>
+ *   <li>stamp the credential time and revocation epoch, just like the form-login success handler,
+ *       so the resumed {@code prompt=login} authorization is not bounced back to {@code /login}.</li>
  * </ol>
  */
 @Component
@@ -27,6 +30,7 @@ import org.springframework.stereotype.Component;
 public class SsoSessionSignInService {
 
     private final SessionRegistry sessionRegistry;
+    private final SessionEpochStore epochs;
 
     /** Uses the same session attribute key as the servlet security chain. */
     private final HttpSessionSecurityContextRepository securityContextRepository =
@@ -48,6 +52,7 @@ public class SsoSessionSignInService {
         securityContextRepository.saveContext(context, request, response);
         SecurityContextHolder.setContext(context);
 
+        PromptLoginFilter.stamp(request.getSession(), this.epochs);
         sessionRegistry.registerNewSession(request.getSession().getId(), authentication.getPrincipal());
     }
 }

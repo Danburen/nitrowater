@@ -168,6 +168,10 @@ services:
       AI_MODERATION_COOLDOWN_MINUTES: ${AI_MODERATION_COOLDOWN_MINUTES:-15}
       # 语料根；同一个值也是下面的挂载点，改它两边一起动（宿主机侧固定 ${CONTENT_ROOT}/docs）。
       AI_DOCS_ROOT: ${AI_DOCS_ROOT:-/etc/nitrowater/docs}
+      # 爱发电 OpenAPI：About 页鸣谢列表。留空即停用（返回空列表，不请求上游）。
+      # IFDIAN_TOKEN 只参与签名，不会出现在请求参数里。
+      IFDIAN_USER_ID: ${IFDIAN_USER_ID:-}
+      IFDIAN_TOKEN: ${IFDIAN_TOKEN:-}
     volumes:
       # 内容目录常驻只读挂载；词表由 AI_MODERATION_DICT 启用，语料目录由 AI_DOCS_ROOT 自动发现。
       - ${CONTENT_ROOT:-../content}/moderation:/etc/nitrowater/moderation:ro

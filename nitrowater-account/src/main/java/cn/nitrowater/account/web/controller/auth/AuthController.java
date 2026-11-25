@@ -160,9 +160,12 @@ public class AuthController {
     @PostMapping("/register")
     @RateLimit(key = "ip", permits = 3, window = 300)
     public ApiResponse<Void> register(@Valid @RequestBody RegisterRequest dto, HttpServletRequest request) {
+        // send-code writes the proof key to a channel-named cookie; read the one this registration
+        // actually consumed so an SMS key can never be replayed as an email proof (or vice versa).
+        String cookieName = dto.getVerify().getChannel().name() + "_CODE_KEY";
         registerService.register(
                 dto,
-                CookieUtil.getCookieValue(request.getCookies(), "SMS_CODE_KEY")
+                CookieUtil.getCookieValue(request.getCookies(), cookieName)
         );
         // No token is issued here: the client signs in through the SSO form login / OIDC afterwards.
         return ApiResponse.success();

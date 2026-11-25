@@ -79,7 +79,8 @@ public class PromptLoginFilter extends OncePerRequestFilter {
 
         HttpSession session = request.getSession(false);
         // A session without the timestamp (or stamped with an older revocation epoch) predates the
-        // current policy: one more password entry, then it is stamped by SsoLoginSuccessHandler.
+        // current policy: one more credential proof, then it is stamped by whichever login path
+        // succeeded (see stamp).
         boolean agedOut = session != null && !(session.getAttribute(AUTH_AT_ATTRIBUTE) instanceof Instant loginAt
                 && loginAt.plus(this.absolute).isAfter(Instant.now()));
         boolean staleEpoch = session != null
@@ -164,6 +165,19 @@ public class PromptLoginFilter extends OncePerRequestFilter {
             }
         }
         return false;
+    }
+
+    /**
+     * Records a fresh credential proof on the session. Every successful login path must call this:
+     * without it the resumed {@code prompt=login} authorization is treated as aged out / stale and
+     * bounced back to {@code /login}, even though the browser just signed in.
+     *
+     * @param session current session, never {@code null}
+     * @param epochs shared revocation epoch
+     */
+    public static void stamp(HttpSession session, SessionEpochStore epochs) {
+        session.setAttribute(AUTH_AT_ATTRIBUTE, Instant.now());
+        session.setAttribute(AccountSessionGuardFilter.EPOCH_ATTRIBUTE, epochs.current());
     }
 
     /**

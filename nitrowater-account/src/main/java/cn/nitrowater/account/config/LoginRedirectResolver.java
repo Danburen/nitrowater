@@ -34,6 +34,9 @@ public class LoginRedirectResolver {
     public String resolve(HttpServletRequest request, HttpServletResponse response) {
         SavedRequest savedRequest = requestCache.getRequest(request, response);
         if (savedRequest != null) {
+            // Consume it: the saved URL carries a one-shot state/nonce and may ask for prompt=login.
+            // Replaying it on a later login would re-authorize the wrong (stale) request.
+            requestCache.removeRequest(request, response);
             return savedRequest.getRedirectUrl();
         }
 

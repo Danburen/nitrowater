@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { creditGroups } from '../shared/data/credits'
 import { fetchLegalIndex, type LegalDocument } from '../api/legal'
+import { fetchSponsors, type Sponsor } from '../api/sponsors'
 import SvgIcon from '../shared/ui/SvgIcon.vue'
 
 const route = useRoute()
@@ -10,6 +11,40 @@ const router = useRouter()
 
 /** Footer legal links; see HomeView — published index, never a hard-coded pair. */
 const legalDocuments = ref<LegalDocument[]>([])
+
+/** Sponsor cards ("鸣谢"); each page is cached server-side and fetched on demand. */
+const sponsors = ref<Sponsor[]>([])
+const sponsorPage = ref(0)
+const sponsorTotalPages = ref(0)
+const sponsorLoading = ref(false)
+const sponsorLoaded = ref(false)
+const sponsorError = ref('')
+
+/** ifdian returns epoch seconds; keep the display in the project's Asia/Shanghai timezone. */
+function formatSponsorTime(value: string): string {
+  if (!value) return '感谢支持'
+  if (/^\d{10}$/.test(value)) {
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(Number(value) * 1000))
+  }
+  return value
+}
+
+/** Compact page numbers with ellipses so a growing sponsor list keeps one pager row. */
+const sponsorPages = computed<(number | 'gap')[]>(() => {
+  const total = sponsorTotalPages.value
+  const current = sponsorPage.value
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index)
+  const nearby = new Set([0, 1, total - 2, total - 1, current - 1, current, current + 1])
+  const numbers = [...nearby].filter((page) => page >= 0 && page < total).sort((a, b) => a - b)
+  const result: (number | 'gap')[] = []
+  numbers.forEach((page, index) => {
+    if (index > 0 && page - numbers[index - 1] > 1) result.push('gap')
+    result.push(page)
+  })
+  return result
+})
 
 const REPO = {
   github: 'https://github.com/danburen/nitrowater',
@@ -33,6 +68,24 @@ function goBack(): void {
   }
 }
 
+/** Loads one sponsor page; retrying a failed page replaces the previous result. */
+async function loadSponsors(page = 0): Promise<void> {
+  if (sponsorLoading.value) return
+  sponsorLoading.value = true
+  sponsorError.value = ''
+  try {
+    const result = await fetchSponsors(page)
+    sponsors.value = result.content
+    sponsorPage.value = page
+    sponsorTotalPages.value = result.page.totalPages
+    sponsorLoaded.value = true
+  } catch {
+    sponsorError.value = '鸣谢列表暂时无法加载'
+  } finally {
+    sponsorLoading.value = false
+  }
+}
+
 /** Deep-link support: /about#credits should land on the credits section. */
 onMounted(() => {
   if (route.hash) {
@@ -45,6 +98,7 @@ onMounted(() => {
     .catch(() => {
       legalDocuments.value = []
     })
+  void loadSponsors()
 })
 </script>
 
@@ -177,6 +231,122 @@ onMounted(() => {
         </p>
       </section>
 
+      <!-- ===== 鸣谢（爱发电赞助者） ===== -->
+      <section
+        id="sponsors"
+        class="py-6"
+      >
+        <h2 class="text-[21px] font-semibold tracking-tight">
+          鸣谢
+        </h2>
+        <p class="mt-1.5 text-sm text-dim">
+          感谢每一位通过爱发电支持项目的朋友。
+        </p>
+
+        <div
+          v-if="sponsors.length"
+          class="mt-4 grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]"
+        >
+          <div
+            v-for="sponsor in sponsors"
+            :key="sponsor.userId || sponsor.nickname"
+            class="flex items-center gap-3 rounded-[14px] border border-line bg-card p-4"
+          >
+            <img
+              v-if="sponsor.avatarUrl"
+              :src="sponsor.avatarUrl"
+              :alt="sponsor.nickname"
+              referrerpolicy="no-referrer"
+              class="h-9 w-9 shrink-0 rounded-full object-cover"
+            >
+            <span
+              v-else
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-[13px] text-dim"
+            >{{ sponsor.nickname.slice(0, 1) || '赞' }}</span>
+
+            <span class="min-w-0 flex-1">
+              <span class="block truncate font-medium text-ink">
+                {{ sponsor.nickname || '匿名赞助者' }}
+              </span>
+              <span class="mt-0.5 block truncate text-[12.5px] text-faint">
+                最近赞助 {{ formatSponsorTime(sponsor.lastSponsorTime) }}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <p
+          v-else-if="sponsorLoaded && !sponsorLoading"
+          class="mt-4 text-[13px] text-faint"
+        >
+          暂无线上鸣谢记录。
+        </p>
+
+        <div
+          v-if="sponsorError"
+          class="mt-4 flex items-center gap-3"
+        >
+          <button
+            type="button"
+            class="btn btn-sm"
+            @click="loadSponsors(sponsorPage)"
+          >
+            重试
+          </button>
+          <span class="text-[12.5px] text-faint">{{ sponsorError }}</span>
+        </div>
+
+        <nav
+          v-if="sponsorTotalPages > 1"
+          class="mt-4 flex flex-wrap items-center justify-center gap-1.5"
+          aria-label="赞助列表分页"
+        >
+          <button
+            type="button"
+            class="btn btn-sm"
+            :disabled="sponsorPage === 0 || sponsorLoading"
+            @click="loadSponsors(sponsorPage - 1)"
+          >
+            上一页
+          </button>
+          <template
+            v-for="(item, index) in sponsorPages"
+            :key="item === 'gap' ? `gap-${index}` : item"
+          >
+            <span
+              v-if="item === 'gap'"
+              class="px-1 text-[12px] text-faint"
+            >…</span>
+            <button
+              v-else
+              type="button"
+              class="btn btn-sm min-w-8 justify-center"
+              :class="item === sponsorPage ? 'border-accent bg-accent text-white' : ''"
+              :disabled="sponsorLoading"
+              :aria-current="item === sponsorPage ? 'page' : undefined"
+              @click="loadSponsors(item)"
+            >
+              {{ item + 1 }}
+            </button>
+          </template>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :disabled="sponsorPage >= sponsorTotalPages - 1 || sponsorLoading"
+            @click="loadSponsors(sponsorPage + 1)"
+          >
+            下一页
+          </button>
+        </nav>
+
+        <p
+          v-if="sponsors.length"
+          class="mt-2 text-center text-[12px] text-faint"
+        >
+          排序按照最后一次赞助时间
+        </p>
+      </section>
+
       <!-- ===== 开源鸣谢 ===== -->
       <section
         id="credits"
@@ -228,7 +398,15 @@ onMounted(() => {
 
       <!-- ===== Footer ===== -->
       <footer class="mt-6 flex flex-wrap justify-between gap-3 border-t border-line py-7 text-[13px] text-dim">
-        <div>© 2026 NitroWater</div>
+        <div class="flex flex-wrap items-center gap-x-[18px] gap-y-1">
+          <span>© 2026 NitroWater</span>
+          <a
+            href="https://console.starxn.com?l=AV1ARI"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="transition hover:text-accent"
+          >PowerBy Starxn</a>
+        </div>
         <div class="flex gap-[18px]">
           <router-link
             to="/"

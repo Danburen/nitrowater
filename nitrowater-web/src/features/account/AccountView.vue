@@ -299,6 +299,22 @@ function message(cause: unknown): string {
       </p>
     </div>
 
+    <div
+      v-if="me?.emailMasked && !me.phoneMasked"
+      role="status"
+      class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-warn/30 bg-warn/5 px-4 py-3"
+    >
+      <p class="text-sm text-ink">
+        建议您添加绑定手机号，以确保账号安全性。
+      </p>
+      <button
+        class="btn btn-primary btn-sm"
+        @click="openPhoneTarget('bind-phone')"
+      >
+        绑定手机号
+      </button>
+    </div>
+
     <div class="grid gap-5 md:grid-cols-[230px_minmax(0,1fr)]">
       <aside class="h-fit rounded-[14px] border border-line bg-card p-5">
         <div class="mb-5 flex items-center gap-3">

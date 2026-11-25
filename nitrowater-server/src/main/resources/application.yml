@@ -134,6 +134,20 @@ spring:
 # audiences：允许消费的 aud 列表，逗号分隔。必须与 AS 的
 # app.oidc.access-token-audiences 对齐（AS 会额外保留 client_id）。
 app:
+  # -------- ifdian OpenAPI: public sponsor ("鸣谢") list on the About page --------
+  # Credentials come from the environment. Unknown/blank means the endpoint serves an empty page
+  # instead of calling upstream. The token signs requests only and is never sent over the wire.
+  ifdian:
+    base-url: ${IFDIAN_BASE_URL:https://ifdian.net/api/open}
+    user-id: ${IFDIAN_USER_ID:}
+    token: ${IFDIAN_TOKEN:}
+    connect-timeout-ms: ${IFDIAN_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${IFDIAN_READ_TIMEOUT_MS:10000}
+    page-size: ${IFDIAN_PAGE_SIZE:18}
+    # Redis cache TTL for each page; also the intended refresh cadence.
+    refresh-interval: ${IFDIAN_REFRESH_INTERVAL:6h}
+    # @Scheduled needs a millisecond string; keep in sync with refresh-interval (6h).
+    refresh-delay-ms: ${IFDIAN_REFRESH_DELAY_MS:21600000}
   security:
     jwt:
       audiences: ${SERVER_JWT_AUDIENCES:nitrowater-server}

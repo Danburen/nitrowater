@@ -133,7 +133,7 @@ const entries: Entry[] = [
     key: 'tools',
     href: offlineToolsUrl,
     title: '离线工具箱',
-    sub: '浏览器本地 · 无需登录',
+    sub: '浏览器本地离线运行',
     icon: 'M4 7.5h16M5 7.5l.9 11a2 2 0 0 0 2 1.9h8.2a2 2 0 0 0 2-1.9l.9-11M9.5 7.5V5.5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v2',
   },
   {
@@ -388,7 +388,15 @@ const CONTRIBUTE_URL = `${REPO.github}/issues` as const
 
       <!-- ===== Footer ===== -->
       <footer class="mt-14 flex flex-wrap justify-between gap-3 border-t border-line py-7 text-[13px] text-dim">
-        <div>© 2026 NitroWater · 为 Minecraft 腐竹提供一站式服务</div>
+        <div class="flex flex-wrap items-center gap-x-[18px] gap-y-1">
+          <span>© 2026 NitroWater</span>
+          <a
+            href="https://console.starxn.com?l=AV1ARI"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="transition hover:text-accent"
+          >PowerBy Starxn</a>
+        </div>
         <div class="flex gap-[18px]">
           <router-link
             to="/about"

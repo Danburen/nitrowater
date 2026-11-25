@@ -3,8 +3,8 @@ package cn.nitrowater.core.application.auth.code;
 import cn.nitrowater.core.api.auth.VerifyChannel;
 import cn.nitrowater.core.api.auth.VerifyScene;
 import cn.nitrowater.core.api.req.auth.SendCodeReq;
+import cn.nitrowater.core.api.resp.auth.CodeResult;
 import cn.nitrowater.core.exception.BizException;
-import cn.nitrowater.core.exception.InvalidVerifySceneException;
 import cn.nitrowater.core.infrastructure.RedisHelperHolder;
 import cn.nitrowater.core.infrastructure.domain.EncryptionDataKey;
 import cn.nitrowater.core.infrastructure.persistence.user.UserDatumRepo;
@@ -22,13 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Guards the anonymous send whitelist: registration proves the phone only, so an email code for
- * that scene must never leave the server (the user center owns email binding), and a login code is
- * never spent on a target that has no account.
+ * Guards the anonymous send whitelist: registration may prove either a phone or an email, and a
+ * login code is never spent on a target that has no account.
  */
 @ExtendWith(MockitoExtension.class)
 class VerificationServiceImplTest {
@@ -41,14 +41,29 @@ class VerificationServiceImplTest {
     @InjectMocks private VerificationServiceImpl service;
 
     @Test
-    void registerSceneRejectsEmailChannel() {
+    void registerSceneSendsEmailCodeToFreeAddress() {
+        EncryptionDataKey hmacKey = mock(EncryptionDataKey.class);
+        when(hmacKey.getEncryptedKey()).thenReturn("hmac-key");
+        when(encryptedKeyService.getUserDatumHmacKey()).thenReturn(hmacKey);
+        when(userDatumRepo.findByEmailHash(anyString())).thenReturn(Optional.empty());
+        CodeSender sender = mock(CodeSender.class);
+        when(codeSenderFactory.of(VerifyChannel.EMAIL)).thenReturn(sender);
+        when(sender.sendCode("someone@example.com", VerifyScene.REGISTER)).thenReturn(
+                CodeResult.builder()
+                        .sendSuccess(true)
+                        .target("someone@example.com")
+                        .channel(VerifyChannel.EMAIL)
+                        .key("email-code-key")
+                        .build());
+
         SendCodeReq req = new SendCodeReq();
         req.setTarget("someone@example.com");
         req.setChannel(VerifyChannel.EMAIL);
         req.setScene(VerifyScene.REGISTER);
 
-        assertThrows(InvalidVerifySceneException.class, () -> service.sendCodeForAnonymous(req));
-        verifyNoInteractions(codeSenderFactory);
+        CodeResult result = service.sendCodeForAnonymous(req);
+        assertEquals("email-code-key", result.getKey());
+        verify(sender).sendCode("someone@example.com", VerifyScene.REGISTER);
     }
 
     @Test

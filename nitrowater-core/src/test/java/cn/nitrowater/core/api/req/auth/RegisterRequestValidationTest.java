@@ -133,4 +133,80 @@ class RegisterRequestValidationTest {
         Set<String> messages = passwordMessages(req);
         assertFalse(messages.isEmpty(), "weak (non-blank) password must still violate @StrongPassword");
     }
+
+    /** Builds a fully valid email registration request. */
+    private static RegisterRequest validEmailRequest() {
+        RegisterRequest req = new RegisterRequest();
+        req.setEmail("tester@example.com");
+        req.setUsername("tester01");
+        req.setPassword("Passw0rd123");
+
+        VerifyCodeDto verify = new VerifyCodeDto();
+        verify.setChannel(VerifyChannel.EMAIL);
+        verify.setTarget("tester@example.com");
+        verify.setCode("123456");
+        verify.setScene(VerifyScene.REGISTER);
+        req.setVerify(verify);
+        req.setAgreed(true);
+        return req;
+    }
+
+    private static Set<String> properties(RegisterRequest req) {
+        return validator().validate(req).stream()
+                .map(v -> v.getPropertyPath().toString())
+                .collect(Collectors.toSet());
+    }
+
+    @Test
+    void emailRegistrationHasNoViolations() {
+        assertTrue(properties(validEmailRequest()).isEmpty(),
+                "a valid email registration must pass validation, got: " + properties(validEmailRequest()));
+    }
+
+    @Test
+    void phoneAndEmailAreMutuallyExclusive() {
+        RegisterRequest req = validEmailRequest();
+        req.setPhone("13800138000");
+
+        assertTrue(properties(req).contains("singleIdentifier"),
+                "supplying both identifiers must be refused, got: " + properties(req));
+    }
+
+    @Test
+    void registrationRequiresAnIdentifier() {
+        RegisterRequest req = validRequest();
+        req.setPhone(null);
+
+        assertTrue(properties(req).contains("singleIdentifier"),
+                "registration without an identifier must be refused, got: " + properties(req));
+    }
+
+    @Test
+    void emailRegistrationRejectsSmsProof() {
+        RegisterRequest req = validEmailRequest();
+        req.getVerify().setChannel(VerifyChannel.SMS);
+
+        assertTrue(properties(req).contains("verifyChannelMatching"),
+                "an email registration must prove the address over the email channel, got: "
+                        + properties(req));
+    }
+
+    @Test
+    void verificationTargetMustMatchChosenIdentifier() {
+        RegisterRequest req = validEmailRequest();
+        req.getVerify().setTarget("other@example.com");
+
+        assertTrue(properties(req).contains("verifyTargetMatching"),
+                "a code sent to a different address must not register this one, got: " + properties(req));
+    }
+
+    @Test
+    void malformedEmailIsRejected() {
+        RegisterRequest req = validEmailRequest();
+        req.setEmail("not-an-email");
+        req.getVerify().setTarget("not-an-email");
+
+        assertTrue(properties(req).contains("email"),
+                "a malformed email address must be refused, got: " + properties(req));
+    }
 }

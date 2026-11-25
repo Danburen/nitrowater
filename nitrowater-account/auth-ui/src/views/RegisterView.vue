@@ -11,23 +11,47 @@ import { ApiError, fetchLoginContext, postJson, type LoginContext } from '@/api/
 import { getDeviceFp } from '@/composables/useDeviceFp'
 import { useCodeCooldown, type CooldownScope } from '@/composables/useCodeCooldown'
 
+type RegisterChannel = 'sms' | 'email'
+
+const channelOptions = [
+  { value: 'sms', label: '手机号注册' },
+  { value: 'email', label: '邮箱注册' },
+] as const satisfies ReadonlyArray<{ value: RegisterChannel; label: string }>
+
+const PHONE_RE = /^1[3-9]\d{9}$/
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 /** The app that started this registration (null for a direct visit): its legal links apply. */
 const loginContext = ref<LoginContext | null>(null)
 
 /** Documents registered by that app; empty means the consent line stays plain text. */
 const legalLinks = computed(() => loginContext.value?.legalLinks ?? [])
 
+const channel = ref<RegisterChannel>('sms')
 const username = ref('')
 const phone = ref('')
-const smsCode = ref('')
+const email = ref('')
+const verifyCode = ref('')
 const password = ref('')
 
-// Handoff from the login page ("no account for this phone"): carry the number over so it does not
-// have to be retyped. Anything that is not a mainland mobile number is ignored rather than
-// pre-filled blindly.
-const handoffPhone = useRoute().query.phone
+const isEmail = computed(() => channel.value === 'email')
+const target = computed(() => (isEmail.value ? email.value.trim() : phone.value.trim()))
+const targetLabel = computed(() => (isEmail.value ? '邮箱' : '手机号'))
+const codeLabel = computed(() => (isEmail.value ? '邮箱验证码' : '短信验证码'))
+
+// Handoff from the login page ("no account for this target"): carry the value over so it does not
+// have to be retyped. Anything that is not a valid phone/email is ignored rather than pre-filled.
+const route = useRoute()
+const handoffPhone = route.query.phone
 const initialPhone = typeof handoffPhone === 'string' ? handoffPhone.trim() : ''
-if (/^1[3-9]\d{9}$/.test(initialPhone)) phone.value = initialPhone
+const handoffEmail = route.query.email
+const initialEmail = typeof handoffEmail === 'string' ? handoffEmail.trim() : ''
+if (PHONE_RE.test(initialPhone)) {
+  phone.value = initialPhone
+} else if (EMAIL_RE.test(initialEmail)) {
+  email.value = initialEmail
+  channel.value = 'email'
+}
 
 const showOptional = ref(false)
 const errorMessage = ref('')
@@ -40,35 +64,39 @@ const captchaCode = ref('')
 const sending = ref(false)
 const submitting = ref(false)
 
-/** Target the last SMS code was sent to; editing the target invalidates the stale input. */
-const smsSentTo = ref('')
+/** Target the last code was sent to; editing the target or channel invalidates the stale input. */
+const codeSentTo = ref('')
 
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 const {
-  remaining: smsCooldown,
-  start: startSmsCooldown,
-  restore: restoreSmsCooldown,
-  clear: clearSmsCooldown,
-  sync: syncSmsCooldown,
+  remaining: codeCooldown,
+  start: startCodeCooldown,
+  restore: restoreCodeCooldown,
+  clear: clearCodeCooldown,
+  sync: syncCodeCooldown,
 } = useCodeCooldown()
 
-function smsScope(): CooldownScope {
-  return { scene: 'register', channel: 'sms', target: phone.value.trim() }
+function codeScope(): CooldownScope {
+  return { scene: 'register', channel: channel.value, target: target.value }
 }
 
-watch(phone, () => {
-  const target = phone.value.trim()
-  if (smsSentTo.value && smsSentTo.value !== target) {
-    smsSentTo.value = ''
-    smsCode.value = ''
+function validTarget(): boolean {
+  return isEmail.value ? EMAIL_RE.test(target.value) : PHONE_RE.test(target.value)
+}
+
+watch([channel, phone, email], () => {
+  const current = target.value
+  if (codeSentTo.value && codeSentTo.value !== current) {
+    codeSentTo.value = ''
+    verifyCode.value = ''
   }
-  if (target) restoreSmsCooldown(smsScope())
-  else clearSmsCooldown()
+  if (current) restoreCodeCooldown(codeScope())
+  else clearCodeCooldown()
 })
 
 onMounted(() => {
-  if (phone.value.trim()) restoreSmsCooldown(smsScope())
+  if (target.value) restoreCodeCooldown(codeScope())
   void fetchLoginContext()
     .then((context) => {
       loginContext.value = context
@@ -89,8 +117,12 @@ function clearMessages() {
 }
 
 function openCaptcha() {
-  if (!phone.value.trim()) {
-    errorMessage.value = '请先填写手机号'
+  if (!target.value) {
+    errorMessage.value = `请先填写${targetLabel.value}`
+    return
+  }
+  if (!validTarget()) {
+    errorMessage.value = isEmail.value ? '请输入有效邮箱地址' : '请输入正确手机号'
     return
   }
   clearMessages()
@@ -98,9 +130,9 @@ function openCaptcha() {
 }
 
 async function sendCode() {
-  const target = phone.value.trim()
-  if (!target) {
-    errorMessage.value = '请先填写手机号'
+  const value = target.value
+  if (!value || !validTarget()) {
+    errorMessage.value = isEmail.value ? '请输入有效邮箱地址' : '请输入正确手机号'
     return
   }
 
@@ -108,23 +140,23 @@ async function sendCode() {
   clearMessages()
   try {
     await postJson<void>('/api/auth/send-code', {
-      target,
-      channel: 'sms',
+      target: value,
+      channel: channel.value,
       scene: 'register',
       captcha: captchaCode.value.trim(),
     })
-    notice.value = '验证码已发送，请留意手机短信'
-    smsSentTo.value = target
-    startSmsCooldown(60, smsScope())
+    notice.value = isEmail.value ? '验证码已发送，请留意邮箱' : '验证码已发送，请留意手机短信'
+    codeSentTo.value = value
+    startCodeCooldown(60, codeScope())
   } catch (error) {
     errorMessage.value = messageOf(error)
-    syncSmsCooldown(error, smsScope())
+    syncCodeCooldown(error, codeScope())
   } finally {
     sending.value = false
   }
 }
 
-/** The dialog owns the code input; take the confirmed value and send the SMS in one go. */
+/** The dialog owns the captcha input; take the confirmed value and send the code in one go. */
 function sendCodeWithCaptcha(code: string) {
   captchaCode.value = code
   showCaptcha.value = false
@@ -135,20 +167,24 @@ async function register() {
   clearMessages()
 
   const name = username.value.trim()
-  const target = phone.value.trim()
-  const code = smsCode.value.trim()
+  const value = target.value
+  const code = verifyCode.value.trim()
   const pwd = password.value
 
-  if (!name || !target || !code) {
-    errorMessage.value = '请填写用户名、手机号和短信验证码'
+  if (!name || !value || !code) {
+    errorMessage.value = `请填写用户名、${targetLabel.value}和${codeLabel.value}`
     return
   }
   if (!/^[0-9a-zA-Z_]{4,20}$/.test(name)) {
     errorMessage.value = '用户名需为 4-20 位字母、数字或下划线'
     return
   }
-  if (/^1[3-9]\d{9}$/.test(name)) {
+  if (PHONE_RE.test(name)) {
     errorMessage.value = '用户名不能是手机号'
+    return
+  }
+  if (!validTarget()) {
+    errorMessage.value = isEmail.value ? '请输入有效邮箱地址' : '请输入正确手机号'
     return
   }
   if (pwd && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,20}$/.test(pwd)) {
@@ -164,14 +200,14 @@ async function register() {
   try {
     await postJson<void>('/api/auth/register', {
       username: name,
-      phone: target,
+      // Exactly one identifier is sent; the server cross-checks it against the proof below.
+      ...(isEmail.value ? { email: value } : { phone: value }),
       password: pwd || null,
       // Server-side @AssertTrue: the checkbox is not decoration, the request must carry it.
       agreed: agreed.value,
-      // Registration proves the phone only; an email is bound from the user center afterwards.
       verify: {
-        channel: 'sms',
-        target,
+        channel: channel.value,
+        target: value,
         code,
         scene: 'register',
         deviceInfo: { deviceFp: getDeviceFp() },
@@ -215,6 +251,25 @@ onUnmounted(() => {
       class="space-y-4"
       @submit.prevent="register"
     >
+      <div
+        class="flex gap-1 rounded-lg bg-soft/70 p-1"
+        role="tablist"
+        aria-label="注册方式"
+      >
+        <button
+          v-for="option in channelOptions"
+          :key="option.value"
+          type="button"
+          role="tab"
+          class="flex-1 rounded-md px-3 py-1.5 text-sm transition"
+          :class="channel === option.value ? 'bg-card text-ink shadow-sm' : 'text-dim hover:text-ink'"
+          :aria-selected="channel === option.value"
+          @click="channel = option.value"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+
       <div>
         <label
           class="auth-label"
@@ -235,9 +290,22 @@ onUnmounted(() => {
       <div>
         <label
           class="auth-label"
-          for="reg-phone"
-        >手机号</label>
+          :for="isEmail ? 'reg-email' : 'reg-phone'"
+        >{{ targetLabel }}</label>
         <ElInput
+          v-if="isEmail"
+          id="reg-email"
+          v-model="email"
+          size="large"
+          :prefix-icon="Message"
+          autocomplete="email"
+          inputmode="email"
+          placeholder="用于接收邮箱验证码"
+          maxlength="254"
+          required
+        />
+        <ElInput
+          v-else
           id="reg-phone"
           v-model="phone"
           size="large"
@@ -252,28 +320,28 @@ onUnmounted(() => {
       <div>
         <label
           class="auth-label"
-          for="reg-sms"
-        >短信验证码</label>
+          for="reg-code"
+        >{{ codeLabel }}</label>
         <div class="flex items-center gap-2">
           <ElInput
-            id="reg-sms"
-            v-model="smsCode"
+            id="reg-code"
+            v-model="verifyCode"
             class="min-w-0 flex-1"
             size="large"
             :prefix-icon="Message"
             autocomplete="one-time-code"
             inputmode="numeric"
             maxlength="6"
-            placeholder="请输入短信验证码"
+            :placeholder="`请输入${codeLabel}`"
             required
           />
           <ElButton
             class="shrink-0"
             size="large"
-            :disabled="sending || smsCooldown > 0"
+            :disabled="sending || codeCooldown > 0"
             @click="openCaptcha"
           >
-            {{ smsCooldown > 0 ? `${smsCooldown}s 后重发` : '获取验证码' }}
+            {{ codeCooldown > 0 ? `${codeCooldown}s 后重发` : '获取验证码' }}
           </ElButton>
         </div>
       </div>
@@ -321,7 +389,7 @@ onUnmounted(() => {
       </div>
 
       <p class="text-[11px] leading-relaxed text-faint">
-        注册只验证手机号。邮箱可在登录后的「用户中心 → 邮箱与手机」绑定，验证通过后即可用于邮箱验证码登录。
+        手机号或邮箱任选一项注册并验证。另一项可在登录后的「用户中心 → 邮箱与手机」绑定，验证通过后即可用于对应的验证码登录。
       </p>
 
       <div class="flex items-start gap-2 text-[12px] leading-5 text-dim">
@@ -364,7 +432,7 @@ onUnmounted(() => {
     <CaptchaDialog
       v-model="showCaptcha"
       title="安全验证"
-      description="输入图形验证码后发送短信验证码。"
+      :description="`输入图形验证码后发送${codeLabel}。`"
       confirm-text="发送验证码"
       :loading="sending"
       @submit="sendCodeWithCaptcha"
