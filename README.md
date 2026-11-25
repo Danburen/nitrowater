@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://nitrowater.cn">
+  <a href="https://nitrowater.site">
     <img src="https://nitrowater.cn/favicon.svg" alt="NitroWater" width="120">
   </a>
 </p>
